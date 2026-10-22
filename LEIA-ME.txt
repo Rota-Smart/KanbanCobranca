@@ -1,0 +1,2 @@
+Rota Smart - Kanban de Cobranca
+Release: veja versao.txt. O app baixa rota-smart.exe desta branch ao atualizar.
