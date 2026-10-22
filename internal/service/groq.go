@@ -85,6 +85,9 @@ type groqRequest struct {
 	MaxTokens   int              `json:"max_tokens"`
 	Tools       []map[string]any `json:"tools,omitempty"`
 	ToolChoice  string           `json:"tool_choice,omitempty"`
+	// ReasoningEffort reduz os tokens de "pensamento" dos modelos gpt-oss —
+	// no plano free (8K TPM) todo token de raciocínio compete com o útil.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 type groqResponse struct {
@@ -107,10 +110,11 @@ func (g *GroqCliente) Completar(ctx context.Context, system, user string) (strin
 		return "", ErrGroqSemChave
 	}
 	body, err := json.Marshal(groqRequest{
-		Model:       g.modelo(),
-		Mensagens:   []groqMensagem{{Role: "system", Content: system}, {Role: "user", Content: user}},
-		Temperature: 0.2,
-		MaxTokens:   groqMaxTokens,
+		Model:           g.modelo(),
+		Mensagens:       []groqMensagem{{Role: "system", Content: system}, {Role: "user", Content: user}},
+		Temperature:     0.2,
+		MaxTokens:       groqMaxTokens,
+		ReasoningEffort: effortPara(g.modelo()),
 	})
 	if err != nil {
 		return "", err
@@ -180,12 +184,13 @@ func (g *GroqCliente) chatUmaRodada(ctx context.Context, mensagens []groqMensage
 		ToolCalls []groqToolCall
 	}
 	body, err := json.Marshal(groqRequest{
-		Model:       g.modelo(),
-		Mensagens:   mensagens,
-		Temperature: 0.2,
-		MaxTokens:   800,
-		Tools:       tools,
-		ToolChoice:  mapParaString(tools),
+		Model:           g.modelo(),
+		Mensagens:       mensagens,
+		Temperature:     0.2,
+		MaxTokens:       800,
+		Tools:           tools,
+		ToolChoice:      mapParaString(tools),
+		ReasoningEffort: effortPara(g.modelo()),
 	})
 	if err != nil {
 		return saida{}, err
@@ -252,6 +257,16 @@ func mapParaString(tools []map[string]any) string {
 		return ""
 	}
 	return "auto"
+}
+
+// effortPara calcula o reasoning_effort: "low" para os modelos gpt-oss
+// (economia de TPM no plano free); vazio para os demais (o parâmetro os
+// rejeita).
+func effortPara(modelo string) string {
+	if strings.Contains(modelo, "gpt-oss") {
+		return "low"
+	}
+	return ""
 }
 
 func (g *GroqCliente) chatComTools(ctx context.Context, mensagens []groqMensagem) (struct {
