@@ -253,27 +253,30 @@ export default function App() {
   if (erro) return <div className="p-8 text-red-600">Erro ao carregar: {erro}</div>;
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
-      <header className="px-4 py-3 border-b bg-white dark:bg-slate-800 dark:border-slate-700 flex items-center justify-between">
-        <h1 className="font-semibold dark:text-slate-100">Kanban de Cobrança</h1>
+    <div className="h-screen flex flex-col bg-gradient-to-br from-sky-100 via-indigo-50 to-rose-100 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950">
+      <header className="px-4 py-3 flex items-center justify-between glass-soft rounded-b-2xl">
+        <h1 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 inline-block" aria-hidden />
+          Kanban de Cobrança
+        </h1>
         <div className="flex gap-2">
           <button
             aria-label={tema === 'escuro' ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
             title={tema === 'escuro' ? 'Tema claro' : 'Tema escuro'}
-            className="text-sm border rounded px-3 py-1 hover:bg-slate-50 dark:hover:bg-slate-700 dark:border-slate-600"
+            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
             onClick={() => setTema(tema === 'escuro' ? 'claro' : 'escuro')}
           >
             {tema === 'escuro' ? '☀️' : '🌙'}
           </button>
           <button
-            className="text-sm border rounded px-3 py-1 hover:bg-slate-50 dark:hover:bg-slate-700 dark:border-slate-600"
+            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
             title="Buscar cliente no 360 (Shift+F3)"
             onClick={() => setBuscar360Coluna(colunas[0] ?? fallbackColunas[0])}
           >
             🔎 Buscar
           </button>
           <button
-            className="text-sm border rounded px-3 py-1 hover:bg-slate-50 dark:hover:bg-slate-700 dark:border-slate-600"
+            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
             onClick={() => setChatAberto(true)}
           >
             💬 Assistente
@@ -287,7 +290,7 @@ export default function App() {
             {sincronizando ? '⟳ Sincronizando…' : '⟳ Sincronizar'}
           </button>
           <button
-            className="text-sm border rounded px-3 py-1 hover:bg-slate-50"
+            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 hover:bg-white/70 border border-white/50 transition font-medium"
             onClick={() => setConfigAberta(true)}
           >
             ⚙ Configurações
@@ -360,7 +363,7 @@ export default function App() {
       )}
 
       {toast && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-sm px-4 py-2 rounded shadow-lg">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 glass text-slate-800 dark:text-slate-100 text-sm px-4 py-2.5 rounded-xl">
           {toast}
         </div>
       )}

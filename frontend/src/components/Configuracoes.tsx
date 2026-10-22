@@ -164,9 +164,9 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={props.onFechar}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
       <div
-        className="bg-white dark:bg-slate-800 rounded-xl w-[36rem] max-w-full max-h-[85vh] overflow-y-auto p-5 shadow-xl"
+        className="glass rounded-2xl w-[36rem] max-w-full max-h-[85vh] overflow-y-auto p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">

@@ -58,9 +58,9 @@ export default function ChatDrawer(props: {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={props.onFechar}>
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
       <aside
-        className="bg-white dark:bg-slate-800 w-[26rem] max-w-full h-full overflow-y-auto p-4 shadow-xl flex flex-col"
+        className="glass w-[26rem] max-w-full h-full overflow-y-auto p-4 shadow-xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">

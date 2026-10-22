@@ -43,9 +43,9 @@ export default function BuscarCliente360Dialog(props: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={props.onFechar}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
       <div
-        className="bg-white dark:bg-slate-800 rounded-xl w-[28rem] max-w-full max-h-[80vh] overflow-y-auto p-4 shadow-xl"
+        className="glass rounded-2xl w-[28rem] max-w-full max-h-[80vh] overflow-y-auto p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">

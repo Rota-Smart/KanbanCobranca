@@ -190,9 +190,9 @@ export default function NegotiationModal({ ticket, preCobranca, onFechouComSave,
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={tentarFechar}>
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/30 backdrop-blur-sm" onClick={tentarFechar}>
       <aside
-        className="bg-white dark:bg-slate-800 w-[26rem] max-w-full h-full overflow-y-auto p-4 shadow-xl"
+        className="glass w-[26rem] max-w-full h-full overflow-y-auto p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
