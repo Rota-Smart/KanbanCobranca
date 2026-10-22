@@ -11,6 +11,7 @@ var migrations = []string{
 	migration001,
 	migration002,
 	migration003,
+	migration004,
 }
 
 // migration002: integração Rota 360 — cache de clientes, parâmetros de
@@ -65,6 +66,27 @@ INSERT OR IGNORE INTO kanban_columns (nome, posicao) VALUES
     ('Quitado', 8),
     ('Inadimplente', 9),
     ('Concluido', 10);
+`
+
+// migration004: chats persistentes do assistente Groq — várias conversas,
+// cada uma com seu histórico de mensagens.
+const migration004 = `
+CREATE TABLE chats (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    titulo     TEXT NOT NULL DEFAULT 'Nova conversa',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
+CREATE TABLE chat_mensagens (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id  INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    papel    TEXT NOT NULL CHECK (papel IN ('user','assistant')),
+    conteudo TEXT NOT NULL,
+    acoes_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX idx_chat_mensagens_chat ON chat_mensagens(chat_id, id);
 `
 
 const migration001 = `

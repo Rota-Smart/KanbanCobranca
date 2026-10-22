@@ -17,7 +17,7 @@ import (
 // (tabela config); sem chave, o app funciona só com o template determinístico.
 const (
 	GroqEndpoint     = "https://api.groq.com/openai/v1/chat/completions"
-	GroqModeloPadrao = "llama-3.3-70b-versatile"
+	GroqModeloPadrao = "openai/gpt-oss-120b" // llama-3.3-70b-versatile foi descontinuado pela Groq (ago/2026)
 	groqTimeout      = 12 * time.Second
 	groqMaxResposta  = 64 << 10
 	groqMaxTokens    = 400
@@ -219,6 +219,9 @@ func (g *GroqCliente) chatUmaRodada(ctx context.Context, mensagens []groqMensage
 		if resp.StatusCode != http.StatusOK {
 			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusBadRequest {
 				return saida{}, fmt.Errorf("groq: HTTP %d — verifique a chave e o modelo nas configurações", resp.StatusCode)
+			}
+			if resp.StatusCode == http.StatusNotFound {
+				return saida{}, fmt.Errorf("groq: HTTP 404 — o modelo %q não existe mais na Groq; escolha outro em ⚙ Configurações", g.modelo())
 			}
 			ultimoErr = fmt.Errorf("groq: HTTP %d", resp.StatusCode)
 			continue

@@ -19,7 +19,6 @@ export type ConfigApp = main.ConfigApp;
 export type Rota360Status = main.Rota360Status;
 export type AcaoDoAgente = service.AcaoDoAgente;
 export type ChatResultado = service.ChatResultado;
-export type MensagemDeChat = service.MensagemDeChat;
 export type InfoAtualizacao = atualizacao.Info;
 
 // Sincronização GitHub

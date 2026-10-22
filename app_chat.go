@@ -36,20 +36,92 @@ func (a *App) RemoverColuna(nome string) error {
 
 // ---- Chat com o agente Groq ----
 
-// EnviarChat manda a mensagem (com o histórico recente do frontend) para o
-// agente Groq, que pode executar ferramentas: buscar clientes no 360,
-// adicionar cards, criar colunas, mover cards, consultar financeiro etc.
-func (a *App) EnviarChat(historico []service.MensagemDeChat, mensagem string) (service.ChatResultado, error) {
+// ListarChats devolve as conversas salvas, do mais recente ao mais antigo.
+func (a *App) ListarChats() ([]db.Chat, error) {
+	if a.chats == nil {
+		return []db.Chat{}, nil
+	}
+	cs, err := a.chats.List(a.ctx)
+	if err != nil {
+		return nil, friendly("ListarChats", err)
+	}
+	if cs == nil {
+		cs = []db.Chat{}
+	}
+	return cs, nil
+}
+
+// CriarChat abre uma conversa nova e devolve o registro criado.
+func (a *App) CriarChat() (db.Chat, error) {
+	if a.chats == nil {
+		return db.Chat{}, fmt.Errorf("conversas indisponíveis")
+	}
+	id, err := a.chats.Create(a.ctx, "Nova conversa")
+	if err != nil {
+		return db.Chat{}, friendly("CriarChat", err)
+	}
+	return db.Chat{ID: id, Titulo: "Nova conversa"}, nil
+}
+
+// ApagarChat remove a conversa e o histórico dela.
+func (a *App) ApagarChat(id int64) error {
+	if err := a.chats.Delete(a.ctx, id); err != nil {
+		return friendly("ApagarChat", err)
+	}
+	return nil
+}
+
+// MensagemDoChat é uma linha do histórico já com as ações convertidas.
+type MensagemDoChat struct {
+	ID       int64                  `json:"id"`
+	Papel    string                 `json:"papel"`
+	Conteudo string                 `json:"conteudo"`
+	Acoes    []service.AcaoDoAgente `json:"acoes"`
+}
+
+// MensagensDoChat devolve o histórico persistido de uma conversa.
+func (a *App) MensagensDoChat(id int64) ([]MensagemDoChat, error) {
+	ms, err := a.chats.Mensagens(a.ctx, id)
+	if err != nil {
+		return nil, friendly("MensagensDoChat", err)
+	}
+	out := make([]MensagemDoChat, 0, len(ms))
+	for _, m := range ms {
+		msg := MensagemDoChat{ID: m.ID, Papel: m.Papel, Conteudo: m.Conteudo, Acoes: []service.AcaoDoAgente{}}
+		if m.AcoesJSON != "" {
+			if err := json.Unmarshal([]byte(m.AcoesJSON), &msg.Acoes); err != nil {
+				return nil, friendly("MensagensDoChat", err)
+			}
+		}
+		out = append(out, msg)
+	}
+	return out, nil
+}
+
+// EnviarChat manda a mensagem para o agente Groq dentro da conversa chatID:
+// o histórico vem do banco (persistido), e user+resposta são gravados nele.
+// O agente pode executar ferramentas: buscar clientes no 360, adicionar
+// cards, criar colunas, mover cards, consultar financeiro etc.
+func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, error) {
 	if a.groq == nil || a.groq.Chave() == "" {
 		return service.ChatResultado{}, fmt.Errorf("configure a chave da Groq em ⚙ Configurações para usar o assistente")
+	}
+	if a.chats == nil {
+		return service.ChatResultado{}, fmt.Errorf("conversas indisponíveis")
 	}
 	mensagem = strings.TrimSpace(mensagem)
 	if mensagem == "" {
 		return service.ChatResultado{}, fmt.Errorf("mensagem vazia")
 	}
-	if len(historico) > 10 {
-		historico = historico[len(historico)-10:]
+
+	historico, err := a.historicoRecente(chatID)
+	if err != nil {
+		return service.ChatResultado{}, err
 	}
+	if err := a.chats.AddMensagem(a.ctx, chatID, "user", mensagem, ""); err != nil {
+		return service.ChatResultado{}, friendly("EnviarChat", err)
+	}
+
 	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
 	defer cancel()
 	res, err := a.groq.Conversar(ctx, historico, mensagem, a, nil)
@@ -62,7 +134,38 @@ func (a *App) EnviarChat(historico []service.MensagemDeChat, mensagem string) (s
 	if res.Acoes == nil {
 		res.Acoes = []service.AcaoDoAgente{}
 	}
+	if err := a.gravarResposta(chatID, res); err != nil {
+		return service.ChatResultado{}, err
+	}
 	return *res, nil
+}
+
+// historicoRecente devolve as últimas 10 mensagens persistidas do chat.
+func (a *App) historicoRecente(chatID int64) ([]service.MensagemDeChat, error) {
+	persistidas, err := a.chats.Mensagens(a.ctx, chatID)
+	if err != nil {
+		return nil, friendly("EnviarChat", err)
+	}
+	if len(persistidas) > 10 {
+		persistidas = persistidas[len(persistidas)-10:]
+	}
+	historico := make([]service.MensagemDeChat, 0, len(persistidas))
+	for _, m := range persistidas {
+		historico = append(historico, service.MensagemDeChat{Papel: m.Papel, Conteudo: m.Conteudo})
+	}
+	return historico, nil
+}
+
+// gravarResposta persiste a resposta do agente com as ações executadas.
+func (a *App) gravarResposta(chatID int64, res *service.ChatResultado) error {
+	acoesJSON, err := json.Marshal(res.Acoes)
+	if err != nil {
+		return friendly("EnviarChat", err)
+	}
+	if err := a.chats.AddMensagem(a.ctx, chatID, "assistant", res.Resposta, string(acoesJSON)); err != nil {
+		return friendly("EnviarChat", err)
+	}
+	return nil
 }
 
 // ExecutarAgente roda a ferramenta pedida pelo modelo. É a implementação

@@ -3,9 +3,9 @@ import * as App from '../../wailsjs/go/main/App';
 import type { ConfigApp, ParametroNegociacao, SyncInfo } from '../wails-types';
 
 const MODELOS_SUGERIDOS = [
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
-  'gemma2-9b-it',
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
+  'qwen/qwen3.6-27b',
 ];
 
 // Configuracoes reúne: sessão do 360, chave/modelo Groq e parâmetros
@@ -225,7 +225,8 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
           <h3 className="text-sm font-semibold text-slate-700">Groq (polimento com IA)</h3>
           <p className="text-xs text-slate-500 mt-1">
             Chave gratuita em console.groq.com. Modelo sugerido:{' '}
-            <strong>llama-3.3-70b-versatile</strong> (alternativa rápida: llama-3.1-8b-instant).
+            <strong>openai/gpt-oss-120b</strong> (alternativa rápida: openai/gpt-oss-20b — o
+            antigo llama-3.3-70b-versatile foi descontinuado pela Groq).
             {cfg?.groqTemChave && ' Uma chave já está salva.'}
           </p>
           <div className="mt-2 flex flex-col gap-2">
