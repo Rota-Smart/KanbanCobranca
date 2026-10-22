@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* Tema por classe (não por sistema): o app controla com o botão ☀/🌙 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Modo escuro: textos em tons de branco para melhor visibilidade.
+   Sobrescreve os tons de slate usados no app, do mais escuro ao mais claro. */
+.dark .text-slate-800 { color: #f1f5f9 !important; }
+.dark .text-slate-700 { color: #e2e8f0 !important; }
+.dark .text-slate-600 { color: #d4dae3 !important; }
+.dark .text-slate-500 { color: #b8c0cc !important; }
+.dark .text-slate-400 { color: #a8b1bf !important; }

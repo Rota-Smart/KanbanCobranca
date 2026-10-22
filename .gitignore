@@ -1,0 +1,13 @@
+# projetos irmãos e artefatos
+Reader/
+frontend/node_modules/
+frontend/dist/
+frontend/wailsjs/
+build/
+*.exe
+*.zip
+*.db
+*.db-shm
+*.db-wal
+*.old
+rota-smart.novo.exe
