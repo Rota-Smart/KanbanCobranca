@@ -11,6 +11,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { useEffect, useState } from 'react';
 import * as bindings from '../wailsjs/go/main/App';
+import { EventsOn } from '../wailsjs/runtime/runtime';
 import type { ResultadoCobranca, Ticket } from './wails-types';
 import BuscarCliente360Dialog from './components/BuscarCliente360Dialog';
 import ChatDrawer from './components/ChatDrawer';
@@ -21,6 +22,29 @@ import NegotiationModal from './components/NegotiationModal';
 import { boardFromTickets, moveCard, type Board } from './kanban';
 
 const fallbackColunas = ['Fazer contato'];
+
+// TicketDaTela: payload do evento "atalho:tela" (Shift+F2 capturou a tela).
+interface TicketDaTela {
+  achou: boolean;
+  fonte: string;
+  ticketId: number;
+  nomeCliente: string;
+  codService: string;
+  titulo: string;
+  mensagem: string;
+}
+
+// mensagemChatDaTela monta a primeira mensagem do Groq a partir do que o
+// Shift+F2 identificou na tela em foco.
+function mensagemChatDaTela(d: TicketDaTela): string | null {
+  if (d.achou && d.ticketId > 0) {
+    return `Continue o atendimento do card #${d.ticketId} — ${d.nomeCliente} (código ${d.codService}). Revise o financeiro do 360, os acordos e a avaliação, e sugira os próximos passos.`;
+  }
+  if (d.codService) {
+    return `Estou com o cliente de código ${d.codService} na tela (360). Busque-o, resuma o financeiro e sugira os próximos passos de cobrança.`;
+  }
+  return null;
+}
 
 // Tema claro/escuro persistido; aplicado na <html> via classe 'dark'.
 function temaInicial(): 'claro' | 'escuro' {
@@ -43,7 +67,31 @@ export default function App() {
   const [buscar360Coluna, setBuscar360Coluna] = useState<string | null>(null);
   const [configAberta, setConfigAberta] = useState(false);
   const [chatAberto, setChatAberto] = useState(false);
+  const [chatMsgInicial, setChatMsgInicial] = useState<string | null>(null);
   const [tema, setTema] = useState<'claro' | 'escuro'>(temaInicial);
+  const [sincronizando, setSincronizando] = useState(false);
+
+  // Sincroniza com o repo GitHub (banco-de-dados): envia/baixa conforme quem
+  // mudou; em conflito, pergunta qual lado vence.
+  async function sincronizar() {
+    setSincronizando(true);
+    try {
+      const r = await bindings.Sincronizar();
+      if (r.acao === 'conflito') {
+        if (window.confirm(r.mensagem + '\n\nOK = enviar ESTE PC (sobrescreve o repo)\nCancelar = baixar do repo (sobrescreve este PC)')) {
+          showToast((await bindings.SyncEnviar()).mensagem);
+        } else {
+          showToast((await bindings.SyncReceber()).mensagem);
+        }
+      } else {
+        showToast(r.mensagem);
+      }
+    } catch (e) {
+      showToast(String(e));
+    } finally {
+      setSincronizando(false);
+    }
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -67,6 +115,27 @@ export default function App() {
         setCarregando(false);
       });
   }, []);
+
+  // Atalhos globais do Windows: Shift+F2 (ticket na tela → chat do Groq)
+  // e Shift+F3 (busca de clientes, emulando a pesquisa do site).
+  useEffect(() => {
+    const offTela = EventsOn('atalho:tela', (d: TicketDaTela) => {
+      const msg = mensagemChatDaTela(d);
+      if (msg) {
+        setChatAberto(true);
+        setChatMsgInicial(msg);
+      } else {
+        showToast(d.mensagem || 'Não reconheci um ticket na tela em foco.');
+      }
+    });
+    const offBusca = EventsOn('atalho:busca', () => {
+      setBuscar360Coluna(colunas[0] ?? fallbackColunas[0]);
+    });
+    return () => {
+      offTela();
+      offBusca();
+    };
+  }, [colunas]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -198,9 +267,24 @@ export default function App() {
           </button>
           <button
             className="text-sm border rounded px-3 py-1 hover:bg-slate-50 dark:hover:bg-slate-700 dark:border-slate-600"
+            title="Buscar cliente no 360 (Shift+F3)"
+            onClick={() => setBuscar360Coluna(colunas[0] ?? fallbackColunas[0])}
+          >
+            🔎 Buscar
+          </button>
+          <button
+            className="text-sm border rounded px-3 py-1 hover:bg-slate-50 dark:hover:bg-slate-700 dark:border-slate-600"
             onClick={() => setChatAberto(true)}
           >
             💬 Assistente
+          </button>
+          <button
+            className="text-sm border rounded px-3 py-1 hover:bg-slate-50 dark:hover:bg-slate-700 dark:border-slate-600 disabled:opacity-50"
+            title="Sincronizar dados com o repositório (outro PC acessa os mesmos dados)"
+            disabled={sincronizando}
+            onClick={sincronizar}
+          >
+            {sincronizando ? '⟳ Sincronizando…' : '⟳ Sincronizar'}
           </button>
           <button
             className="text-sm border rounded px-3 py-1 hover:bg-slate-50"
@@ -270,6 +354,8 @@ export default function App() {
           onFechar={() => setChatAberto(false)}
           onMutou={recarregarBoard}
           onToast={showToast}
+          mensagemInicial={chatMsgInicial}
+          onConsumiuMensagem={() => setChatMsgInicial(null)}
         />
       )}
 

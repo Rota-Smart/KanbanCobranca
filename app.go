@@ -21,6 +21,7 @@ import (
 type App struct {
 	ctx       context.Context
 	db        *sql.DB
+	dbPath    string // caminho do arquivo do banco; vazio em testes antigos
 	tickets   *db.TicketRepo
 	cobrancas *db.CobrancaRepo
 	colunas   *db.ColumnRepo
@@ -72,6 +73,9 @@ func NewApp(database *sql.DB, propostas *service.PropostaService) *App {
 	}
 }
 
+// DefinirCaminhoBanco informa onde o banco vive (usado pelo sync).
+func (a *App) DefinirCaminhoBanco(path string) { a.dbPath = path }
+
 // colunasAtivas lista as colunas do board (dinâmicas), com fallback estático
 // se a tabela não tiver nada.
 func (a *App) colunasAtivas() []string {
@@ -92,6 +96,7 @@ func (a *App) colunaValida(nome string) bool {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.iniciarAtalhos()
 }
 
 // friendly devolve erros de validação como estão; todo o resto vai para o

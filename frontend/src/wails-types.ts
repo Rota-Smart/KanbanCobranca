@@ -21,3 +21,17 @@ export type AcaoDoAgente = service.AcaoDoAgente;
 export type ChatResultado = service.ChatResultado;
 export type MensagemDeChat = service.MensagemDeChat;
 export type InfoAtualizacao = atualizacao.Info;
+
+// Sincronização GitHub
+export interface SyncInfo {
+  configurado: boolean;
+  repo: string;
+  temRemoto: boolean;
+  remotoQuando: string;
+  pendenteBaixar: boolean;
+  localAlterado: boolean;
+}
+export interface ResultadoSync {
+  acao: 'enviado' | 'recebido' | 'em-dia' | 'conflito' | 'configurar';
+  mensagem: string;
+}

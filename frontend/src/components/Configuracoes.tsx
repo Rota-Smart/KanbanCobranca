@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as App from '../../wailsjs/go/main/App';
-import type { ConfigApp, ParametroNegociacao } from '../wails-types';
+import type { ConfigApp, ParametroNegociacao, SyncInfo } from '../wails-types';
 
 const MODELOS_SUGERIDOS = [
   'llama-3.3-70b-versatile',
@@ -22,6 +22,14 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   const [verificando, setVerificando] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
   const [infoAtual, setInfoAtual] = useState<import('../wails-types').InfoAtualizacao | null>(null);
+  const [syncToken, setSyncToken] = useState('');
+  const [syncRepo, setSyncRepo] = useState('');
+  const [syncInfo, setSyncInfo] = useState<SyncInfo | null>(null);
+  const [syncOcupado, setSyncOcupado] = useState(false);
+
+  function recarregarSync() {
+    App.SyncStatus().then(setSyncInfo).catch(() => setSyncInfo(null));
+  }
 
   function recarregar() {
     App.GetConfig().then(setCfg).catch((e) => props.onToast(String(e)));
@@ -31,6 +39,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   useEffect(() => {
     recarregar();
     App.GetFonteAtualizacao().then(setFonte).catch(() => {});
+    recarregarSync();
   }, []);
 
   async function verificarAtualizacao() {
@@ -125,6 +134,32 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
       recarregar();
     } catch (e) {
       props.onToast(String(e));
+    }
+  }
+
+  async function salvarSync() {
+    setSyncOcupado(true);
+    try {
+      await App.SetSyncConfig(syncToken.trim(), syncRepo.trim());
+      setSyncToken('');
+      props.onToast('Configurações de sincronização salvas.');
+      recarregarSync();
+    } catch (e) {
+      props.onToast(String(e));
+    } finally {
+      setSyncOcupado(false);
+    }
+  }
+
+  async function syncAcao(acao: () => Promise<{ mensagem: string }>) {
+    setSyncOcupado(true);
+    try {
+      props.onToast((await acao()).mensagem);
+      recarregarSync();
+    } catch (e) {
+      props.onToast(String(e));
+    } finally {
+      setSyncOcupado(false);
     }
   }
 
@@ -277,6 +312,71 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
             </ul>
           )}
         </section>
+        {/* Sincronização */}
+        <section className="mt-3 border rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-slate-700">Sincronização (GitHub)</h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Envia o banco do Kanban para o repositório privado <code>banco-de-dados</code> e baixa
+            dele — assim outro PC vê os mesmos dados. Crie um token em{' '}
+            github.com/settings/tokens (clássico, escopo <strong>repo</strong>) e cole abaixo.
+            {syncInfo?.temRemoto && (
+              <> Última versão no repo: <strong>{syncInfo.remotoQuando}</strong>.</>
+            )}
+          </p>
+          {syncInfo?.pendenteBaixar && (
+            <p className="mt-1 text-xs text-amber-600">
+              Há dados baixados aguardando — reinicie o app para aplicá-los.
+            </p>
+          )}
+          <div className="mt-2 flex flex-col gap-2">
+            <input
+              className="border rounded px-2 py-1 text-sm"
+              type="password"
+              placeholder="Token do GitHub (ghp_…, escopo repo)"
+              value={syncToken}
+              onChange={(e) => setSyncToken(e.target.value)}
+            />
+            <input
+              className="border rounded px-2 py-1 text-sm"
+              placeholder={syncInfo?.repo || 'luisboneta/banco-de-dados'}
+              value={syncRepo}
+              onChange={(e) => setSyncRepo(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <button
+                className="bg-blue-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
+                disabled={syncOcupado || !syncToken.trim()}
+                onClick={salvarSync}
+              >
+                Salvar
+              </button>
+              {syncInfo?.configurado && (
+                <>
+                  <button
+                    className="border rounded px-3 py-1 text-sm disabled:opacity-50"
+                    disabled={syncOcupado}
+                    onClick={() => syncAcao(App.SyncEnviar)}
+                    title="Sobe o banco deste PC para o repo"
+                  >
+                    Enviar dados
+                  </button>
+                  <button
+                    className="border rounded px-3 py-1 text-sm disabled:opacity-50"
+                    disabled={syncOcupado}
+                    onClick={() => {
+                      if (window.confirm('Baixar os dados do repo? Eles substituem os deste PC quando o app reiniciar.'))
+                        syncAcao(App.SyncReceber);
+                    }}
+                    title="Baixa o banco do repo (aplica ao reiniciar)"
+                  >
+                    Baixar dados
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+
         {/* Atualizações */}
         <section className="mt-3 border rounded-lg p-3">
           <h3 className="text-sm font-semibold text-slate-700">Atualizações</h3>

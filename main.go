@@ -51,6 +51,7 @@ func main() {
 		log.Fatalf("caminho do banco: %v", err)
 	}
 	setupLogger(path)
+	aplicarSyncPendente(path) // promove o banco baixado do repo, se houver
 	database, err := db.Init(path)
 	if err != nil {
 		log.Fatalf("db init: %v", err)
@@ -67,6 +68,7 @@ func main() {
 		func() bool { return os.Getenv("GROQ_API_KEY") != "" },
 	)
 	app := NewApp(database, propostas)
+	app.DefinirCaminhoBanco(path)
 
 	// Integração Rota 360 + Groq + parâmetros de negociação.
 	config := db.NewConfigRepo(database)

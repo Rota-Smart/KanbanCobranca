@@ -75,6 +75,23 @@ func (r *TicketRepo) Get(ctx context.Context, id int64) (*Ticket, error) {
 	return &t, nil
 }
 
+// GetPorCodService devolve o card mais recente com esse código service
+// do 360, ou nil se não houver.
+func (r *TicketRepo) GetPorCodService(ctx context.Context, cod string) (*Ticket, error) {
+	var t Ticket
+	err := r.db.QueryRowContext(ctx,
+		`SELECT `+ticketCols+` FROM tickets WHERE cod_service = ? ORDER BY id DESC LIMIT 1`, cod,
+	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
+		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("buscar ticket por cod_service: %w", err)
+	}
+	return &t, nil
+}
+
 // Move reordena o card em uma transação: abre espaço na coluna de destino,
 // grava o card, fecha o buraco na coluna de origem e registra a movimentação.
 // colunaOrigem é a coluna atual do card; posicao é o índice final na coluna de destino.

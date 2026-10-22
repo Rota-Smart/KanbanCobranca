@@ -10,18 +10,27 @@ interface Msg {
 
 // ChatDrawer: conversa com o agente Groq, que age no app — busca clientes
 // no 360, adiciona cards, cria colunas, move cards e puxa financeiro.
-export default function ChatDrawer(props: { onFechar: () => void; onMutou: () => void; onToast: (m: string) => void }) {
+// mensagemInicial (ex.: vinda do Shift+F2) é enviada automaticamente na
+// abertura, uma única vez.
+export default function ChatDrawer(props: {
+  onFechar: () => void;
+  onMutou: () => void;
+  onToast: (m: string) => void;
+  mensagemInicial?: string | null;
+  onConsumiuMensagem?: () => void;
+}) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
   const fimRef = useRef<HTMLDivElement>(null);
+  const inicialEnviada = useRef(false);
 
   useEffect(() => {
     fimRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgs, enviando]);
 
-  async function enviar() {
-    const m = texto.trim();
+  async function enviar(textoForcado?: string) {
+    const m = (textoForcado ?? texto).trim();
     if (!m || enviando) return;
     setTexto('');
     const historico: MensagemDeChat[] = msgs.map(({ papel, conteudo }) => ({ papel, conteudo }));
@@ -37,6 +46,16 @@ export default function ChatDrawer(props: { onFechar: () => void; onMutou: () =>
       setEnviando(false);
     }
   }
+
+  useEffect(() => {
+    if (inicialEnviada.current) return;
+    const m = props.mensagemInicial?.trim();
+    if (!m) return;
+    inicialEnviada.current = true;
+    props.onConsumiuMensagem?.();
+    void enviar(m);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={props.onFechar}>
