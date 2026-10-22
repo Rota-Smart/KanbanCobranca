@@ -4,7 +4,10 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Modo escuro: textos em tons de branco para melhor visibilidade.
-   Sobrescreve os tons de slate usados no app, do mais escuro ao mais claro. */
+   Cor base clara herdada por elementos sem classe de cor (nav, títulos, botões). */
+.dark { color: #f1f5f9; }
+/* Sobrescreve os tons de slate usados no app, do mais escuro ao mais claro. */
+.dark .text-slate-900 { color: #ffffff !important; }
 .dark .text-slate-800 { color: #f1f5f9 !important; }
 .dark .text-slate-700 { color: #e2e8f0 !important; }
 .dark .text-slate-600 { color: #d4dae3 !important; }
