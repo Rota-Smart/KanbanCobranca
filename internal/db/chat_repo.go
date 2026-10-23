@@ -60,6 +60,14 @@ func (r *ChatRepo) Create(ctx context.Context, titulo string) (int64, error) {
 	return res.LastInsertId()
 }
 
+// LimparVazios apaga chats que nunca receberam mensagem — restos de
+// conversas abertas e fechadas sem uso, que poluem a lista como "Nova conversa".
+func (r *ChatRepo) LimparVazios(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM chats WHERE id NOT IN (SELECT DISTINCT chat_id FROM chat_mensagens)`)
+	return err
+}
+
 // Delete apaga o chat e (pelo CASCADE) as mensagens.
 func (r *ChatRepo) Delete(ctx context.Context, id int64) error {
 	res, err := r.db.ExecContext(ctx, `DELETE FROM chats WHERE id = ?`, id)

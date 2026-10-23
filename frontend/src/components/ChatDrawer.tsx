@@ -88,17 +88,12 @@ export default function ChatDrawer(props: {
     }
   }
 
-  async function novaConversa(): Promise<number | null> {
-    try {
-      const c = await App.CriarChat();
-      setChats((cs) => [c, ...cs]);
-      setChatID(c.id);
-      setMsgs([]);
-      return c.id;
-    } catch (e) {
-      props.onToast(`⚠ ${String(e)}`);
-      return null;
-    }
+  // "+ Nova conversa" não grava nada no banco: o chat só é criado de verdade
+  // quando a primeira mensagem é enviada (em enviar). Assim conversas abertas
+  // e abandonadas não viram dezenas de "Nova conversa" vazias na lista.
+  function novaConversa() {
+    setChatID(null);
+    setMsgs([]);
   }
 
   async function apagar(id: number) {
@@ -123,9 +118,14 @@ export default function ChatDrawer(props: {
     if (!m || enviando) return;
     let id = chatID;
     if (id === null) {
-      const novo = await novaConversa();
-      if (novo === null) return;
-      id = novo;
+      try {
+        const c = await App.CriarChat();
+        id = c.id;
+        setChatID(id);
+      } catch (e) {
+        props.onToast(`⚠ ${String(e)}`);
+        return;
+      }
     }
     setTexto('');
     setMsgs((ms) => [...ms, { papel: 'user', conteudo: m }, { papel: 'assistant', conteudo: '…' }]);

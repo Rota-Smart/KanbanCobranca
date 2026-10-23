@@ -46,6 +46,9 @@ func (a *App) ListarChats() ([]db.Chat, error) {
 	if a.chats == nil {
 		return []db.Chat{}, nil
 	}
+	if err := a.chats.LimparVazios(a.ctx); err != nil {
+		return nil, friendly("ListarChats", err)
+	}
 	cs, err := a.chats.List(a.ctx)
 	if err != nil {
 		return nil, friendly("ListarChats", err)
