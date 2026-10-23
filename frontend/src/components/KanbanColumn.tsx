@@ -46,6 +46,8 @@ interface Props {
   onRenomear: (antigo: string, novo: string) => void;
   onRemover: (coluna: string) => void;
   onMover: (coluna: string, direcao: -1 | 1) => void;
+  /** Alça de arrastar a coluna (reordenação), renderizada no início do cabeçalho. */
+  alca?: React.ReactNode;
 }
 
 // Botãozinho de modo (minimizar/resumir) aplicado a todos os cards da coluna.
@@ -66,7 +68,7 @@ function BotaoModo({ ativo, titulo, children, onClick }: { ativo: boolean; titul
   );
 }
 
-export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onNovoCard, onBuscar360, onRenomear, onRemover, onMover }: Props) {
+export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna });
   const [recolhida, setRecolhida] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
@@ -109,6 +111,7 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDo
     >
       <div className="flex items-center justify-between px-1.5 pb-2.5">
         <div className="flex items-center gap-2 min-w-0">
+          {alca}
           <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${corPorColuna[coluna] ?? 'bg-slate-400'}`} aria-hidden />
           {editando ? (
             <form
@@ -156,7 +159,7 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDo
             {menuAberto && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setMenuAberto(false)} />
-                <div className="absolute right-0 top-6 z-50 glass rounded-xl shadow-xl py-1 w-44 text-sm">
+                <div className="absolute right-0 top-6 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 w-44 text-sm">
                   <button
                     className="block w-full text-left px-3 py-1.5 hover:bg-sky-500/10"
                     onClick={() => {

@@ -55,6 +55,9 @@ func AgentTools() []map[string]any {
 		tool("criar_coluna",
 			"Cria coluna nova no Kanban.",
 			map[string]any{"nome": map[string]any{"type": "string"}}, []string{"nome"}),
+		tool("reordenar_colunas",
+			"Muda a ordem das colunas do Kanban. 'ordem' deve ser a lista COMPLETA de todas as colunas existentes na ordem desejada — liste antes com listar_colunas.",
+			map[string]any{"ordem": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, []string{"ordem"}),
 		tool("financeiro_cliente",
 			"Consulta o cliente no 360: saldo devedor, faturas atrasadas, OS ativas, equipamentos e atendimentos.",
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
@@ -134,7 +137,7 @@ var (
 	reVerbosReescrita = regexp.MustCompile(`(?i)(melhor\w*|reescrev\w*|aprimor\w*|corrig\w*|revis\w*|polir|reformul\w*|arrumar|ajustar)`)
 	rePerguntaMeta    = regexp.MustCompile(`(?i)^\s*(como (você|vc|o assistente|funcion)|o que (você|vc) (faz|pode|é)|quem (é|te|lhe)|para que (você|vc)? ?serve|quais (ferramentas|comandos)|me ajuda a usar|o que sab\w* fazer)`)
 	// Comandos de ação: se o usuário pediu uma dessas, o fast-path não serve.
-	reAcaoComando = regexp.MustCompile(`(?i)(busque|buscar|procure|procurar|pesquis\w+|adicion\w+|import\w+|moviment\w+|mova|mover|crie|criar|respond\w+|envi\w+|altere|alterar|mudar|consulte|consultar|gere|gerar|liste|listar|abra|abrir)`)
+	reAcaoComando = regexp.MustCompile(`(?i)(busque|buscar|procure|procurar|pesquis\w+|adicion\w+|import\w+|moviment\w+|mova|mover|crie|criar|reorden\w+|orden\w+|respond\w+|envi\w+|altere|alterar|mudar|consulte|consultar|gere|gerar|liste|listar|abra|abrir)`)
 	// Substantivos de contexto: indicam que a pergunta depende de dados do app
 	// (só descartam o fast-path de perguntas; não bloqueiam reescrita de
 	// texto longo, onde costumam aparecer DENTRO do texto citado).

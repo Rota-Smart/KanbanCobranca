@@ -33,6 +33,33 @@ export default function ChatDrawer(props: {
   const pararVoz = useRef<(() => void) | null>(null);
   const fimRef = useRef<HTMLDivElement>(null);
   const inicialEnviada = useRef(false);
+  const chatIDRef = useRef<number | null>(null);
+  // Largura do drawer, ajustável arrastando a borda esquerda (persistida).
+  const [largura, setLargura] = useState(() => {
+    const n = Number(localStorage.getItem('chatLargura'));
+    return n >= 320 && n <= window.innerWidth - 80 ? n : 544;
+  });
+  const larguraRef = useRef(largura);
+  larguraRef.current = largura;
+
+  // iniciarRedimensionar arrasta a borda esquerda: a largura cresce na
+  // medida em que o ponteiro vai para a esquerda.
+  function iniciarRedimensionar(e: React.PointerEvent) {
+    e.preventDefault();
+    const x0 = e.clientX;
+    const w0 = larguraRef.current;
+    const mover = (ev: PointerEvent) => {
+      const nova = Math.min(window.innerWidth - 80, Math.max(320, w0 + (x0 - ev.clientX)));
+      setLargura(nova);
+    };
+    const soltar = () => {
+      window.removeEventListener('pointermove', mover);
+      window.removeEventListener('pointerup', soltar);
+      localStorage.setItem('chatLargura', String(larguraRef.current));
+    };
+    window.addEventListener('pointermove', mover);
+    window.addEventListener('pointerup', soltar);
+  }
 
   useEffect(() => {
     fimRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -73,17 +100,24 @@ export default function ChatDrawer(props: {
   useEffect(() => {
     App.ListarChats().then((cs) => {
       setChats(cs);
-      if (cs.length > 0) abrir(cs[0].id);
+      // Se há mensagem inicial (Shift+F2), ela cria um chat novo — abrir o
+      // mais recente aqui disputaria com o envio e sobrescreveria a tela
+      // com a conversa antiga quando a resposta chegasse por último.
+      if (cs.length > 0 && !props.mensagemInicial?.trim()) abrir(cs[0].id);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function abrir(id: number) {
+    chatIDRef.current = id;
     setChatID(id);
+    setMsgs([]); // limpa já: evita exibir a conversa anterior enquanto carrega
     try {
       const ms = await App.MensagensDoChat(id);
+      if (chatIDRef.current !== id) return; // o usuário já trocou de chat
       setMsgs(ms.map((m) => ({ id: m.id, papel: m.papel as Msg['papel'], conteudo: m.conteudo, acoes: m.acoes })));
     } catch {
+      if (chatIDRef.current !== id) return;
       setMsgs([]);
     }
   }
@@ -92,6 +126,7 @@ export default function ChatDrawer(props: {
   // quando a primeira mensagem é enviada (em enviar). Assim conversas abertas
   // e abandonadas não viram dezenas de "Nova conversa" vazias na lista.
   function novaConversa() {
+    chatIDRef.current = null;
     setChatID(null);
     setMsgs([]);
   }
@@ -121,6 +156,7 @@ export default function ChatDrawer(props: {
       try {
         const c = await App.CriarChat();
         id = c.id;
+        chatIDRef.current = id;
         setChatID(id);
       } catch (e) {
         props.onToast(`⚠ ${String(e)}`);
@@ -155,9 +191,19 @@ export default function ChatDrawer(props: {
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
       <aside
-        className="glass w-[34rem] max-w-full h-full shadow-xl flex"
+        className="glass h-full shadow-xl flex relative"
+        style={{ width: largura, maxWidth: '100%' }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Borda de redimensionar: arraste para alargar/encolher o assistente. */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Arraste para redimensionar o assistente"
+          title="Arraste para redimensionar"
+          className="absolute left-0 top-0 h-full w-1.5 cursor-ew-resize hover:bg-sky-400/40 z-10"
+          onPointerDown={iniciarRedimensionar}
+        />
         {/* Coluna de conversas */}
         <div className="w-44 shrink-0 border-r border-white/20 dark:border-white/10 flex flex-col p-2 gap-1">
           <button

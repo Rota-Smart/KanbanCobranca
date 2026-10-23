@@ -320,6 +320,22 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		}
 		return "Coluna criada: " + criada, "criou a coluna " + criada, nil
 
+	case "reordenar_colunas":
+		brutos, ok := args["ordem"].([]any)
+		if !ok || len(brutos) == 0 {
+			return "", "", fmt.Errorf("ordem é obrigatória: a lista COMPLETA das colunas na ordem desejada")
+		}
+		ordem := make([]string, 0, len(brutos))
+		for _, b := range brutos {
+			if s, _ := b.(string); strings.TrimSpace(s) != "" {
+				ordem = append(ordem, strings.TrimSpace(s))
+			}
+		}
+		if err := a.colunas.Reordenar(ctx, ordem); err != nil {
+			return "", "", err
+		}
+		return "Nova ordem das colunas: " + strings.Join(ordem, " | "), "reordenou as colunas", nil
+
 	case "financeiro_cliente":
 		cod := argStr("codService")
 		if cod == "" {

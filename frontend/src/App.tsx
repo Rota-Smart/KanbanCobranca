@@ -2,13 +2,21 @@ import {
   DndContext,
   KeyboardSensor,
   PointerSensor,
+  closestCenter,
   closestCorners,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragOverEvent,
 } from '@dnd-kit/core';
-import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import {
+  SortableContext,
+  arrayMove,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useState } from 'react';
 import * as bindings from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
@@ -73,6 +81,37 @@ function temaInicial(): 'claro' | 'escuro' {
 // colunaDisparaCobranca: mover para cá puxa o financeiro do 360 e gera a proposta.
 const colunaDisparaCobranca = 'Cobrança';
 
+// ColunaOrdenavel torna a coluna reordenável por arraste. Só a alça do
+// cabeçalho ativa o arraste (listeners nela), para não brigar com o arraste
+// dos cards, que acontece em outro DndContext.
+function ColunaOrdenavel(props: React.ComponentProps<typeof KanbanColumn>) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: props.coluna });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={isDragging ? 'relative z-10 opacity-80' : 'relative'}
+    >
+      <KanbanColumn
+        {...props}
+        alca={
+          <button
+            ref={setActivatorNodeRef}
+            {...attributes}
+            {...listeners}
+            aria-label={`Arrastar coluna ${props.coluna}`}
+            title="Arraste para reordenar as colunas"
+            className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:hover:text-white leading-none select-none touch-none px-0.5 text-xs"
+          >
+            ⋮⋮
+          </button>
+        }
+      />
+    </div>
+  );
+}
+
 export default function App() {
   const [colunas, setColunas] = useState<string[]>(fallbackColunas);
   const [board, setBoard] = useState<Board>({});
@@ -85,6 +124,7 @@ export default function App() {
   const [configAberta, setConfigAberta] = useState(false);
   const [chatAberto, setChatAberto] = useState(false);
   const [chatMsgInicial, setChatMsgInicial] = useState<string | null>(null);
+  const [chatKey, setChatKey] = useState(0); // cada Shift+F2 remonta o drawer p/ reenviar
   const [tema, setTema] = useState<'claro' | 'escuro'>(temaInicial);
   const [sincronizando, setSincronizando] = useState(false);
   const [modos, setModos] = useState<ModosCards>(modosDoStorage);
@@ -177,6 +217,7 @@ export default function App() {
     const offTela = EventsOn('atalho:tela', (d: TicketDaTela) => {
       const msg = mensagemChatDaTela(d);
       if (msg) {
+        setChatKey((k) => k + 1);
         setChatAberto(true);
         setChatMsgInicial(msg);
       } else {
@@ -337,15 +378,30 @@ export default function App() {
     const i = colunas.indexOf(nomeColuna);
     const j = i + direcao;
     if (i < 0 || j < 0 || j >= colunas.length) return;
-    const nova = [...colunas];
-    [nova[i], nova[j]] = [nova[j], nova[i]];
-    setColunas(nova); // feedback imediato; o banco grava a ordem nova
+    await gravarOrdemColunas([...colunas].map((c, k) => (k === i ? colunas[j] : k === j ? colunas[i] : c)));
+  }
+
+  // gravarOrdemColunas aplica a ordem nova na tela e persiste; se o banco
+  // recusar, volta ao estado anterior recarregando.
+  async function gravarOrdemColunas(nova: string[]) {
+    const antiga = colunas;
+    setColunas(nova); // feedback imediato
     try {
       await bindings.ReordenarColunas(nova);
     } catch (e) {
       showToast(String(e));
-      await recarregarBoard();
+      setColunas(antiga);
     }
+  }
+
+  // onColunaDragEnd reordena as colunas arrastadas pela alça do cabeçalho.
+  function onColunaDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const de = colunas.indexOf(String(active.id));
+    const para = colunas.indexOf(String(over.id));
+    if (de < 0 || para < 0) return;
+    void gravarOrdemColunas(arrayMove(colunas, de, para));
   }
 
   if (carregando) return <div className="p-8 text-slate-500">Carregando…</div>;
@@ -422,28 +478,33 @@ export default function App() {
         onDragEnd={onDragEnd}
       >
         <div className="flex gap-3 p-3 overflow-x-auto overscroll-x-contain flex-1">
-          {colunas.map((c) => (
-            <KanbanColumn
-              key={c}
-              coluna={c}
-              tickets={board[c] ?? []}
-              acordosPorTicket={{}}
-              modoDoCard={modoDoCard}
-              onModoCard={setModoCard}
-              modoColuna={modos.colunas[c] ?? modos.global}
-              onModoColuna={setModoColuna}
-              onAbrir={(t) => {
-                setPreCobranca(null);
-                setAberto(t);
-              }}
-              onExcluir={excluir}
-              onNovoCard={novoCard}
-              onBuscar360={setBuscar360Coluna}
-              onRenomear={renomearColuna}
-              onRemover={removerColuna}
-              onMover={moverColuna}
-            />
-          ))}
+          {/* Contexto próprio para o arraste de colunas (o de cima é dos cards). */}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onColunaDragEnd}>
+            <SortableContext items={colunas} strategy={horizontalListSortingStrategy}>
+              {colunas.map((c) => (
+                <ColunaOrdenavel
+                  key={c}
+                  coluna={c}
+                  tickets={board[c] ?? []}
+                  acordosPorTicket={{}}
+                  modoDoCard={modoDoCard}
+                  onModoCard={setModoCard}
+                  modoColuna={modos.colunas[c] ?? modos.global}
+                  onModoColuna={setModoColuna}
+                  onAbrir={(t) => {
+                    setPreCobranca(null);
+                    setAberto(t);
+                  }}
+                  onExcluir={excluir}
+                  onNovoCard={novoCard}
+                  onBuscar360={setBuscar360Coluna}
+                  onRenomear={renomearColuna}
+                  onRemover={removerColuna}
+                  onMover={moverColuna}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
           <button
             className="glass-soft rounded-2xl w-56 shrink-0 self-start p-3 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-white font-medium text-left"
             onClick={criarColuna}
@@ -483,6 +544,7 @@ export default function App() {
 
       {chatAberto && (
         <ChatDrawer
+          key={chatKey}
           onFechar={() => setChatAberto(false)}
           onMutou={recarregarBoard}
           onToast={showToast}
