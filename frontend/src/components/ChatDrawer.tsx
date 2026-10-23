@@ -11,6 +11,22 @@ interface Msg {
   acoes?: AcaoDoAgente[];
 }
 
+// textoFormatado converte o markdown simples que o modelo usa (**negrito**,
+// *itálico*, `código`) em elementos de verdade — o usuário nunca vê os asteriscos.
+function textoFormatado(s: string): React.ReactNode[] {
+  return s.split(/(\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`\n]+`)/g).map((p, i) => {
+    if (p.startsWith('**') && p.endsWith('**') && p.length > 4) return <strong key={i}>{p.slice(2, -2)}</strong>;
+    if (p.startsWith('*') && p.endsWith('*') && p.length > 2) return <em key={i}>{p.slice(1, -1)}</em>;
+    if (p.startsWith('`') && p.endsWith('`') && p.length > 2)
+      return (
+        <code key={i} className="px-1 rounded bg-slate-500/15 text-[0.85em]">
+          {p.slice(1, -1)}
+        </code>
+      );
+    return p;
+  });
+}
+
 // ChatDrawer: conversas com o agente Groq, que age no app — busca clientes
 // no 360, adiciona cards, cria colunas, move cards e puxa financeiro.
 // Cada conversa tem histórico persistido no banco; a lista de conversas fica
@@ -270,7 +286,7 @@ export default function ChatDrawer(props: {
                     m.papel === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100'
                   }`}
                 >
-                  {m.conteudo}
+                  {m.papel === 'assistant' ? textoFormatado(m.conteudo) : m.conteudo}
                 </div>
                 {m.acoes && m.acoes.length > 0 && (
                   <ul className="mt-1 text-xs text-emerald-700 flex flex-col gap-0.5">
