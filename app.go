@@ -35,8 +35,10 @@ type App struct {
 	avaliador  *service.Avaliador
 	chats      *db.ChatRepo
 
-	muRota sync.Mutex
-	rota   *rota360.Cliente // sessão ativa do 360; nil se desconectado
+	muRota        sync.Mutex
+	rota          *rota360.Cliente // sessão ativa do 360; nil se desconectado
+	muConectando  sync.Mutex
+	conectando360 bool // detecção CDP em andamento (ConectarRota360 em background)
 }
 
 // WireIntegracao injeta as dependências da integração (chamado pelo main).

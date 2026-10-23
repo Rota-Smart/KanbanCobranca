@@ -2,7 +2,7 @@ Rota Smart — Kanban de Cobrança
 ================================
 
 COMO INSTALAR (outro computador):
-1. Copie rota-smart.exe para qualquer pasta e execute com dois cliques — não
+1. Copie rotasuite.exe para qualquer pasta e execute com dois cliques — não
    precisa instalar nada (apenas WebView2, já incluso no Windows 10/11).
 2. Dados ficam em %APPDATA%\RotaSmart (banco, backups diários, logs).
 3. O exe é maior desde a v1.3.0 (~79 MB): traz o modelo de voz em português
@@ -48,7 +48,7 @@ resposta (diga "melhore o texto e envie") e alterar o status.
 ATUALIZAÇÕES:
 ⚙ Configurações → Atualizações → "Verificar atualizações" — o app baixa e se
 reinicia sozinho a partir da branch release de github.com/luisboneta/KanbanCobranca
-(versao.txt + rota-smart.exe). Para publicar versão nova: bump em
+(versao.txt + rotasuite.exe). Para publicar versão nova: bump em
 internal/atualizacao/atualizacao.go (VersaoApp), wails build, e suba o exe + o
 versao.txt novos nessa branch.
 

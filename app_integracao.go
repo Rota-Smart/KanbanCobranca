@@ -19,9 +19,10 @@ import (
 
 // Chaves da tabela config.
 const (
-	cfgGroqChave  = "groq_chave"
-	cfgGroqModelo = "groq_modelo"
-	cfgRotaCookie = "rota360_cookie"
+	cfgGroqChave    = "groq_chave"
+	cfgGroqModelo   = "groq_modelo"
+	cfgRotaCookie   = "rota360_cookie"
+	evRotaConectado = "rota360:conectado"
 )
 
 // Rota360Status é o estado da sessão com o portal 360.
@@ -77,24 +78,46 @@ func (a *App) Rota360Status() Rota360Status {
 
 // ConectarRota360 é o botão explícito: tenta o banco do Chrome e, em falha,
 // o Chrome DevTools Protocol (janela de conexão do app).
+// A detecção via CDP pode levar minutos (espera o login na janela do
+// Chrome), então roda em goroutine e o frontend acompanha via Rota360Status
+// / evento "rota360:conectado" — a chamada volta na hora.
 func (a *App) ConectarRota360() (Rota360Status, error) {
 	if st := a.Rota360Status(); st.Conectado {
 		return st, nil
 	}
-	c, origem, err := rota360.SessaoDetectada()
-	if err != nil {
-		st := Rota360Status{Conectado: false, Mensagem: err.Error()}
-		return st, fmt.Errorf("%s", err.Error())
+	a.muConectando.Lock()
+	jaRodando := a.conectando360
+	a.conectando360 = true
+	a.muConectando.Unlock()
+	if jaRodando {
+		return Rota360Status{Conectado: false,
+			Mensagem: "Conexão já em andamento — faça o login na janela do Chrome."}, nil
 	}
-	a.muRota.Lock()
-	a.rota = c
-	a.muRota.Unlock()
-	// Persiste para a sessão sobreviver a reinícios do app (a leitura
-	// passiva do banco do Chrome não é mais possível no Chrome recente).
-	if ck := c.CookieSalva(); ck != nil {
-		a.definirRota(c, origem, ck.Nome+"="+ck.Valor)
-	}
-	return Rota360Status{Conectado: true, Origem: origem}, nil
+	go func() {
+		defer func() {
+			a.muConectando.Lock()
+			a.conectando360 = false
+			a.muConectando.Unlock()
+		}()
+		c, origem, err := rota360.SessaoDetectada()
+		if err != nil {
+			runtime.EventsEmit(a.ctx, evRotaConectado,
+				Rota360Status{Conectado: false, Mensagem: err.Error()})
+			return
+		}
+		a.muRota.Lock()
+		a.rota = c
+		a.muRota.Unlock()
+		// Persiste para a sessão sobreviver a reinícios do app (a leitura
+		// passiva do banco do Chrome não é mais possível no Chrome recente).
+		if ck := c.CookieSalva(); ck != nil {
+			a.definirRota(c, origem, ck.Nome+"="+ck.Valor)
+		}
+		runtime.EventsEmit(a.ctx, evRotaConectado,
+			Rota360Status{Conectado: true, Origem: origem})
+	}()
+	return Rota360Status{Conectado: false,
+		Mensagem: "Abrindo janela de conexão do Chrome — faça o login no 360; o app conecta sozinho."}, nil
 }
 
 // DefinirCookieRota360 grava um cookie colado manualmente (fallback).

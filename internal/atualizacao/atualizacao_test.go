@@ -49,7 +49,7 @@ func TestVerificarComNovaVersaoE404(t *testing.T) {
 func TestBaixarEInstalar(t *testing.T) {
 	exeFake := strings.Repeat("M", 2<<20) // > 1 MB
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/rota-smart.exe" {
+		if r.URL.Path == "/rotasuite.exe" || r.URL.Path == "/rota-smart.exe" {
 			w.Write([]byte(exeFake))
 			return
 		}

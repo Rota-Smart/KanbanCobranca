@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as App from '../../wailsjs/go/main/App';
+import { EventsOn } from '../../wailsjs/runtime/runtime';
 import type { ConfigApp, ParametroNegociacao, SyncInfo } from '../wails-types';
 
 const MODELOS_SUGERIDOS = [
@@ -84,17 +85,31 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
 
   const [conectando360, setConectando360] = useState(false);
 
+  // A conexão CDP roda em background no Go (pode esperar o login do usuário
+  // na janela do Chrome); o resultado chega pelo evento rota360:conectado.
   async function conectarChrome() {
     setConectando360(true);
     try {
       await App.ConectarRota360();
-      recarregar();
     } catch (e) {
       props.onToast(String(e));
-    } finally {
       setConectando360(false);
     }
   }
+
+  useEffect(() => {
+    if (!conectando360) return;
+    const off = EventsOn('rota360:conectado', (st: { conectado: boolean; mensagem?: string }) => {
+      setConectando360(false);
+      if (st.conectado) {
+        props.onToast('360 conectado.');
+        recarregar();
+      } else {
+        props.onToast(st.mensagem || 'Não foi possível conectar ao 360.');
+      }
+    });
+    return () => off();
+  }, [conectando360]);
 
   async function colarCookie() {
     if (!cookieTxt.trim()) return;
@@ -477,7 +492,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
           <h3 className="text-sm font-semibold text-slate-700">Atualizações</h3>
           <p className="text-xs text-slate-500 mt-1">
             O app busca a versão nova em um repositório GitHub (branch de release
-            com <code>versao.txt</code> e <code>rota-smart.exe</code>) e se reinstala sozinho.
+            com <code>versao.txt</code> e <code>rotasuite.exe</code>) e se reinstala sozinho.
           </p>
           <div className="mt-2 flex gap-1">
             <input

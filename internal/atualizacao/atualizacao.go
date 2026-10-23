@@ -1,7 +1,8 @@
 // Package atualizacao implementa o auto-update do app: a versão publicada
 // vive em um repositório GitHub (branch de release) com dois arquivos na raiz:
 //   - versao.txt      (ex.: "1.1.0")
-//   - rota-smart.exe  (binário novo)
+//   - rotasuite.exe   (binário novo; aceita também o nome antigo
+//     rota-smart.exe enquanto existirem instalações antigas)
 //
 // A URL-base é configurável (padrão: branch release de Rota-Smart/KanbanCobranca).
 package atualizacao
@@ -18,7 +19,7 @@ import (
 )
 
 // VersaoApp é a versão deste binário; bump a cada release.
-const VersaoApp = "1.4.3"
+const VersaoApp = "1.4.4"
 
 // BasePadrao é a fonte de atualização padrão (branch release do repo).
 const BasePadrao = "https://raw.githubusercontent.com/Rota-Smart/KanbanCobranca/release"
@@ -76,9 +77,13 @@ func (c *Cliente) Verificar(ctx context.Context) (Info, error) {
 
 // Baixar grava o exe novo em destino (caminho completo do arquivo).
 func (c *Cliente) Baixar(ctx context.Context, destino string) error {
-	raw, err := c.get(ctx, "rota-smart.exe")
+	raw, err := c.get(ctx, "rotasuite.exe")
 	if err != nil {
-		return err
+		// Compatibilidade: releases antigas publicavam só o nome antigo.
+		raw, err = c.get(ctx, "rota-smart.exe")
+		if err != nil {
+			return err
+		}
 	}
 	if len(raw) < 1<<20 {
 		return fmt.Errorf("arquivo baixado pequeno demais (%d bytes) — release inválida", len(raw))

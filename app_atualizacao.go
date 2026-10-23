@@ -64,7 +64,7 @@ func (a *App) InstalarAtualizacao() (string, error) {
 		return "", friendly("InstalarAtualizacao", err)
 	}
 	dir := filepath.Dir(exeAtual)
-	novo := filepath.Join(dir, "rota-smart.novo.exe")
+	novo := filepath.Join(dir, "rotasuite.novo.exe")
 
 	cliente := atualizacao.NovoCliente(a.fonteAtualizacao())
 	// o Timeout de 20s do cliente serve para metadados (versao.txt); o exe

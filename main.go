@@ -108,7 +108,7 @@ func main() {
 	}
 
 	err = wails.Run(&options.App{
-		Title:  "Kanban Cobrança",
+		Title:  "RotaSuite",
 		Width:  1024,
 		Height: 768,
 		AssetServer: &assetserver.Options{
