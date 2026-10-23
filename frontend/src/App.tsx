@@ -238,6 +238,23 @@ export default function App() {
     setTimeout(() => setToast(''), 4000);
   }
 
+  // Resultado da atualização em background: os avisos ficam aqui (nível App)
+  // porque a tela de Configurações pode estar fechada quando o download
+  // termina ou falha — os toasts morreriam com o unmount dela.
+  useEffect(() => {
+    const offOk = EventsOn('atualizacao:pronto', (d: { versao: string }) => {
+      setToast(`Atualizado para a versão ${d.versao} — o app vai reiniciar.`);
+    });
+    const offErr = EventsOn('atualizacao:erro', (d: { mensagem: string }) => {
+      setToast(d.mensagem || 'Falha na atualização.');
+      setTimeout(() => setToast(''), 6000);
+    });
+    return () => {
+      offOk();
+      offErr();
+    };
+  }, []);
+
   async function recarregarBoard() {
     try {
       const [cs, tickets] = await Promise.all([bindings.GetColunas(), bindings.GetTickets()]);

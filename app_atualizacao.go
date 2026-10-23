@@ -52,6 +52,14 @@ const (
 	evAtualizaErro      = "atualizacao:erro"      // {mensagem}
 )
 
+// percento devolve 0–100, ou -1 quando o total é desconhecido.
+func percento(baixados, total int64) int {
+	if total <= 0 {
+		return -1
+	}
+	return int(100 * baixados / total)
+}
+
 // InstalarAtualizacao valida a versão nova e devolve na hora; o download
 // (dezenas de MB) roda em goroutine — sair da tela de Configurações, ou até
 // navegar no board, não interrompe. Ao terminar, instala e reinicia sozinho,
@@ -102,23 +110,27 @@ func (a *App) baixarEInstalar(info atualizacao.Info) {
 
 	cliente := atualizacao.NovoCliente(a.fonteAtualizacao())
 	// o Timeout de 20s do cliente serve para metadados (versao.txt); o exe
-	// tem ~79 MB e estouraria os 20s — o ctx de 120s é quem limita o download.
+	// tem ~79 MB — com Timeout=0, quem limita é o ctx: 15 min bastam para
+	// conexões bem lentas (o download é streming; 120s matava links lentos
+	// no meio do caminho).
 	cliente.HTTP.Timeout = 0
-	ctx, cancel := context.WithTimeout(a.ctx, 120*time.Second)
+	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Minute)
 	defer cancel()
 	ultimo := time.Time{}
 	err = cliente.BaixarProgresso(ctx, novo, func(baixados, total int64) {
-		if total <= 0 {
+		// emite no máximo ~2x por segundo para não inundar a WebView —
+		// inclusive quando total=0 (sem Content-Length), senão a tela fica
+		// parada sem resposta nenhuma
+		if total > 0 && time.Since(ultimo) < 500*time.Millisecond && baixados < total {
 			return
 		}
-		// emite no máximo ~2x por segundo para não inundar a WebView
-		if time.Since(ultimo) < 500*time.Millisecond && baixados < total {
+		if total <= 0 && time.Since(ultimo) < 500*time.Millisecond {
 			return
 		}
 		ultimo = time.Now()
 		wailsRuntime.EventsEmit(a.ctx, evAtualizaProgresso, map[string]any{
 			"baixados": baixados, "total": total,
-			"percento": int(100 * baixados / total),
+			"percento": percento(baixados, total),
 		})
 	})
 	if err != nil {

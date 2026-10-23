@@ -19,7 +19,7 @@ import (
 )
 
 // VersaoApp é a versão deste binário; bump a cada release.
-const VersaoApp = "1.7.3"
+const VersaoApp = "1.7.4"
 
 // BasePadrao é a fonte de atualização padrão (branch release do repo).
 const BasePadrao = "https://raw.githubusercontent.com/Rota-Smart/KanbanCobranca/release"
@@ -82,8 +82,34 @@ func (c *Cliente) Baixar(ctx context.Context, destino string) error {
 
 // BaixarProgresso baixa o exe novo em streaming (sem carregar os ~79 MB na
 // memória) e chama fn a cada pedaço com (baixados, total); total vem do
-// Content-Length e pode ser 0 se o servidor não informar.
+// Content-Length e pode ser 0 se o servidor não informar (neste caso fn
+// também é chamado, com total=0, só com o volume baixado).
+//
+// Conexões com o raw.githubusercontent.com podem cair no meio dos ~79 MB;
+// tenta até 3 vezes (recomeçando do zero) antes de desistir.
 func (c *Cliente) BaixarProgresso(ctx context.Context, destino string, fn func(baixados, total int64)) error {
+	var ultimoErr error
+	for tentativa := 1; tentativa <= 3; tentativa++ {
+		if tentativa > 1 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
+		err := c.baixarUmaVez(ctx, destino, fn)
+		if err == nil {
+			return nil
+		}
+		ultimoErr = err
+		// destino já virou o arquivo final (sucesso parcial não existe aqui);
+		// remove sobras do .tmp para a próxima tentativa começar limpa.
+		_ = os.Remove(destino + ".tmp")
+	}
+	return ultimoErr
+}
+
+func (c *Cliente) baixarUmaVez(ctx context.Context, destino string, fn func(baixados, total int64)) error {
 	baixar := func(arquivo string) (io.ReadCloser, int64, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Base+"/"+arquivo, nil)
 		if err != nil {
@@ -148,6 +174,10 @@ func (c *Cliente) BaixarProgresso(ctx context.Context, destino string, fn func(b
 		os.Remove(tmp)
 		return err
 	}
+	if total > 0 && st.Size() != total {
+		os.Remove(tmp)
+		return fmt.Errorf("download incompleto: %d de %d bytes", st.Size(), total)
+	}
 	if st.Size() < 1<<20 {
 		os.Remove(tmp)
 		return fmt.Errorf("arquivo baixado pequeno demais (%d bytes) — release inválida", st.Size())
@@ -158,19 +188,34 @@ func (c *Cliente) BaixarProgresso(ctx context.Context, destino string, fn func(b
 // Instalar troca o executável em execução pelo arquivo novo e reinicia o app.
 // No Windows não é possível sobrescrever o exe rodando, mas RENOMEAR é
 // permitido: renomeia o atual para .old, move o novo para o lugar e
-// relança o processo.
+// relança o processo. O antivírus (Kaspersky, Defender) costuma segurar o exe
+// recém-baixado/encerrado por alguns segundos, então os renames tentam
+// algumas vezes com pausa antes de falhar de verdade.
 func Instalar(exeAtual, exeNovo string) error {
 	velho := exeAtual + ".old"
 	_ = os.Remove(velho)
-	if err := os.Rename(exeAtual, velho); err != nil {
+	if err := renomearComPaciencia(exeAtual, velho); err != nil {
 		return fmt.Errorf("renomear executável atual: %w", err)
 	}
-	if err := os.Rename(exeNovo, exeAtual); err != nil {
+	if err := renomearComPaciencia(exeNovo, exeAtual); err != nil {
 		// desfaz para não deixar o app sem binário
 		_ = os.Rename(velho, exeAtual)
 		return fmt.Errorf("instalar novo executável: %w", err)
 	}
 	return nil
+}
+
+// renomearComPaciencia tenta o rename por até ~10s (antivírus/liberação do
+// arquivo costumam resolver nesse intervalo).
+func renomearComPaciencia(origem, destino string) error {
+	var err error
+	for i := 0; i < 10; i++ {
+		if err = os.Rename(origem, destino); err == nil {
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	return err
 }
 
 // LimparVelho apaga o backup .old de uma atualização anterior (no startup).

@@ -59,10 +59,12 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   }
 
   const [progresso, setProgresso] = useState<number | null>(null);
+  const [baixadosMb, setBaixadosMb] = useState(0);
 
   // Clicar em atualizar devolve na hora: o download do exe (~79 MB) roda em
   // background no Go e continua mesmo se o usuário fechar esta tela. O
-  // resultado chega pelos eventos atualizacao:*.
+  // resultado final (erro/pronto) é anunciado por toasts globais no App;
+  // aqui fica só a barrinha de progresso.
   async function instalarAtualizacao() {
     setAtualizando(true);
     setProgresso(null);
@@ -76,13 +78,15 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   }
 
   useEffect(() => {
-    const offP = EventsOn('atualizacao:progresso', (d: { percento: number }) => setProgresso(d.percento));
+    const offP = EventsOn('atualizacao:progresso', (d: { baixados: number; total: number; percento: number }) => {
+      setProgresso(d.percento >= 0 ? d.percento : -1);
+      setBaixadosMb(Math.round(d.baixados / (1024 * 1024)));
+    });
     const offOk = EventsOn('atualizacao:pronto', () => {
       setProgresso(100);
       // o app reinicia sozinho em seguida
     });
-    const offErr = EventsOn('atualizacao:erro', (d: { mensagem: string }) => {
-      props.onToast(d.mensagem || 'Falha ao baixar a atualização.');
+    const offErr = EventsOn('atualizacao:erro', () => {
       setAtualizando(false);
       setProgresso(null);
     });
@@ -558,7 +562,10 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               </button>
               {progresso !== null && (
                 <p className="mt-1 text-xs text-slate-500">
-                  Baixando… {progresso}% — pode fechar esta tela, o download continua.
+                  {progresso >= 0
+                    ? `Baixando… ${progresso}%`
+                    : `Baixando… ${baixadosMb} MB`}{' '}
+                  — pode fechar esta tela, o download continua e o resultado aparece como aviso.
                 </p>
               )}
             </>

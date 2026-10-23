@@ -43,6 +43,14 @@ COMO INSTALAR (outro computador):
    (sincronização, conexão, erros etc.) aparecem agora na frente de qualquer
    card, painel ou janela aberta do app — não ficam mais escondidas atrás.
 
+12. ATUALIZAÇÃO MAIS ROBUSTA (novo na v1.7.4): o download do exe novo não
+   trava mais em conexões lentas (antes cortava em 2 minutos no meio do
+   caminho); tenta 3 vezes em caso de queda, confere o tamanho do arquivo
+   baixado e espera até 10s o antivírus liberar o exe na hora de instalar.
+   O aviso de "atualizado/vai reiniciar" ou de erro aparece mesmo com a tela
+   de Configurações fechada, e a barra mostra o volume baixado mesmo quando
+   o servidor não informa o tamanho total.
+
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
    guia do Chrome; faça login lá UMA vez e o app captura e salva o cookie
