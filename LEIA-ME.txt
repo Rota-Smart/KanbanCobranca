@@ -7,16 +7,29 @@ COMO INSTALAR (outro computador):
 2. Dados ficam em %APPDATA%\RotaSmart (banco, backups diários, logs).
 3. O exe é maior desde a v1.3.0 (~79 MB): traz o modelo de voz em português
    embutido (veja abaixo).
+4. MODO PORTÁTIL (novo na v1.4.0): se a pasta "RotaSmart-dados" estiver ao
+   lado do exe, TODO o dados local (banco com configurações, colunas,
+   parâmetros) é lido dela — o zip já vem com a pasta, então o app abre
+   já configurado. Para zera, basta apagar a pasta.
 
 PRIMEIROS PASSOS:
-1. ⚙ Configurações → Sessão do 360: com o Chrome logado em 360.rotagroup.com.br,
-   "Detectar no Chrome" (ou cole o cookie: F12 → Application → Cookies).
+1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
+   guia do Chrome; faça login lá UMA vez e o app captura e salva o cookie
+   (nas próximas é automático). Alternativa manual: cole o cookie
+   (F12 → Application → Cookies).
 2. ⚙ Configurações → Groq: cole sua chave gratuita (console.groq.com); modelo
    sugerido openai/gpt-oss-120b (alternativa rápida: openai/gpt-oss-20b).
 3. 💬 Assistente: peça ações em português ("adicione o cliente 24755 em Cobrança",
    "abra o ticket 67220", "melhore o texto do ticket 67220 adicionando X e envie",
    "mude o status do ticket 67220 para Concluído").
 4. Arraste um card para a coluna "Cobrança" para gerar a proposta automática.
+
+-----------------------------------------------
+CONEXÃO COM O 360 (novo na v1.4.0)
+-----------------------------------------------
+O Chrome novo bloqueia a leitura do cookie pelo app (criptografia App-Bound).
+Agora a conexão usa uma guia própria: "Conectar" abre o 360, você loga uma vez,
+o app captura o cookie da guia e salva — e reutiliza nas próximas aberturas.
 
 -----------------------------------------------
 FALE COM O ASSISTENTE (novo na v1.3.0)

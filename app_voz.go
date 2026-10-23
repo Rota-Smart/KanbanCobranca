@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"rota-smart/internal/appdata"
 )
 
 // Fala→texto local (Vosk via vosk-browser no WebView2). O modelo
@@ -27,11 +29,11 @@ const configModeloVoz = "vosk_model"
 
 // pastaModeloVoz é onde o modelo copiado vive (sobrevive a mudanças na pasta original).
 func pastaModeloVoz() string {
-	base, err := os.UserConfigDir()
+	dir, err := appdata.Caminho("vosk-model")
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(base, "RotaSmart", "vosk-model")
+	return dir
 }
 
 // VozStatus é o estado do modelo de voz para o frontend.

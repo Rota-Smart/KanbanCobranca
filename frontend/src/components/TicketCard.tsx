@@ -33,19 +33,60 @@ function iniciais(nome: string): string {
   return ((partes[0][0] ?? '') + (partes.length > 1 ? partes[partes.length - 1][0] ?? '' : '')).toUpperCase();
 }
 
+// Modo de visualização do card: compacto (só avatar + nome) ou resumido (atual).
+export type ModoCard = 'min' | 'resumo';
+
 interface Props {
   ticket: Ticket;
   qtdAcordos?: number;
+  modo: ModoCard;
+  onModo: (ticket: Ticket, modo: ModoCard | 'completo') => void;
   onAbrir: () => void;
   onExcluir: (ticket: Ticket) => void;
 }
 
 // Card estilo app de delivery: avatar com iniciais, faixa colorida do tipo,
 // código do pedido, endereço/telefone e badge de acordos.
-export default function TicketCard({ ticket, qtdAcordos = 0, onAbrir, onExcluir }: Props) {
+export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
   const [menuAberto, setMenuAberto] = useState(false);
   const cor = corPorTipo[ticket.tipoTicket] ?? corPorTipo['Outro'];
+
+  if (modo === 'min') {
+    return (
+      <div
+        ref={setNodeRef}
+        style={{ transform: CSS.Translate.toString(transform), transition }}
+        className={`glass card-delivery rounded-2xl relative overflow-hidden text-sm cursor-pointer ${isDragging ? 'opacity-50 scale-95' : ''}`}
+        {...attributes}
+        {...listeners}
+        onClick={onAbrir}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onAbrir();
+        }}
+      >
+        <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${cor.faixa}`} />
+        <div className="pl-4 pr-2 py-2 flex items-center gap-2.5">
+          <div
+            className={`shrink-0 w-7 h-7 rounded-full ${cor.avatar} text-white flex items-center justify-center text-[10px] font-bold shadow-inner select-none`}
+            aria-hidden
+          >
+            {iniciais(ticket.nomeCliente || '?')}
+          </div>
+          <span className="font-semibold text-slate-800 dark:text-slate-100 truncate flex-1 min-w-0">
+            {ticket.nomeCliente || 'Sem nome'}
+          </span>
+          {qtdAcordos > 0 && (
+            <span className="text-[11px] px-1.5 rounded-full font-medium bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200 shrink-0">
+              ✓{qtdAcordos}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -133,6 +174,33 @@ export default function TicketCard({ ticket, qtdAcordos = 0, onAbrir, onExcluir 
           className="glass absolute right-1 top-9 z-10 rounded-xl text-xs overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
+          <button
+            className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+            onClick={() => {
+              setMenuAberto(false);
+              onModo(ticket, 'min');
+            }}
+          >
+            Minimizar card
+          </button>
+          <button
+            className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+            onClick={() => {
+              setMenuAberto(false);
+              onModo(ticket, 'resumo');
+            }}
+          >
+            Deixar resumido
+          </button>
+          <button
+            className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+            onClick={() => {
+              setMenuAberto(false);
+              onModo(ticket, 'completo');
+            }}
+          >
+            Abrir completo
+          </button>
           <button
             className="block w-full text-left px-3 py-2 hover:bg-red-500/10 text-red-600 dark:text-red-400"
             onClick={() => {

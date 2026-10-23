@@ -11,6 +11,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"rota-smart/internal/appdata"
 	"rota-smart/internal/orcamento"
 )
 
@@ -101,15 +102,11 @@ func (a *App) SelecionarPlanilhaOrcamento() (string, error) {
 	return "Planilha carregada: " + strings.Join(nomes, ", "), nil
 }
 
-// copiarParaDados copia o arquivo escolhido para RotaSmart/ no UserConfigDir
+// copiarParaDados copia o arquivo escolhido para a pasta de dados do app
 // e devolve o caminho do destino (nome fixo orcamento.xlsx).
 func copiarParaDados(origem string) (string, error) {
-	cfg, err := os.UserConfigDir()
+	dir, err := appdata.Dir()
 	if err != nil {
-		return "", err
-	}
-	dir := filepath.Join(cfg, "RotaSmart")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	destino := filepath.Join(dir, "orcamento.xlsx")

@@ -82,12 +82,17 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
     }
   }
 
+  const [conectando360, setConectando360] = useState(false);
+
   async function conectarChrome() {
+    setConectando360(true);
     try {
       await App.ConectarRota360();
       recarregar();
     } catch (e) {
       props.onToast(String(e));
+    } finally {
+      setConectando360(false);
     }
   }
 
@@ -213,9 +218,10 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
         <section className="mt-4 border rounded-lg p-3">
           <h3 className="text-sm font-semibold text-slate-700">Sessão do 360 (rotagroup)</h3>
           <p className="text-xs text-slate-500 mt-1">
-            O app usa a sessão conectada no seu Chrome. Se não conseguir ler (criptografia nova do
-            Chrome), cole o cookie manualmente: no site, F12 → Application → Cookies → copie o valor
-            do cookie de sessão e cole abaixo.
+            Clique em <b>Conectar</b>: o app abre o site do 360 numa guia do Chrome. Faça login lá
+            uma única vez — o app captura o cookie da guia e salva. Nas próximas vezes a conexão é
+            automática (o Chrome principal não é fechado). Se preferir, cole o cookie manualmente:
+            no site, F12 → Application → Cookies → copie o valor do cookie de sessão e cole abaixo.
           </p>
           {cfg && (
             <p className="mt-2 text-sm">
@@ -231,8 +237,8 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
             </p>
           )}
           <div className="mt-2 flex gap-2">
-            <button className="border rounded px-3 py-1 text-sm" onClick={conectarChrome}>
-              Detectar no Chrome
+            <button className="border rounded px-3 py-1 text-sm" disabled={conectando360} onClick={conectarChrome}>
+              {conectando360 ? 'Conectando… faça login na guia do Chrome' : 'Conectar'}
             </button>
             {cfg?.rotaConectado && (
               <button className="border rounded px-3 py-1 text-sm text-red-600" onClick={desconectar}>

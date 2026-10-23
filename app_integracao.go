@@ -59,27 +59,42 @@ func (a *App) definirRota(c *rota360.Cliente, origem, cookieBruto string) {
 }
 
 // Rota360Status informa ao frontend o estado da sessão do 360.
+// Passivo: não abre janela nem reinicia nada — só a sessão salva e a
+// leitura direta do banco do Chrome.
 func (a *App) Rota360Status() Rota360Status {
 	if c := a.rotaAtual(); c != nil && c.Autenticado() {
 		return Rota360Status{Conectado: true, Origem: "sessão salva"}
 	}
-	st, origem, err := rota360.SessaoDetectada()
-	if err == nil {
+	if cookie, err := rota360.DetectaCookieChrome(); err == nil {
+		c := rota360.NovoCliente(cookie)
 		a.muRota.Lock()
-		a.rota = st
+		a.rota = c
 		a.muRota.Unlock()
-		return Rota360Status{Conectado: true, Origem: origem}
+		return Rota360Status{Conectado: true, Origem: "chrome"}
 	}
-	return Rota360Status{Conectado: false, Mensagem: err.Error()}
+	return Rota360Status{Conectado: false}
 }
 
-// ConectarRota360 tenta detectar a sessão no Chrome agora.
+// ConectarRota360 é o botão explícito: tenta o banco do Chrome e, em falha,
+// o Chrome DevTools Protocol (janela de conexão do app).
 func (a *App) ConectarRota360() (Rota360Status, error) {
-	st := a.Rota360Status()
-	if st.Conectado {
+	if st := a.Rota360Status(); st.Conectado {
 		return st, nil
 	}
-	return st, fmt.Errorf("%s", st.Mensagem)
+	c, origem, err := rota360.SessaoDetectada()
+	if err != nil {
+		st := Rota360Status{Conectado: false, Mensagem: err.Error()}
+		return st, fmt.Errorf("%s", err.Error())
+	}
+	a.muRota.Lock()
+	a.rota = c
+	a.muRota.Unlock()
+	// Persiste para a sessão sobreviver a reinícios do app (a leitura
+	// passiva do banco do Chrome não é mais possível no Chrome recente).
+	if ck := c.CookieSalva(); ck != nil {
+		a.definirRota(c, origem, ck.Nome+"="+ck.Valor)
+	}
+	return Rota360Status{Conectado: true, Origem: origem}, nil
 }
 
 // DefinirCookieRota360 grava um cookie colado manualmente (fallback).

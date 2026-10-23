@@ -241,14 +241,18 @@ func cookieDoPerfil(userdata, perfil string) (*Cookie, error) {
 	return nil, nil
 }
 
-// SessaoDetectada tenta o Chrome e, em falha, informa o motivo para a
-// tela de configurações orientar o fallback.
+// SessaoDetectada tenta o banco de cookies do Chrome e, em falha, o Chrome
+// DevTools Protocol (o Chrome recente trava o banco e cifra os cookies com
+// App-Bound, que só o próprio Chrome consegue ler).
 func SessaoDetectada() (*Cliente, string, error) {
 	cookie, err := DetectaCookieChrome()
-	if err != nil {
-		return nil, "", err
+	if err == nil {
+		return NovoCliente(cookie), "chrome", nil
 	}
-	return NovoCliente(cookie), "chrome", nil
+	if cookie, errCdp := DetectaCookieCDP(); errCdp == nil {
+		return NovoCliente(cookie), "chrome (CDP)", nil
+	}
+	return nil, "", err
 }
 
 // ParseCookieColado aceita "valor", "nome=valor" ou o cabeçalho Cookie

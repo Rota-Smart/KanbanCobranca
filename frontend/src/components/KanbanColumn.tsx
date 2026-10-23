@@ -2,7 +2,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useState } from 'react';
 import type { Ticket } from '../wails-types';
-import TicketCard from './TicketCard';
+import TicketCard, { type ModoCard } from './TicketCard';
 
 // Ponto colorido da coluna, estilo ClickUp (uma cor por status).
 const corPorColuna: Record<string, string> = {
@@ -35,13 +35,35 @@ interface Props {
   coluna: string;
   tickets: Ticket[];
   acordosPorTicket: Record<number, number>;
+  modoDoCard: (ticket: Ticket) => ModoCard;
+  onModoCard: (ticket: Ticket, modo: ModoCard | 'completo') => void;
+  modoColuna: ModoCard;
+  onModoColuna: (coluna: string, modo: ModoCard) => void;
   onAbrir: (ticket: Ticket) => void;
   onExcluir: (ticket: Ticket) => void;
   onNovoCard: (coluna: string, nome: string, tipo: string) => void;
   onBuscar360: (coluna: string) => void;
 }
 
-export default function KanbanColumn({ coluna, tickets, acordosPorTicket, onAbrir, onExcluir, onNovoCard, onBuscar360 }: Props) {
+// Botãozinho de modo (minimizar/resumir) aplicado a todos os cards da coluna.
+function BotaoModo({ ativo, titulo, children, onClick }: { ativo: boolean; titulo: string; children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      aria-label={titulo}
+      title={titulo}
+      onClick={onClick}
+      className={`p-0.5 rounded text-[13px] leading-none transition ${
+        ativo
+          ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300'
+          : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onNovoCard, onBuscar360 }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna });
   const [recolhida, setRecolhida] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
@@ -79,13 +101,21 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, onAbri
             {tickets.length}
           </span>
         </div>
-        <button
-          aria-label={`Recolher coluna ${coluna}`}
-          onClick={() => setRecolhida(true)}
-          className="p-0.5 shrink-0"
-        >
-          <Seta aberta={true} />
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <BotaoModo ativo={modoColuna === 'min'} titulo={`Minimizar todos os cards de ${coluna}`} onClick={() => onModoColuna(coluna, 'min')}>
+            ▁
+          </BotaoModo>
+          <BotaoModo ativo={modoColuna === 'resumo'} titulo={`Deixar resumidos todos os cards de ${coluna}`} onClick={() => onModoColuna(coluna, 'resumo')}>
+            ▤
+          </BotaoModo>
+          <button
+            aria-label={`Recolher coluna ${coluna}`}
+            onClick={() => setRecolhida(true)}
+            className="p-0.5 shrink-0"
+          >
+            <Seta aberta={true} />
+          </button>
+        </div>
       </div>
 
       <div ref={setNodeRef} className="flex flex-col gap-2.5 flex-1 min-h-[4rem] overflow-y-auto pr-0.5">
@@ -95,6 +125,8 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, onAbri
               key={t.id}
               ticket={t}
               qtdAcordos={acordosPorTicket[t.id]}
+              modo={modoDoCard(t)}
+              onModo={onModoCard}
               onAbrir={() => onAbrir(t)}
               onExcluir={onExcluir}
             />

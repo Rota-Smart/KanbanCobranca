@@ -39,6 +39,14 @@ func NovoCliente(cookie *Cookie) *Cliente {
 // Autenticado informa se há sessão para usar.
 func (c *Cliente) Autenticado() bool { return c != nil && c.cookie != nil && c.cookie.Value != "" }
 
+// CookieSalva devolve o cookie da sessão, para persistência.
+func (c *Cliente) CookieSalva() *Cookie {
+	if !c.Autenticado() {
+		return nil
+	}
+	return &Cookie{Nome: c.cookie.Name, Valor: c.cookie.Value}
+}
+
 // get faz GET com o cookie, 1 retry em rede/5xx/429, resposta limitada.
 func (c *Cliente) get(ctx context.Context, path string, out any) error {
 	if !c.Autenticado() {

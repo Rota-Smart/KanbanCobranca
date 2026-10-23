@@ -19,9 +19,32 @@ import Configuracoes from './components/Configuracoes';
 import KanbanColumn from './components/KanbanColumn';
 import JanelaControles from './components/JanelaControles';
 import NegotiationModal from './components/NegotiationModal';
+import type { ModoCard } from './components/TicketCard';
 import { boardFromTickets, moveCard, type Board } from './kanban';
 
 const fallbackColunas = ['Fazer contato'];
+
+// Modo de visualização dos cards. Precedência: card > coluna > global.
+// 'completo' não é modo persistente: é só abrir o modal do card.
+interface ModosCards {
+  global: ModoCard;
+  colunas: Record<string, ModoCard>;
+  cards: Record<number, ModoCard>;
+}
+
+const modosIniciais: ModosCards = { global: 'resumo', colunas: {}, cards: {} };
+
+function modosDoStorage(): ModosCards {
+  try {
+    const bruto = JSON.parse(localStorage.getItem('modosCards') ?? '');
+    if (bruto && typeof bruto === 'object' && (bruto.global === 'min' || bruto.global === 'resumo')) {
+      return { global: bruto.global, colunas: bruto.colunas ?? {}, cards: bruto.cards ?? {} };
+    }
+  } catch {
+    // sem valor salvo ou inválido: usa o padrão
+  }
+  return modosIniciais;
+}
 
 // TicketDaTela: payload do evento "atalho:tela" (Shift+F2 capturou a tela).
 interface TicketDaTela {
@@ -65,6 +88,44 @@ export default function App() {
   const [chatMsgInicial, setChatMsgInicial] = useState<string | null>(null);
   const [tema, setTema] = useState<'claro' | 'escuro'>(temaInicial);
   const [sincronizando, setSincronizando] = useState(false);
+  const [modos, setModos] = useState<ModosCards>(modosDoStorage);
+
+  useEffect(() => {
+    localStorage.setItem('modosCards', JSON.stringify(modos));
+  }, [modos]);
+
+  // modoDoCard resolve card > coluna > global.
+  function modoDoCard(t: Ticket): ModoCard {
+    return modos.cards[t.id] ?? modos.colunas[t.colunaAtual] ?? modos.global;
+  }
+
+  function setModoCard(t: Ticket, modo: ModoCard | 'completo') {
+    if (modo === 'completo') {
+      setPreCobranca(null);
+      setAberto(t);
+      return;
+    }
+    setModos((m) => {
+      const cards = { ...m.cards };
+      const atual = m.cards[t.id] ?? m.colunas[t.colunaAtual] ?? m.global;
+      if (atual === modo) delete cards[t.id]; // clicou de volta: limpa o override
+      else cards[t.id] = modo;
+      return { ...m, cards };
+    });
+  }
+
+  function setModoColuna(coluna: string, modo: ModoCard) {
+    setModos((m) => {
+      const ids = (board[coluna] ?? []).map((t) => t.id);
+      const cards = { ...m.cards };
+      for (const id of ids) delete cards[id]; // a decisão da coluna vence
+      return { ...m, cards, colunas: { ...m.colunas, [coluna]: modo } };
+    });
+  }
+
+  function setModoGlobal(modo: ModoCard) {
+    setModos({ global: modo, colunas: {}, cards: {} });
+  }
 
   // Sincroniza com o repo GitHub (banco-de-dados): envia/baixa conforme quem
   // mudou; em conflito, pergunta qual lado vence.
@@ -255,6 +316,24 @@ export default function App() {
           Kanban de Cobrança
         </h1>
         <div className="flex gap-2">
+          <div className="flex items-center gap-0.5 rounded-lg px-1.5 bg-white/40 dark:bg-white/10 border border-white/50 dark:border-white/10" title="Tamanho dos cards: individual pode ser mudado no menu ⋯ do card">
+            <button
+              aria-label="Minimizar todos os cards"
+              title="Minimizar todos os cards"
+              className={`px-1.5 py-1 rounded text-[13px] leading-none ${modos.global === 'min' ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300' : 'text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}
+              onClick={() => setModoGlobal('min')}
+            >
+              ▁
+            </button>
+            <button
+              aria-label="Deixar todos os cards resumidos"
+              title="Deixar todos os cards resumidos"
+              className={`px-1.5 py-1 rounded text-[13px] leading-none ${modos.global === 'resumo' ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300' : 'text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}
+              onClick={() => setModoGlobal('resumo')}
+            >
+              ▤
+            </button>
+          </div>
           <button
             aria-label={tema === 'escuro' ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
             title={tema === 'escuro' ? 'Tema claro' : 'Tema escuro'}
@@ -307,6 +386,10 @@ export default function App() {
               coluna={c}
               tickets={board[c] ?? []}
               acordosPorTicket={{}}
+              modoDoCard={modoDoCard}
+              onModoCard={setModoCard}
+              modoColuna={modos.colunas[c] ?? modos.global}
+              onModoColuna={setModoColuna}
               onAbrir={(t) => {
                 setPreCobranca(null);
                 setAberto(t);

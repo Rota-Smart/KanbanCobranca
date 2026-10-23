@@ -6,17 +6,19 @@ import (
 	"os"
 	"path/filepath"
 
+	"rota-smart/internal/appdata"
+
 	_ "modernc.org/sqlite"
 )
 
 // DefaultPath devolve o caminho padrão do banco:
-// os.UserConfigDir()/RotaSmart/rotasmart.db
+// appdata.Dir()/rotasmart.db (portátil quando há RotaSmart-dados ao lado do exe).
 func DefaultPath() (string, error) {
-	cfgDir, err := os.UserConfigDir()
+	dir, err := appdata.Dir()
 	if err != nil {
-		return "", fmt.Errorf("obter config dir: %w", err)
+		return "", fmt.Errorf("obter pasta de dados: %w", err)
 	}
-	return filepath.Join(cfgDir, "RotaSmart", "rotasmart.db"), nil
+	return filepath.Join(dir, "rotasmart.db"), nil
 }
 
 // Init abre o banco em path, aplica as migrações versionadas e devolve a conexão.
