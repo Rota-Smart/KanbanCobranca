@@ -17,7 +17,6 @@ import BuscarCliente360Dialog from './components/BuscarCliente360Dialog';
 import ChatDrawer from './components/ChatDrawer';
 import Configuracoes from './components/Configuracoes';
 import KanbanColumn from './components/KanbanColumn';
-import JanelaControles from './components/JanelaControles';
 import NegotiationModal from './components/NegotiationModal';
 import type { ModoCard } from './components/TicketCard';
 import { boardFromTickets, moveCard, type Board } from './kanban';
@@ -369,7 +368,6 @@ export default function App() {
           >
             ⚙ Configurações
           </button>
-          <JanelaControles />
         </div>
       </header>
 
