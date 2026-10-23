@@ -89,7 +89,7 @@ func TestParseCookieColado(t *testing.T) {
 		txt, querNome string
 		querErro      bool
 	}{
-		{"gskvalormuitolongo", "session", false},
+		{"gskvalormuitolongo", "rota360_auth", false},
 		{"session=valor123", "session", false},
 		{"outro=x; session=valor123; a=b", "session", false},
 		{"a=1; b=2; c=3", "", true},

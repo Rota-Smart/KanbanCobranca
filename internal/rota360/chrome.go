@@ -22,7 +22,7 @@ import (
 const CookieDomain = "360.rotagroup.com.br"
 
 // ChromeCookieNames são os cookies de sessão aceitos, em ordem de preferência.
-var ChromeCookieNames = []string{"session", "sid", "connect.sid", "auth", "token"}
+var ChromeCookieNames = []string{"rota360_auth", "session", "sid", "connect.sid", "auth", "token"}
 
 type dataBlob struct{ cbData, pbData uintptr }
 
