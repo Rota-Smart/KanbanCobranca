@@ -39,6 +39,9 @@ COMO INSTALAR (outro computador):
    restrições cada vez mais simples) — normalmente consegue assim que o
    outro programa para de falar. Se mesmo assim não conseguir, uma mensagem
    clara pede para fechar o outro programa (Teams, chamada no Chrome, etc.).
+11. AVISOS SEMPRE NA FRENTE (novo na v1.7.3): as mensagens de aviso do app
+   (sincronização, conexão, erros etc.) aparecem agora na frente de qualquer
+   card, painel ou janela aberta do app — não ficam mais escondidas atrás.
 
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
