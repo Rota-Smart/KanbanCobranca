@@ -27,6 +27,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   const [syncInfo, setSyncInfo] = useState<SyncInfo | null>(null);
   const [syncOcupado, setSyncOcupado] = useState(false);
   const [voz, setVoz] = useState<import('../wails-types').VozStatus | null>(null);
+  const [usoGroq, setUsoGroq] = useState<import('../wails-types').UsoGroq | null>(null);
 
   function recarregarSync() {
     App.SyncStatus().then(setSyncInfo).catch(() => setSyncInfo(null));
@@ -35,6 +36,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   function recarregar() {
     App.GetConfig().then(setCfg).catch((e) => props.onToast(String(e)));
     App.ListarParametros().then(setParams).catch(() => {});
+    App.UsoGroqHoje().then(setUsoGroq).catch(() => setUsoGroq(null));
   }
 
   useEffect(() => {
@@ -158,6 +160,16 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
     }
   }
 
+  async function restaurarModeloVoz() {
+    try {
+      await App.LimparModeloVoz();
+      props.onToast('Voltando a usar o modelo embutido.');
+      setVoz(await App.ModeloVozStatus());
+    } catch (e) {
+      props.onToast(String(e));
+    }
+  }
+
   async function salvarSync() {
     setSyncOcupado(true);
     try {
@@ -244,6 +256,13 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
         {/* Groq */}
         <section className="mt-3 border rounded-lg p-3">
           <h3 className="text-sm font-semibold text-slate-700">Groq (polimento com IA)</h3>
+          {usoGroq && (
+            <p className="text-xs text-slate-500 mt-1">
+              Uso hoje: <strong>{usoGroq.requisicoes}</strong> requisições ·{' '}
+              <strong>{Math.round((usoGroq.promptTokens + usoGroq.completionTokens) / 100) / 10}k</strong> tokens{' '}
+              <span className="text-slate-400">(limites do plano free: 1.000 req/dia, 200k tokens/dia)</span>
+            </p>
+          )}
           <p className="text-xs text-slate-500 mt-1">
             Chave gratuita em console.groq.com. Modelo sugerido:{' '}
             <strong>openai/gpt-oss-120b</strong> (alternativa rápida: openai/gpt-oss-20b — o
@@ -418,25 +437,32 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
         <section className="mt-3 border rounded-lg p-3">
           <h3 className="text-sm font-semibold text-slate-700">Voz do assistente (fala→texto)</h3>
           <p className="text-xs text-slate-500 mt-1">
-            O botão 🎤 no chat transcreve sua fala localmente (Vosk, sem internet). Baixe o modelo{' '}
-            <strong>vosk-model-small-pt-br</strong> (alphacephei.com/vosk/models, ~46 MB), descompacte e
-            escolha a pasta aqui — o app copia o modelo para a pasta de dados dele.
+            O botão 🎤 no chat transcreve sua fala localmente (Vosk, sem internet). O app já traz o
+            modelo em português <strong>embutido</strong>. Opcionalmente, escolha a pasta de outro modelo
+            (alphacephei.com/vosk/models) para substituí-lo — a pasta é copiada para os dados do app.
           </p>
           {voz && (
             <p className="mt-2 text-sm">
               Status:{' '}
               {voz.configurado ? (
-                <span className="text-emerald-600 font-medium">Configurado</span>
+                <span className="text-emerald-600 font-medium">
+                  {voz.origem === 'pasta' ? 'Pasta do usuário' : 'Embutido no app'}
+                </span>
               ) : (
                 <span className="text-amber-600 font-medium">Sem modelo</span>
               )}
               {voz.caminho && <span className="block text-xs text-slate-500 break-all">{voz.caminho}</span>}
             </p>
           )}
-          <div className="mt-2">
+          <div className="mt-2 flex gap-2">
             <button className="border rounded px-3 py-1 text-sm" onClick={escolherModeloVoz}>
-              Escolher pasta do modelo…
+              Escolher outro modelo…
             </button>
+            {voz?.origem === 'pasta' && (
+              <button className="border rounded px-3 py-1 text-sm text-red-600" onClick={restaurarModeloVoz}>
+                Restaurar embutido
+              </button>
+            )}
           </div>
         </section>
 

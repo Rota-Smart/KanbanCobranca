@@ -86,6 +86,11 @@ func main() {
 			return v
 		},
 	)
+	// Contador diário de uso (limites do plano free da Groq), exibido nas
+	// Configurações. ctx em background: roda também durante o boot.
+	groq.OnUsage = func(prompt, completion int) {
+		registrarUsoGroq(context.Background(), config, prompt, completion)
+	}
 	app.WireIntegracao(
 		config,
 		db.NewParametroRepo(database),

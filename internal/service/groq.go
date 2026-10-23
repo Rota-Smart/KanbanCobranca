@@ -28,10 +28,13 @@ var ErrGroqSemChave = errors.New("chave da Groq não configurada")
 
 // GroqCliente chama a API da Groq. ChaveInjetavel/ModeloInjetavel são
 // consultados a cada chamada (vêm das configurações, podem mudar em tempo real).
+// OnUsage (opcional) é chamado após cada resposta bem-sucedida com os tokens
+// gastos — alimenta o contador diário de uso (limites do plano free).
 type GroqCliente struct {
 	HTTP            *http.Client
 	ChaveInjetavel  func() string
 	ModeloInjetavel func() string
+	OnUsage         func(promptTokens, completionTokens int)
 	// Endpoint sobrescrevível nos testes (padrão: GroqEndpoint).
 	Endpoint string
 }
@@ -97,9 +100,21 @@ type groqResponse struct {
 			ToolCalls []groqToolCall `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+// reportarUsage avisa o contador (se houver) sobre os tokens da resposta.
+func (g *GroqCliente) reportarUsage(resp *groqResponse) {
+	if g == nil || g.OnUsage == nil || resp.Usage == nil {
+		return
+	}
+	g.OnUsage(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 }
 
 // Completar envia as mensagens com 1 retry em rede/429/5xx. Para 400/401/403
@@ -168,6 +183,7 @@ func (g *GroqCliente) Completar(ctx context.Context, system, user string) (strin
 		}
 		msg := out.Choices[0].Message
 		content, _ := msg.Content.(string)
+		g.reportarUsage(&out)
 		return strings.TrimSpace(content), nil
 	}
 	return "", ultimoErr
@@ -247,6 +263,7 @@ func (g *GroqCliente) chatUmaRodada(ctx context.Context, mensagens []groqMensage
 		}
 		msg := out.Choices[0].Message
 		content, _ := msg.Content.(string)
+		g.reportarUsage(&out)
 		return saida{Content: strings.TrimSpace(content), ToolCalls: msg.ToolCalls}, nil
 	}
 	return saida{}, ultimoErr

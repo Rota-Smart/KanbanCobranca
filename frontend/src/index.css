@@ -57,3 +57,19 @@
   transition: transform 0.2s ease;
   cursor: pointer;
 }
+
+/* Fundo do documento acompanha o tema: o gradiente fica no div raiz do app,
+   então arrastar além do fim do conteúdo (overscroll do WebView2) revelaria
+   o canvas branco padrão do navegador. Também cobre a tela "Carregando…". */
+html {
+  overscroll-behavior: none;
+  background-color: #eef2ff;
+}
+body {
+  overscroll-behavior: none;
+  background-color: #eef2ff;
+}
+html.dark,
+html.dark body {
+  background-color: #020617;
+}

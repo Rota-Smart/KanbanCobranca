@@ -300,7 +300,7 @@ export default function App() {
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
       >
-        <div className="flex gap-3 p-3 overflow-x-auto flex-1">
+        <div className="flex gap-3 p-3 overflow-x-auto overscroll-x-contain flex-1">
           {colunas.map((c) => (
             <KanbanColumn
               key={c}
