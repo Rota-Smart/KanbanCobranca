@@ -27,6 +27,12 @@ COMO INSTALAR (outro computador):
    "liste os padrões que você guardou" e "esqueça o padrão estilo de tickets".
    O app já vem com um padrão inicial de estilo de escrita de tickets, que
    você pode pedir para ele ajustar ou apagar quando quiser.
+9. NOVIDADES DA v1.7.0: arraste a alça ⋮⋮ no cabeçalho de uma coluna para
+   reordená-la (ou use o menu ⋯, como antes); arraste a borda esquerda do
+   painel do assistente para alargá-lo ou encolhê-lo (o tamanho fica salvo);
+   o assistente também reordena colunas se você pedir ("coloque Cobrança
+   antes de Acordo"); o menu ⋯ ganhou fundo sólido; e o Shift+F2 voltou a
+   puxar o ticket da tela para uma conversa nova do chat.
 
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
