@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as App from '../../wailsjs/go/main/App';
 import type { db } from '../../wailsjs/go/models';
 import type { AcaoDoAgente } from '../wails-types';
+import { iniciarVoz } from '../voz';
 
 interface Msg {
   id?: number;
@@ -27,12 +28,47 @@ export default function ChatDrawer(props: {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
+  const [gravando, setGravando] = useState(false);
+  const [parcial, setParcial] = useState('');
+  const pararVoz = useRef<(() => void) | null>(null);
   const fimRef = useRef<HTMLDivElement>(null);
   const inicialEnviada = useRef(false);
 
   useEffect(() => {
     fimRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgs, enviando]);
+
+  // Alternar o microfone: enquanto grava, o que é falado aparece como
+  // parcial (cinza) e cada frase finalizada entra no campo de mensagem.
+  async function alternarVoz() {
+    if (pararVoz.current) {
+      pararVoz.current();
+      pararVoz.current = null;
+      setGravando(false);
+      setParcial('');
+      return;
+    }
+    try {
+      const st = await App.ModeloVozStatus();
+      if (!st.configurado) {
+        props.onToast(`⚠ ${st.mensagem}`);
+        return;
+      }
+      pararVoz.current = await iniciarVoz({
+        parcial: setParcial,
+        final: (t) => {
+          setParcial('');
+          setTexto((atual) => (atual ? atual + ' ' : '') + t);
+        },
+        erro: (e) => props.onToast(`⚠ Voz: ${String(e)}`),
+      });
+      setGravando(true);
+    } catch (e) {
+      props.onToast(`⚠ Microfone: ${String(e)}`);
+    }
+  }
+
+  useEffect(() => () => pararVoz.current?.(), []);
 
   useEffect(() => {
     App.ListarChats().then((cs) => {
@@ -204,15 +240,28 @@ export default function ChatDrawer(props: {
           </div>
 
           <form
-            className="mt-2 flex gap-1"
+            className="mt-2 flex gap-1 items-center"
             onSubmit={(e) => {
               e.preventDefault();
               enviar();
             }}
           >
+            <button
+              type="button"
+              aria-label={gravando ? 'Parar gravação' : 'Falar (fala para texto)'}
+              title={gravando ? 'Parar gravação' : 'Fala para texto (Vosk local)'}
+              className={`rounded px-2 py-1.5 text-sm border ${
+                gravando
+                  ? 'bg-red-600 text-white border-red-600 animate-pulse'
+                  : 'border-slate-300 text-slate-600 hover:bg-white/40 dark:border-slate-500 dark:text-slate-300'
+              }`}
+              onClick={alternarVoz}
+            >
+              🎤
+            </button>
             <input
               className="flex-1 border rounded px-2 py-1.5 text-sm"
-              placeholder="Peça uma ação ao assistente…"
+              placeholder={gravando ? 'Ouvindo… fale sua mensagem' : 'Peça uma ação ao assistente…'}
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
               disabled={enviando}
@@ -225,6 +274,11 @@ export default function ChatDrawer(props: {
               Enviar
             </button>
           </form>
+          {parcial && (
+            <p className="mt-1 text-xs text-slate-400 italic truncate" title={parcial}>
+              {parcial}…
+            </p>
+          )}
         </div>
       </aside>
     </div>

@@ -14,7 +14,10 @@ import (
 const MaxIteracoesAgente = 6
 
 const systemAgente = `Você é o assistente do app Kanban de Cobrança da Rota Smart, um app desktop local. ` +
-	`Você age de verdade no app usando as ferramentas disponíveis: buscar clientes no portal 360, adicionar clientes ao Kanban, criar colunas novas, mover cards, consultar financeiro e gerar propostas. ` +
+	`Você age de verdade no app usando as ferramentas disponíveis: buscar clientes no portal 360, adicionar clientes ao Kanban, criar colunas novas, mover cards, consultar financeiro e gerar propostas, além de atuar em tickets do helpdesk do 360. ` +
+	`Sobre tickets do helpdesk você pode: ler o detalhe (detalhe_ticket_360), abrir o ticket no navegador na aba do 360 que o usuário já tem aberta (abrir_ticket_360), registrar a sua resposta no ticket (responder_ticket_360) e alterar o status (alterar_status_ticket_360). ` +
+	`Quando o usuário pedir para melhorar/aprimorar o texto de um ticket, reescreva com redação profissional, clara e cordial — mantendo todos os dados técnicos, códigos, valores e fatos originais — e só envie com responder_ticket_360 se o usuário pediu explicitamente para enviar; se ele pediu para "adicionar X e enviar", junte X ao texto melhorado e envie de uma vez. ` +
+	`Para alterar status, use o nome do status exatamente como o detalhe_ticket_360 mostra (campo Status); se não souber os valores válidos, leia o detalhe do ticket antes. ` +
 	`Regras: (1) prefira executar a ação pedida em vez de só descrever; (2) ao adicionar um cliente, use a coluna que o usuário indicou (padrão: "Fazer contato"); (3) nunca invente códigos service, nomes ou valores — consulte com as ferramentas; (4) responda em português do Brasil, curto e direto, confirmando o que fez e citando os dados que obteve.`
 
 // Ferramentas disponíveis para o agente (formato tools da API OpenAI).
@@ -55,6 +58,21 @@ func AgentTools() []map[string]any {
 		tool("detalhe_ticket_360",
 			"Busca o ticket do helpdesk 360 pelo número: devolve título, status, cliente, descrição e todas as interações (o que foi dito e feito, inclusive o que o técnico registrou).",
 			map[string]any{"numero": map[string]any{"type": "string", "description": "Número do ticket (ex.: 67220)"}}, []string{"numero"}),
+		tool("abrir_ticket_360",
+			"Abre o ticket do helpdesk 360 no navegador, na aba que o usuário já tem aberta no portal 360 (a aba navega para o ticket).",
+			map[string]any{"numero": map[string]any{"type": "string", "description": "Número do ticket (ex.: 67220)"}}, []string{"numero"}),
+		tool("responder_ticket_360",
+			"Registra a sua resposta (texto final, já redigido e revisado) como interação pública no ticket do helpdesk 360. Só chame quando o usuário pedir explicitamente para enviar/responder.",
+			map[string]any{
+				"numero": map[string]any{"type": "string", "description": "Número do ticket"},
+				"texto":  map[string]any{"type": "string", "description": "Texto completo da resposta a publicar"},
+			}, []string{"numero", "texto"}),
+		tool("alterar_status_ticket_360",
+			"Altera o status do ticket do helpdesk 360. Use o nome do status exatamente como detalhe_ticket_360 mostra no campo Status.",
+			map[string]any{
+				"numero": map[string]any{"type": "string", "description": "Número do ticket"},
+				"status": map[string]any{"type": "string", "description": "Nome exato do status (como no detalhe do ticket)"},
+			}, []string{"numero", "status"}),
 		tool("listar_tickets",
 			"Lista os cards do Kanban (id, nome, coluna), opcionalmente de uma coluna só.",
 			map[string]any{"coluna": map[string]any{"type": "string", "description": "Filtra por coluna (opcional)"}}, nil),

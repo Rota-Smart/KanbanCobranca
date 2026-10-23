@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"rota-smart/internal/orcamento"
 	"rota-smart/internal/rota360"
 	"rota-smart/internal/service"
+	"rota-smart/internal/tela"
 )
 
 // ---- Colunas dinâmicas (bindings) ----
@@ -241,6 +244,27 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			return "", "", fmt.Errorf("numero vazio")
 		}
 		return a.agentDetalheTicket(ctx, numero)
+
+	case "abrir_ticket_360":
+		numero := argStr("numero")
+		if numero == "" {
+			return "", "", fmt.Errorf("numero vazio")
+		}
+		return a.agentAbrirTicket(ctx, numero)
+
+	case "responder_ticket_360":
+		numero, texto := argStr("numero"), argStr("texto")
+		if numero == "" || texto == "" {
+			return "", "", fmt.Errorf("numero e texto são obrigatórios")
+		}
+		return a.agentResponderTicket(ctx, numero, texto)
+
+	case "alterar_status_ticket_360":
+		numero, status := argStr("numero"), argStr("status")
+		if numero == "" || status == "" {
+			return "", "", fmt.Errorf("numero e status são obrigatórios")
+		}
+		return a.agentAlterarStatusTicket(ctx, numero, status)
 
 	case "listar_tickets":
 		return a.agentListarTickets(ctx, argStr("coluna"))
@@ -552,34 +576,41 @@ func simNao(b bool) string {
 	return "não"
 }
 
+// resolverTicket360 localiza o ticket da fila do helpdesk pelo número e
+// devolve o item com o uuid (Campo ID) para detalhe/escrita/URL.
+func (a *App) resolverTicket360(ctx context.Context, numero string) (*rota360.Ticket360, error) {
+	c := a.rotaAtual()
+	if c == nil {
+		return nil, rota360.ErrSemSessao
+	}
+	for _, view := range []string{"em_aberto", "meus_em_aberto", "pendentes"} {
+		itens, _, err := c.TicketsDaFila(ctx, view, 1, 100)
+		if err != nil {
+			return nil, err
+		}
+		for i := range itens {
+			if strings.EqualFold(itens[i].Numero, numero) {
+				return &itens[i], nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("ticket %s não encontrado nas filas em aberto/pendentes", numero)
+}
+
 // agentDetalheTicket devolve o ticket completo (descrição + interações) pelo
 // número; o uuid é localizado nas filas do helpdesk.
 func (a *App) agentDetalheTicket(ctx context.Context, numero string) (string, string, error) {
+	item, err := a.resolverTicket360(ctx, numero)
+	if err != nil {
+		return "", "", err
+	}
 	c := a.rotaAtual()
 	if c == nil {
 		return "", "", rota360.ErrSemSessao
 	}
-	var det *rota360.TicketDetalhe360
-	for _, view := range []string{"em_aberto", "meus_em_aberto", "pendentes"} {
-		itens, _, err := c.TicketsDaFila(ctx, view, 1, 100)
-		if err != nil {
-			return "", "", err
-		}
-		for _, t := range itens {
-			if strings.EqualFold(t.Numero, numero) {
-				det, err = c.DetalheTicket(ctx, t.ID)
-				if err != nil {
-					return "", "", err
-				}
-				break
-			}
-		}
-		if det != nil {
-			break
-		}
-	}
-	if det == nil {
-		return "", "", fmt.Errorf("ticket %s não encontrado nas filas em aberto/pendentes", numero)
+	det, err := c.DetalheTicket(ctx, item.ID)
+	if err != nil {
+		return "", "", err
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Ticket #%s — %s [%s] | cliente %s (código %s) | assunto %s/%s | responsável %s\n\n",
@@ -669,4 +700,70 @@ func (a *App) agentProposta(ctx context.Context, ticketID int64) (string, string
 		return "", "", err
 	}
 	return "PROPOSTA:\n" + prop.Texto, fmt.Sprintf("gerou a proposta de %s", t.NomeCliente), nil
+}
+
+// urlTicket360 monta a URL do ticket no helpdesk do portal 360.
+func urlTicket360(uuid string) string {
+	return rota360.BaseURL + "/helpdesk/tickets/" + uuid
+}
+
+// agentAbrirTicket navega a aba do navegador que já está no portal 360 para
+// o ticket pedido; sem essa aba, abre no navegador padrão (fallback).
+func (a *App) agentAbrirTicket(ctx context.Context, numero string) (string, string, error) {
+	item, err := a.resolverTicket360(ctx, numero)
+	if err != nil {
+		return "", "", err
+	}
+	url := urlTicket360(item.ID)
+	modo := "aba atual do navegador"
+	if err := tela.NavegarAbaAtiva(url); err != nil {
+		slog.Info("navegar aba ativa falhou; abrindo no navegador padrão", "err", err)
+		if err := abrirNoNavegador(url); err != nil {
+			return "", "", fmt.Errorf("ticket #%s está em %s, mas não foi possível abrir o navegador: %w", item.Numero, url, err)
+		}
+		modo = "navegador padrão"
+	}
+	return fmt.Sprintf("Ticket #%s aberto em %s (via %s).", item.Numero, url, modo),
+		fmt.Sprintf("abriu o ticket #%s no navegador", item.Numero), nil
+}
+
+// abrirNoNavegador abre a URL no navegador padrão do Windows.
+func abrirNoNavegador(url string) error {
+	return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+}
+
+// agentResponderTicket publica a resposta do agente no ticket do 360.
+// Operação real sobre a produção: o texto chega já revisado pelo usuário.
+func (a *App) agentResponderTicket(ctx context.Context, numero, texto string) (string, string, error) {
+	item, err := a.resolverTicket360(ctx, numero)
+	if err != nil {
+		return "", "", err
+	}
+	c := a.rotaAtual()
+	if c == nil {
+		return "", "", rota360.ErrSemSessao
+	}
+	if err := c.ResponderTicket(ctx, item.ID, texto); err != nil {
+		return "", "", err
+	}
+	resumo := fmt.Sprintf("respondeu o ticket #%s do 360", item.Numero)
+	return "Resposta registrada no ticket #" + item.Numero + ".", resumo, nil
+}
+
+// agentAlterarStatusTicket muda o status do ticket do 360 para o nome exato
+// que a API do portal usa (o agente lê os valores do detalhe do ticket).
+func (a *App) agentAlterarStatusTicket(ctx context.Context, numero, status string) (string, string, error) {
+	item, err := a.resolverTicket360(ctx, numero)
+	if err != nil {
+		return "", "", err
+	}
+	c := a.rotaAtual()
+	if c == nil {
+		return "", "", rota360.ErrSemSessao
+	}
+	if err := c.AlterarStatusTicket(ctx, item.ID, status); err != nil {
+		return "", "", err
+	}
+	resumo := fmt.Sprintf("alterou o status do ticket #%s para %q", item.Numero, status)
+	return fmt.Sprintf("Status do ticket #%s alterado para %s.", item.Numero, status), resumo, nil
 }

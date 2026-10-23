@@ -30,14 +30,14 @@ func TestVerificarSemNovaVersao(t *testing.T) {
 
 func TestVerificarComNovaVersaoE404(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("1.2.0"))
+		w.Write([]byte("99.0.0"))
 	}))
 	defer srv.Close()
 	info, err := NovoCliente(srv.URL).Verificar(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.TemNova || info.VersaoNova != "1.2.0" {
+	if !info.TemNova || info.VersaoNova != "99.0.0" {
 		t.Errorf("info: %+v", info)
 	}
 

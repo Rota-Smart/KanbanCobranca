@@ -26,6 +26,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   const [syncRepo, setSyncRepo] = useState('');
   const [syncInfo, setSyncInfo] = useState<SyncInfo | null>(null);
   const [syncOcupado, setSyncOcupado] = useState(false);
+  const [voz, setVoz] = useState<import('../wails-types').VozStatus | null>(null);
 
   function recarregarSync() {
     App.SyncStatus().then(setSyncInfo).catch(() => setSyncInfo(null));
@@ -40,6 +41,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
     recarregar();
     App.GetFonteAtualizacao().then(setFonte).catch(() => {});
     recarregarSync();
+    App.ModeloVozStatus().then(setVoz).catch(() => {});
   }, []);
 
   async function verificarAtualizacao() {
@@ -141,6 +143,16 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
     try {
       const res = await App.SelecionarPlanilhaOrcamento();
       if (res) props.onToast(res);
+    } catch (e) {
+      props.onToast(String(e));
+    }
+  }
+
+  async function escolherModeloVoz() {
+    try {
+      const res = await App.DefinirModeloVoz();
+      if (res) props.onToast(res);
+      setVoz(await App.ModeloVozStatus());
     } catch (e) {
       props.onToast(String(e));
     }
@@ -398,6 +410,32 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
           <div className="mt-2 flex gap-2">
             <button className="border rounded px-3 py-1 text-sm" onClick={escolherPlanilha}>
               Escolher planilha…
+            </button>
+          </div>
+        </section>
+
+        {/* Voz do assistente (fala→texto local) */}
+        <section className="mt-3 border rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-slate-700">Voz do assistente (fala→texto)</h3>
+          <p className="text-xs text-slate-500 mt-1">
+            O botão 🎤 no chat transcreve sua fala localmente (Vosk, sem internet). Baixe o modelo{' '}
+            <strong>vosk-model-small-pt-br</strong> (alphacephei.com/vosk/models, ~46 MB), descompacte e
+            escolha a pasta aqui — o app copia o modelo para a pasta de dados dele.
+          </p>
+          {voz && (
+            <p className="mt-2 text-sm">
+              Status:{' '}
+              {voz.configurado ? (
+                <span className="text-emerald-600 font-medium">Configurado</span>
+              ) : (
+                <span className="text-amber-600 font-medium">Sem modelo</span>
+              )}
+              {voz.caminho && <span className="block text-xs text-slate-500 break-all">{voz.caminho}</span>}
+            </p>
+          )}
+          <div className="mt-2">
+            <button className="border rounded px-3 py-1 text-sm" onClick={escolherModeloVoz}>
+              Escolher pasta do modelo…
             </button>
           </div>
         </section>

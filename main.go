@@ -5,8 +5,10 @@ import (
 	"embed"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
@@ -92,12 +94,28 @@ func main() {
 		service.NovoAvaliador(db.NewCliente360Repo(database), db.NewCobrancaRepo(database), time.Now),
 	)
 
+	// O microfone do WebView2 vem com permissão negada por padrão; sem o
+	// auto-grant, o botão 🎤 do chat não consegue capturar a fala.
+	if antigos := os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"); antigos != "" {
+		os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", antigos+" --use-fake-ui-for-media-stream")
+	} else {
+		os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--use-fake-ui-for-media-stream")
+	}
+
 	err = wails.Run(&options.App{
 		Title:  "Kanban Cobrança",
 		Width:  1024,
 		Height: 768,
 		AssetServer: &assetserver.Options{
 			Assets: frontendFS,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Arquivos do modelo Vosk servidos do disco (fora do embed).
+				if strings.HasPrefix(r.URL.Path, "/vosk/") {
+					app.servirModeloVosk(w, r)
+					return
+				}
+				http.NotFound(w, r)
+			}),
 		},
 		OnStartup:  app.startup,
 		OnShutdown: func(context.Context) {},

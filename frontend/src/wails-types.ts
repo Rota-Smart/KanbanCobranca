@@ -17,6 +17,7 @@ export type ResultadoCobranca = main.ResultadoCobranca;
 export type ParametroNegociacao = db.ParametroNegociacao;
 export type ConfigApp = main.ConfigApp;
 export type Rota360Status = main.Rota360Status;
+export type VozStatus = main.VozStatus;
 export type AcaoDoAgente = service.AcaoDoAgente;
 export type ChatResultado = service.ChatResultado;
 export type InfoAtualizacao = atualizacao.Info;
