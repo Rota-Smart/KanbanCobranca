@@ -99,6 +99,7 @@ func (a *App) colunaValida(nome string) bool {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.iniciarAtalhos()
+	a.garantirColunaOrcamento()
 }
 
 // friendly devolve erros de validação como estão; todo o resto vai para o

@@ -137,6 +137,15 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
     }
   }
 
+  async function escolherPlanilha() {
+    try {
+      const res = await App.SelecionarPlanilhaOrcamento();
+      if (res) props.onToast(res);
+    } catch (e) {
+      props.onToast(String(e));
+    }
+  }
+
   async function salvarSync() {
     setSyncOcupado(true);
     try {
@@ -375,6 +384,21 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
                 </>
               )}
             </div>
+          </div>
+        </section>
+
+        {/* Planilha da calculadora de orçamentos */}
+        <section className="mt-3 border rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-slate-700">Planilha da calculadora (orçamentos)</h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Planilha .xlsx com os preços usados no botão 🧮 Orçamento e no assistente (abas = tipos
+            de sistema, seções de itens, taxa de instalação e mensalidade). Troque aqui para atualizar
+            valores — uma aba por tipo (ex.: ALARME, CAMERAS WIFI, CAMERAS DVR, RASTREAMENTO).
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button className="border rounded px-3 py-1 text-sm" onClick={escolherPlanilha}>
+              Escolher planilha…
+            </button>
           </div>
         </section>
 

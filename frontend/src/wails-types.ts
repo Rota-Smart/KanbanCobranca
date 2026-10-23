@@ -34,3 +34,31 @@ export interface ResultadoSync {
   acao: 'enviado' | 'recebido' | 'em-dia' | 'conflito' | 'configurar';
   mensagem: string;
 }
+
+// ---- Orçamento (planilha-calculadora comercial) ----
+
+export interface ItemOrcamento {
+  nome: string;
+  taxa?: number;
+  mensal?: number;
+  secao: string;
+}
+export interface SecaoOrcamento {
+  titulo: string;
+  itens: ItemOrcamento[];
+}
+export interface FaixaMensalidade {
+  rotulo: string;
+  valor: number;
+}
+export interface TipoSistema {
+  nome: string;
+  secoes: SecaoOrcamento[];
+  taxaInstalacao: number;
+  faixasMensal: FaixaMensalidade[];
+  orientacoes?: string;
+}
+export interface TabelaOrcamento {
+  arquivo: string;
+  tipos: TipoSistema[];
+}

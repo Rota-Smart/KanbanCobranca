@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"rota-smart/internal/db"
+	"rota-smart/internal/orcamento"
 	"rota-smart/internal/rota360"
 	"rota-smart/internal/service"
 )
@@ -272,6 +273,60 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			return "", "", fmt.Errorf("ticketId inválido")
 		}
 		return a.agentProposta(ctx, id)
+
+	case "listar_tabela_orcamento":
+		t, err := a.planilhaParaAgente(ctx)
+		if err != nil {
+			return "", "", err
+		}
+		var sb strings.Builder
+		for _, tipo := range t.Tipos {
+			fmt.Fprintf(&sb, "== %s (taxa de instalação R$ %.2f) ==\n", tipo.Nome, tipo.TaxaInstalacao)
+			for _, sec := range tipo.Secoes {
+				for _, it := range sec.Itens {
+					preco := ""
+					if it.Taxa != nil {
+						preco += fmt.Sprintf(" instalação R$ %.2f;", *it.Taxa)
+					}
+					if it.Mensal != nil {
+						preco += fmt.Sprintf(" R$ %.2f/mês;", *it.Mensal)
+					}
+					fmt.Fprintf(&sb, "- [%s] %s:%s\n", sec.Titulo, it.Nome, preco)
+				}
+			}
+			for _, f := range tipo.FaixasMensal {
+				fmt.Fprintf(&sb, "* mensalidade %s: R$ %.2f\n", f.Rotulo, f.Valor)
+			}
+		}
+		return sb.String(), "listou a tabela de orçamentos", nil
+
+	case "gerar_orcamento":
+		tipo, _ := args["tipoSistema"].(string)
+		itensArg, _ := args["itens"].(map[string]any)
+		if strings.TrimSpace(tipo) == "" || len(itensArg) == 0 {
+			return "", "", fmt.Errorf("tipoSistema e itens são obrigatórios")
+		}
+		itens := map[string]int{}
+		for nome, q := range itensArg {
+			qf, _ := q.(float64)
+			itens[nome] = int(qf)
+		}
+		t, err := a.planilhaParaAgente(ctx)
+		if err != nil {
+			return "", "", err
+		}
+		res, err := orcamento.Calcular(t, orcamento.Selecao{TipoSistema: tipo, Itens: itens})
+		if err != nil {
+			return "", "", err
+		}
+		cliente := ""
+		if id := argInt("ticketId"); id > 0 {
+			if t, err := a.tickets.Get(a.ctx, id); err == nil {
+				cliente = t.NomeCliente
+			}
+		}
+		return res.PropostaTexto(cliente),
+			fmt.Sprintf("gerou orçamento %s (R$ %.2f/mês + instalação R$ %.2f)", tipo, res.Mensal, res.TaxaInstalacao), nil
 
 	default:
 		return "", "", fmt.Errorf("ferramenta desconhecida: %s", ferramenta)

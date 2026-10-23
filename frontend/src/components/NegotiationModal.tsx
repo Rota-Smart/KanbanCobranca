@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as App from '../../wailsjs/go/main/App';
 import type { Avaliacao, Cobranca, Proposta, ReparcelamentoInput, ReparcelamentoResult, ResultadoCobranca, Ticket } from '../wails-types';
 import { formatCents, parseCents } from '../money';
+import OrcamentoModal from './OrcamentoModal';
 
 const statusValidos = ['proposta', 'aceita', 'quebrada', 'cancelada'] as const;
 // espelha ErrTotalInvalido do Go: total em aberto precisa ser positivo
@@ -53,6 +54,7 @@ export default function NegotiationModal({ ticket, preCobranca, onFechouComSave,
   const [historico, setHistorico] = useState<Cobranca[]>([]);
   const [avaliacao, setAvaliacao] = useState<Avaliacao | null>(null);
   const [suja, setSuja] = useState(false);
+  const [orcAberto, setOrcAberto] = useState(false);
   const reqId = useRef(0);
   const debounce = useRef<ReturnType<typeof setTimeout>>();
 
@@ -321,7 +323,16 @@ export default function NegotiationModal({ ticket, preCobranca, onFechouComSave,
               Polir com IA
             </button>
           )}
+          <button
+            className="flex-1 border rounded px-3 py-2 text-sm"
+            title="Monta o orçamento comercial pela planilha-calculadora"
+            onClick={() => setOrcAberto(true)}
+          >
+            🧮 Orçamento
+          </button>
         </div>
+
+        {orcAberto && <OrcamentoModal ticket={ticket} onFechar={() => setOrcAberto(false)} />}
 
         {proposta && (
           <div className="mt-3">

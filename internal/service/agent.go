@@ -70,6 +70,16 @@ func AgentTools() []map[string]any {
 		tool("gerar_proposta",
 			"Gera a proposta de renegociação do card pelo template padrão (usa o acordo ativo; sem acordo, usa o saldo do 360 em 12x).",
 			map[string]any{"ticketId": map[string]any{"type": "number"}}, []string{"ticketId"}),
+		tool("listar_tabela_orcamento",
+			"Lista a planilha-calculadora comercial: tipos de sistema, itens com preços (instalação/mensal) e faixas de mensalidade. Use antes de gerar um orçamento.",
+			map[string]any{}, nil),
+		tool("gerar_orcamento",
+			"Gera o orçamento comercial calculando a planilha: escolha o tipo de sistema e a quantidade de cada item (câmeras, sensores, controles…), e devolve o texto da proposta com taxa de instalação e mensalidade.",
+			map[string]any{
+				"tipoSistema": map[string]any{"type": "string", "description": "Aba da planilha (ex.: ALARME, CAMERAS WIFI, CAMERAS DVR, RASTREAMENTO)"},
+				"itens":       map[string]any{"type": "object", "description": "Mapa nome do item → quantidade (ex.: {\"Câmera WIFI Interna\": 3})"},
+				"ticketId":    map[string]any{"type": "number", "description": "Card do Kanban para personalizar com o nome do cliente (opcional)"},
+			}, []string{"tipoSistema", "itens"}),
 	}
 }
 

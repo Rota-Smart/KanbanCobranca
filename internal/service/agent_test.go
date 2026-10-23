@@ -118,8 +118,8 @@ func TestConversarLimiteDeRodadas(t *testing.T) {
 
 func TestAgentToolsSchema(t *testing.T) {
 	tools := AgentTools()
-	if len(tools) != 10 {
-		t.Fatalf("esperava 10 ferramentas, veio %d", len(tools))
+	if len(tools) != 12 {
+		t.Fatalf("esperava 12 ferramentas, veio %d", len(tools))
 	}
 	nomes := map[string]bool{}
 	for _, tl := range tools {
