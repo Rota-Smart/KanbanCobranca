@@ -15,30 +15,52 @@ interface OuvintesVoz {
 
 type ModeloVosk = Awaited<ReturnType<typeof import('vosk-browser').createModel>>;
 
+// esperar aguarda ms e resolve.
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 // abrirMicrofone tenta abrir o dispositivo com restrições progressivas.
 // O NotReadableError costuma significar que a WebView2 não conseguiu INICIAR
-// o microfone (ocupado por outro programa, acesso de apps de área de trabalho
-// bloqueado no Windows, ou o driver não aceita o processamento pedido), então
-// a segunda tentativa vai sem echoCancellation/noiseSuppression/mono.
+// o microfone (ocupado por outro programa — inclusive o próprio Windows em
+// modo exclusivo —, acesso de apps de área de trabalho bloqueado, ou o driver
+// não aceita o processamento pedido). Não há como expulsar o app que segura
+// o microfone em modo exclusivo, então a estratégia é insistir: percorrer
+// TODOS os microfones com restrições relaxadas, com retentativas espaçadas,
+// porque na prática o dispositivo costuma ser liberado em poucos segundos.
 async function abrirMicrofone(): Promise<MediaStream> {
   const cheias: MediaStreamConstraints = {
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
   };
-  const basicas: MediaStreamConstraints = { audio: true };
-  try {
-    return await navigator.mediaDevices.getUserMedia(cheias);
-  } catch (e) {
-    const nome = e instanceof DOMException ? e.name : '';
-    if (nome === 'NotAllowedError') {
-      // O app roda com o auto-concede de permissão (--use-fake-ui-for-media-
-      // stream); se mesmo assim vier negado, tentar de novo — às vezes o
-      // primeiro pedido chega antes do ambiente do WebView2 estar pronto.
-      await new Promise((r) => setTimeout(r, 300));
-      return await navigator.mediaDevices.getUserMedia(basicas);
+  const tentativas: MediaStreamConstraints[] = [
+    cheias,
+    { audio: true },
+    { audio: { deviceId: { ideal: 'default' } } }, // último recurso: sem processamento nenhum
+  ];
+
+  let ultimoErro: unknown;
+  // 3 rodadas (normal, básica, sem restrição) × 4 repetições espaçadas
+  for (let rodada = 0; rodada < tentativas.length; rodada++) {
+    for (let vez = 0; vez < 4; vez++) {
+      try {
+        return await navigator.mediaDevices.getUserMedia(tentativas[rodada]);
+      } catch (e) {
+        ultimoErro = e;
+        const nome = e instanceof DOMException ? e.name : '';
+        // O app roda com auto-concede (--use-fake-ui-for-media-stream); se
+        // mesmo assim vier negado, é o ambiente do WebView2 ainda preparando
+        // — repetir resolve. Erro de dispositivo ocupado/lento também repete.
+        if (
+          nome !== 'NotAllowedError' &&
+          nome !== 'NotReadableError' &&
+          nome !== 'TrackStartError' &&
+          nome !== 'AbortError' &&
+          nome !== 'NotSupportedError'
+        )
+          throw e;
+        await esperar(vez === 3 ? 1200 : 400); // espera cresce na última vez da rodada
+      }
     }
-    if (nome !== 'NotReadableError' && nome !== 'AbortError' && nome !== 'NotSupportedError') throw e;
-    return await navigator.mediaDevices.getUserMedia(basicas);
   }
+  throw ultimoErro;
 }
 
 // mensagemDeErro traduz os erros do getUserMedia para algo acionável.

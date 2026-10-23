@@ -33,6 +33,12 @@ COMO INSTALAR (outro computador):
    o assistente também reordena colunas se você pedir ("coloque Cobrança
    antes de Acordo"); o menu ⋯ ganhou fundo sólido; e o Shift+F2 voltou a
    puxar o ticket da tela para uma conversa nova do chat.
+10. MICROFONE COM PRIORIDADE (novo na v1.7.2): se outro programa do Windows
+   estiver segurando o microfone quando você clicar no 🎤, o app tenta abrir
+   o microfone com insistência (várias tentativas espaçadas por ~15 s, com
+   restrições cada vez mais simples) — normalmente consegue assim que o
+   outro programa para de falar. Se mesmo assim não conseguir, uma mensagem
+   clara pede para fechar o outro programa (Teams, chamada no Chrome, etc.).
 
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
