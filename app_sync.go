@@ -59,7 +59,7 @@ func (a *App) syncCliente() *syncgh.Cliente {
 	token := a.configGet(a.ctx, cfgSyncToken)
 	repo := a.configGet(a.ctx, cfgSyncRepo)
 	if repo == "" {
-		repo = "luisboneta/banco-de-dados"
+		repo = "Rota-Smart/banco-de-dados"
 	}
 	return syncgh.Novo(token, repo, syncArquivoRemoto)
 }
@@ -70,7 +70,7 @@ func (a *App) SetSyncConfig(token, repo string) error {
 		return err
 	}
 	if repo == "" {
-		repo = "luisboneta/banco-de-dados"
+		repo = "Rota-Smart/banco-de-dados"
 	}
 	if err := a.config.Set(a.ctx, cfgSyncToken, token); err != nil {
 		return friendly("SetSyncConfig", err)
@@ -105,7 +105,7 @@ func (a *App) SyncStatus() (SyncInfo, error) {
 	info.Configurado = a.configGet(a.ctx, cfgSyncToken) != ""
 	info.Repo = a.configGet(a.ctx, cfgSyncRepo)
 	if info.Repo == "" {
-		info.Repo = "luisboneta/banco-de-dados"
+		info.Repo = "Rota-Smart/banco-de-dados"
 	}
 	_, err := os.Stat(filepath.Join(filepath.Dir(a.dbPath), syncPendente))
 	info.PendenteBaixar = err == nil
@@ -234,7 +234,7 @@ func (a *App) repoAtual() string {
 	if r := a.configGet(a.ctx, cfgSyncRepo); r != "" {
 		return r
 	}
-	return "luisboneta/banco-de-dados"
+	return "Rota-Smart/banco-de-dados"
 }
 
 // aplicarSyncPendente roda antes do banco abrir: se há versão baixada

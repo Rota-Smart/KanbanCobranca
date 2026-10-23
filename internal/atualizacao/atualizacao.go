@@ -21,7 +21,7 @@ import (
 const VersaoApp = "1.3.0"
 
 // BasePadrao é a fonte de atualização padrão (branch release do repo).
-const BasePadrao = "https://raw.githubusercontent.com/luisboneta/KanbanCobranca/release"
+const BasePadrao = "https://raw.githubusercontent.com/Rota-Smart/KanbanCobranca/release"
 
 const maxExe = 64 << 20 // 64 MB
 
