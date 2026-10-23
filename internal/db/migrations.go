@@ -15,6 +15,7 @@ var migrations = []string{
 	migration005,
 	migration006,
 	migration007,
+	migration008,
 }
 
 // migration007: padrão permanente "proposta de renegociação" — o formato
@@ -34,6 +35,37 @@ Referente ao total em aberto, contando com o mês de {mês corrente} (R$ {total 
 
 Nesses meses, a parcela ficará em R$ {mensalidade + parcela da renegociação}, retornando aos R$ {mensalidade normal} normais depois."
 Ajuste a saudação à hora do dia (Bom dia/Boa tarde/Boa noite); se não houver entrada, omita a linha dela; deixe "Parcelamento" em negrito.');
+`
+
+// migration008: adapta o padrão "proposta de renegociação" às condições
+// realmente praticadas (Política de Reversão de Cancelamento e Bonificações
+// v7, conferidas com a planilha de cobrança do setor) — o formato da mensagem
+// continua o mesmo; entra o bloco de regras que o assistente deve obedecer.
+// UPDATE explícito (pedido do usuário): a versão ensinada pelo chat é
+// substituída pela canônica.
+const migration008 = `
+UPDATE padroes SET conteudo =
+    'Ao montar uma proposta de renegociação de valores em atraso, use SEMPRE este formato (substitua os valores pelos reais do cliente):
+"Bom dia, {primeiro nome}! Tudo bem?
+
+Para adiantar o assunto do áudio que enviei, já deixo a proposta aqui para você avaliar:
+
+Referente ao total em aberto, contando com o mês de {mês corrente} (R$ {total em aberto, incluindo a mensalidade do mês corrente}):
+• Entrada: R$ {entrada}
+• Parcelamento: {n}x de R$ {valor da parcela}
+
+Nesses meses, a parcela ficará em R$ {mensalidade + parcela da renegociação}, retornando aos R$ {mensalidade normal} normais depois."
+Ajuste a saudação à hora do dia (Bom dia/Boa tarde/Boa noite); se não houver entrada, omita a linha dela; deixe "Parcelamento" em negrito.
+
+CONDIÇÕES VIGENTES (Política de Reversão de Cancelamento e Bonificações v7 — obedeça em qualquer oferta/negociação):
+• Elegibilidade: cliente com 01 ano (ou mais) de contrato e adimplente; bonificação limitada a 01 ocorrência a cada 12 meses; ofertas não cumulativas entre si (única exceção: a cortesia).
+• Reajuste: pode-se ofertar 50% de desconto ou isenção total no valor do reajuste.
+• Desconto/bonificação por período: máx. 20% na mensalidade — até 03 meses (pedidos comuns) ou até 06 meses (reversão de cancelamento, ticket acima de R$ 120).
+• Cortesia: até 03 mensalidades de cortesia, que podem ser diluídas em até 12x; é cumulativa com as demais ofertas e exige renovação da vigência contratual por no mínimo 12 meses.
+• Câmera Wifi grátis (IM3/IM5/IM7, somente se o cliente não tiver câmera grátis no contrato) ou redução de até R$ 40/mês na Câmera Wifi paga — ambos exigem renovação de 12 meses.
+• Troca de serviço sem custos rescisórios exige renovação de 24 ou 36 meses.
+• Todo acordo deve ser formalizado no ticket; qualquer alteração contratual depende de contrato assinado pelo cliente.'
+WHERE nome = 'proposta de renegociação';
 `
 
 // migration006: vínculo do card do Kanban com um ticket do helpdesk 360 —
