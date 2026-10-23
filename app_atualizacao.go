@@ -67,6 +67,9 @@ func (a *App) InstalarAtualizacao() (string, error) {
 	novo := filepath.Join(dir, "rota-smart.novo.exe")
 
 	cliente := atualizacao.NovoCliente(a.fonteAtualizacao())
+	// o Timeout de 20s do cliente serve para metadados (versao.txt); o exe
+	// tem ~79 MB e estouraria os 20s — o ctx de 120s é quem limita o download.
+	cliente.HTTP.Timeout = 0
 	if err := cliente.Baixar(ctx, novo); err != nil {
 		return "", friendly("InstalarAtualizacao", err)
 	}
