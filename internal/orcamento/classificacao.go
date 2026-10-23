@@ -52,9 +52,10 @@ func Classificar(p PerfilCliente, s Selecao) *Classificacao {
 
 	switch {
 	case qtdDVR > 0 && p.TemCameraWifi && !p.TemCameraDVR:
+		// wifi → DVR obrigatoriamente RD; o caminho inverso (cliente DVR
+		// adicionando câmera wifi) é resolvido pelas regras gerais abaixo
+		// e pode ficar no orçamento service.
 		rd("cliente tem câmeras wifi e o pedido inclui câmera/gravador DVR — mistura de tecnologia, vai obrigatoriamente para o RD")
-	case qtdWifi > 0 && p.TemCameraDVR && !p.TemCameraWifi:
-		rd("cliente tem câmeras DVR e o pedido inclui câmera wifi — mistura de tecnologia, vai obrigatoriamente para o RD")
 	}
 
 	if c.Tipo == TipoIndefinido && qtdCameras > 0 && !p.ContratoImagens {

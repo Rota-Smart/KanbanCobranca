@@ -28,6 +28,12 @@ func TestClassificar(t *testing.T) {
 			TipoAmpliacao,
 		},
 		{
+			"câmera wifi em cliente DVR pode ser service",
+			PerfilCliente{ContratoAlarme: true, ContratoImagens: true, TemCameraDVR: true},
+			Selecao{TipoSistema: "CAMERAS DVR", Itens: map[string]int{"Câmera Wifi Interna - IM3 (Sem SD)": 1}},
+			TipoService,
+		},
+		{
 			"mais de 3 câmeras",
 			PerfilCliente{ContratoAlarme: true, ContratoImagens: true, TemCameraDVR: true},
 			Selecao{TipoSistema: "CAMERAS DVR", Itens: map[string]int{"Câmera 1120": 6}},
