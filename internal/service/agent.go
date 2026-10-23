@@ -88,6 +88,12 @@ func AgentTools() []map[string]any {
 				"ticketId": map[string]any{"type": "number"},
 				"coluna":   map[string]any{"type": "string"},
 			}, []string{"ticketId", "coluna"}),
+		tool("vincular_ticket",
+			"Vincula um ticket do helpdesk 360 a um card do Kanban (aceita o número do ticket, com ou sem #, o uuid ou a URL do ticket). Com numero vazio, desvincula. Antes, descubra o número com detalhe_ticket_360 ou peça ao usuário; para achar o card use listar_tickets.",
+			map[string]any{
+				"ticketId": map[string]any{"type": "number"},
+				"numero":   map[string]any{"type": "string", "description": "número, uuid ou URL do ticket no 360; vazio para desvincular"},
+			}, []string{"ticketId"}),
 		tool("avaliar_cliente",
 			"Avalia o cliente do card: renegociação anterior, fidelidade, cortesia.",
 			map[string]any{"ticketId": map[string]any{"type": "number"}}, []string{"ticketId"}),

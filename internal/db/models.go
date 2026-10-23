@@ -3,17 +3,19 @@ package db
 // Ticket é um card do Kanban. A lista de colunas válidas é responsabilidade
 // do pacote service; o banco não faz CHECK nas colunas.
 type Ticket struct {
-	ID           int64  `json:"id"`
-	NomeCliente  string `json:"nomeCliente"`
-	TipoTicket   string `json:"tipoTicket"`
-	NumeroTicket string `json:"numeroTicket"`
-	CodService   string `json:"codService"`
-	Endereco     string `json:"endereco"`
-	Telefone     string `json:"telefone"`
-	ColunaAtual  string `json:"colunaAtual"`
-	Posicao      int    `json:"posicao"`
-	CreatedAt    string `json:"createdAt"`
-	UpdatedAt    string `json:"updatedAt"`
+	ID              int64  `json:"id"`
+	NomeCliente     string `json:"nomeCliente"`
+	TipoTicket      string `json:"tipoTicket"`
+	NumeroTicket    string `json:"numeroTicket"`
+	CodService      string `json:"codService"`
+	Endereco        string `json:"endereco"`
+	Telefone        string `json:"telefone"`
+	ColunaAtual     string `json:"colunaAtual"`
+	Posicao         int    `json:"posicao"`
+	CreatedAt       string `json:"createdAt"`
+	UpdatedAt       string `json:"updatedAt"`
+	Ticket360ID     string `json:"ticket360Id"`     // uuid do ticket no helpdesk 360 (vazio = sem vínculo)
+	Ticket360Numero string `json:"ticket360Numero"` // número exibido no 360 (ex.: "12345")
 }
 
 // Cobranca é um acordo de reparcelamento; valores em int64 centavos.

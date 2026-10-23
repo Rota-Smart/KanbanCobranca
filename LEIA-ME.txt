@@ -51,6 +51,12 @@ COMO INSTALAR (outro computador):
    de Configurações fechada, e a barra mostra o volume baixado mesmo quando
    o servidor não informa o tamanho total.
 
+12. VÍNCULO CARD ↔ TICKET 360 (novo na v1.8.0): no menu ⋯ do card, "Vincular
+   ticket 360…" aceita a URL do ticket, o uuid ou só o número — o app valida
+   no 360 (se houver sessão) e mostra o selo 🎫 no card (clique abre o ticket
+   no navegador). O assistente também vincula/desvincula pelo chat
+   ("vincule o ticket 12345 ao card do cliente X").
+
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
    guia do Chrome; faça login lá UMA vez e o app captura e salva o cookie

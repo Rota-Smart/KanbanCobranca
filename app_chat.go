@@ -389,6 +389,26 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		return fmt.Sprintf("Card %d movido para %s%s.", id, coluna, extra),
 			fmt.Sprintf("moveu o card %d para %s", id, coluna), nil
 
+	case "vincular_ticket":
+		id := argInt("ticketId")
+		if id <= 0 {
+			return "", "", fmt.Errorf("ticketId inválido")
+		}
+		t, aviso, err := a.vincularTicket360(id, argStr("numero"))
+		if err != nil {
+			return "", "", err
+		}
+		if t.Ticket360Numero == "" {
+			return fmt.Sprintf("Card %d (%s): vínculo com o ticket do 360 removido.", t.ID, t.NomeCliente),
+				fmt.Sprintf("desvinculou o ticket 360 do card %d", t.ID), nil
+		}
+		resp := fmt.Sprintf("Card %d (%s) agora aponta para o ticket #%s do 360.", t.ID, t.NomeCliente, t.Ticket360Numero)
+		if aviso != "" {
+			resp += " Obs.: " + aviso
+		}
+		return resp,
+			fmt.Sprintf("vinculou o ticket #%s ao card %d (%s)", t.Ticket360Numero, t.ID, t.NomeCliente), nil
+
 	case "avaliar_cliente":
 		id := argInt("ticketId")
 		if id <= 0 {
@@ -753,6 +773,121 @@ func (a *App) resolverTicket360(ctx context.Context, numero string) (*rota360.Ti
 		}
 	}
 	return nil, fmt.Errorf("ticket %s não encontrado nas filas em aberto/pendentes", numero)
+}
+
+// dividirEntradaTicket separa a entrada do usuário em (uuid, numero): aceita
+// a URL do ticket no 360, o uuid puro ou o número exibido (com ou sem "#").
+func dividirEntradaTicket(entrada string) (uuid, numero string) {
+	e := strings.TrimSpace(entrada)
+	if e == "" {
+		return "", ""
+	}
+	low := strings.ToLower(e)
+	if i := strings.Index(low, "helpdesk/tickets/"); i >= 0 {
+		rest := e[i+len("helpdesk/tickets/"):]
+		if j := strings.IndexAny(rest, "?#/"); j >= 0 {
+			rest = rest[:j]
+		}
+		return strings.TrimSpace(rest), ""
+	}
+	if len(e) == 36 && strings.Count(e, "-") == 4 {
+		return e, ""
+	}
+	return "", strings.TrimPrefix(e, "#")
+}
+
+// VincularTicket360 liga um ticket do helpdesk 360 a um card do Kanban.
+// entrada aceita número ("12345", "#12345"), uuid ou a URL do ticket; vazio
+// desvincula. Com o 360 conectado, valida no helpdesk, guarda o uuid (para
+// abrir/responder depois) e preenche o codService do card se estiver vazio;
+// sem sessão (ou ticket fora das filas), vincula pelo que foi digitado.
+func (a *App) VincularTicket360(ticketID int64, entrada string) (db.Ticket, error) {
+	t, _, err := a.vincularTicket360(ticketID, entrada)
+	return t, err
+}
+
+// vincularTicket360 faz o trabalho e devolve também um aviso (vazio quando a
+// validação no 360 deu certa) para o chat passar ao usuário.
+func (a *App) vincularTicket360(ticketID int64, entrada string) (db.Ticket, string, error) {
+	t, err := a.tickets.Get(a.ctx, ticketID)
+	if err != nil {
+		return db.Ticket{}, "", friendly("VincularTicket360", err)
+	}
+
+	uuid, numero := dividirEntradaTicket(entrada)
+	if uuid == "" && numero == "" {
+		// desvincular
+		if err := a.tickets.VincularTicket360(a.ctx, t.ID, "", "", ""); err != nil {
+			return db.Ticket{}, "", friendly("VincularTicket360", err)
+		}
+		t, err = a.tickets.Get(a.ctx, t.ID)
+		if err != nil {
+			return db.Ticket{}, "", friendly("VincularTicket360", err)
+		}
+		return *t, "", nil
+	}
+
+	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
+	defer cancel()
+	var det *rota360.TicketDetalhe360
+	aviso := ""
+	c := a.rotaAtual()
+	switch {
+	case c == nil:
+		aviso = "Sem sessão no 360: vinculei pelo que foi digitado, sem validar no helpdesk."
+	case uuid != "":
+		if d, err := c.DetalheTicket(ctx, uuid); err == nil {
+			det = d
+		} else {
+			aviso = "Não consegui ler o ticket no 360; vinculei mesmo assim."
+		}
+	case numero != "":
+		item, err := a.resolverTicket360(ctx, numero)
+		if err != nil {
+			aviso = fmt.Sprintf("Ticket #%s não está nas filas em aberto/pendentes do 360; vinculei pelo número digitado.", numero)
+			break
+		}
+		uuid = item.ID
+		if d, err := c.DetalheTicket(ctx, uuid); err == nil {
+			det = d
+		}
+	}
+	if det != nil {
+		if det.Numero != "" {
+			numero = det.Numero
+		}
+		if uuid == "" {
+			uuid = det.ID
+		}
+	}
+	if uuid == "" && numero == "" {
+		return db.Ticket{}, "", fmt.Errorf("não entendi o ticket %q — cole a URL do ticket, o uuid ou o número", entrada)
+	}
+
+	cod := ""
+	if det != nil {
+		cod = det.CodService
+	}
+	if err := a.tickets.VincularTicket360(a.ctx, t.ID, uuid, numero, cod); err != nil {
+		return db.Ticket{}, "", friendly("VincularTicket360", err)
+	}
+	t, err = a.tickets.Get(a.ctx, t.ID)
+	if err != nil {
+		return db.Ticket{}, "", friendly("VincularTicket360", err)
+	}
+	return *t, aviso, nil
+}
+
+// AbrirTicket360DoCard abre no navegador o ticket 360 vinculado ao card (pelo uuid).
+func (a *App) AbrirTicket360DoCard(uuid string) error {
+	if strings.TrimSpace(uuid) == "" {
+		return fmt.Errorf("card sem ticket do 360 vinculado")
+	}
+	url := urlTicket360(uuid)
+	if err := tela.NavegarAbaAtiva(url); err != nil {
+		return abrirNoNavegador(url)
+	}
+	return nil
 }
 
 // agentDetalheTicket devolve o ticket completo (descrição + interações) pelo

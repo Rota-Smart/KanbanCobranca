@@ -13,7 +13,35 @@ var migrations = []string{
 	migration003,
 	migration004,
 	migration005,
+	migration006,
+	migration007,
 }
+
+// migration007: padrão permanente "proposta de renegociação" — o formato
+// obrigatório das propostas de valores em atraso (pedido do usuário). INSERT
+// OR IGNORE: quem já reensinou o padrão pelo chat mantém a própria versão.
+const migration007 = `
+INSERT OR IGNORE INTO padroes (nome, conteudo) VALUES
+    ('proposta de renegociação',
+    'Ao montar uma proposta de renegociação de valores em atraso, use SEMPRE este formato (substitua os valores pelos reais do cliente):
+"Bom dia, {primeiro nome}! Tudo bem?
+
+Para adiantar o assunto do áudio que enviei, já deixo a proposta aqui para você avaliar:
+
+Referente ao total em aberto, contando com o mês de {mês corrente} (R$ {total em aberto, incluindo a mensalidade do mês corrente}):
+• Entrada: R$ {entrada}
+• Parcelamento: {n}x de R$ {valor da parcela}
+
+Nesses meses, a parcela ficará em R$ {mensalidade + parcela da renegociação}, retornando aos R$ {mensalidade normal} normais depois."
+Ajuste a saudação à hora do dia (Bom dia/Boa tarde/Boa noite); se não houver entrada, omita a linha dela; deixe "Parcelamento" em negrito.');
+`
+
+// migration006: vínculo do card do Kanban com um ticket do helpdesk 360 —
+// guardamos o uuid (para abrir/responder pela API) e o número exibido.
+const migration006 = `
+ALTER TABLE tickets ADD COLUMN ticket360_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE tickets ADD COLUMN ticket360_numero TEXT NOT NULL DEFAULT '';
+`
 
 // migration005: padrões do assistente — instruções permanentes que o usuário
 // ensina pelo chat (ex.: estilo de escrita de tickets) e que entram no system

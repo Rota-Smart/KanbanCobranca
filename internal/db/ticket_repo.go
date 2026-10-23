@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-const ticketCols = `id, nome_cliente, tipo_ticket, numero_ticket, cod_service, endereco, telefone, coluna_atual, posicao, created_at, updated_at`
+const ticketCols = `id, nome_cliente, tipo_ticket, numero_ticket, cod_service, endereco, telefone, coluna_atual, posicao, created_at, updated_at, ticket360_id, ticket360_numero`
 
 type TicketRepo struct {
 	db *sql.DB
@@ -65,7 +65,8 @@ func (r *TicketRepo) Get(ctx context.Context, id int64) (*Ticket, error) {
 	err := r.db.QueryRowContext(ctx,
 		`SELECT `+ticketCols+` FROM tickets WHERE id = ?`, id,
 	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
-		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt)
+		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
+		&t.Ticket360ID, &t.Ticket360Numero)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTicketNaoEncontrado
 	}
@@ -82,7 +83,8 @@ func (r *TicketRepo) GetPorCodService(ctx context.Context, cod string) (*Ticket,
 	err := r.db.QueryRowContext(ctx,
 		`SELECT `+ticketCols+` FROM tickets WHERE cod_service = ? ORDER BY id DESC LIMIT 1`, cod,
 	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
-		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt)
+		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
+		&t.Ticket360ID, &t.Ticket360Numero)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -160,7 +162,30 @@ func (r *TicketRepo) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// VincularTicket360 grava (ou limpa, com uuid e numero vazios) o vínculo do
+// card com um ticket do helpdesk 360. Se o card ainda não tem codService e
+// cod vier preenchido (do detalhe do ticket), preenche.
+func (r *TicketRepo) VincularTicket360(ctx context.Context, id int64, uuid, numero, cod string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE tickets SET
+		   ticket360_id = ?,
+		   ticket360_numero = ?,
+		   cod_service = CASE WHEN ? != '' AND (cod_service IS NULL OR cod_service = '') THEN ? ELSE cod_service END,
+		   updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+		 WHERE id = ?`,
+		uuid, numero, cod, cod, id)
+	if err != nil {
+		return fmt.Errorf("vincular ticket 360: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrTicketNaoEncontrado
+	}
+	return nil
+}
+
 func scanTicket(rows *sql.Rows, t *Ticket) error {
 	return rows.Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
-		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt)
+		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
+		&t.Ticket360ID, &t.Ticket360Numero)
 }

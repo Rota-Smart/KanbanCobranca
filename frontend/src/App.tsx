@@ -2,7 +2,6 @@ import {
   DndContext,
   KeyboardSensor,
   PointerSensor,
-  closestCenter,
   closestCorners,
   useSensor,
   useSensors,
@@ -255,6 +254,24 @@ export default function App() {
     };
   }, []);
 
+  // Card vinculado/desvinculado do ticket 360 (evento interno do TicketCard):
+  // troca o card no board sem recarregar tudo.
+  useEffect(() => {
+    function aoAtualizar(e: Event) {
+      const t = (e as CustomEvent).detail as Ticket;
+      if (!t?.id) return;
+      setBoard((b) => {
+        const novo: Board = {};
+        for (const [c, ts] of Object.entries(b)) {
+          novo[c] = ts.map((x) => (x.id === t.id ? t : x));
+        }
+        return novo;
+      });
+    }
+    window.addEventListener('ticket-atualizado', aoAtualizar);
+    return () => window.removeEventListener('ticket-atualizado', aoAtualizar);
+  }, []);
+
   async function recarregarBoard() {
     try {
       const [cs, tickets] = await Promise.all([bindings.GetColunas(), bindings.GetTickets()]);
@@ -338,6 +355,8 @@ export default function App() {
         codService: '',
         endereco: '',
         telefone: '',
+        ticket360Id: '',
+        ticket360Numero: '',
         colunaAtual: coluna,
         posicao: fim,
         createdAt: '',
@@ -421,6 +440,24 @@ export default function App() {
     void gravarOrdemColunas(arrayMove(colunas, de, para));
   }
 
+  // IDs de coluna são strings, de cards são números — um único DndContext
+  // atende os dois (contextos aninhados não funcionam: o useSortable dos
+  // cards resolveria para o contexto interno, das colunas, e o arraste dos
+  // cards pararia).
+  function ehColuna(id: string | number): boolean {
+    return typeof id === 'string' && colunas.includes(id);
+  }
+
+  function onDragEndUnificado(event: DragEndEvent) {
+    if (ehColuna(event.active.id)) onColunaDragEnd(event);
+    else onDragEnd(event);
+  }
+
+  function onDragOverUnificado(event: DragOverEvent) {
+    if (ehColuna(event.active.id)) return; // arraste de coluna: nada a fazer
+    onDragOver(event);
+  }
+
   if (carregando) return <div className="p-8 text-slate-500">Carregando…</div>;
   if (erro) return <div className="p-8 text-red-600">Erro ao carregar: {erro}</div>;
 
@@ -491,13 +528,11 @@ export default function App() {
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
-        onDragOver={onDragOver}
-        onDragEnd={onDragEnd}
+        onDragOver={onDragOverUnificado}
+        onDragEnd={onDragEndUnificado}
       >
         <div className="flex gap-3 p-3 overflow-x-auto overscroll-x-contain flex-1">
-          {/* Contexto próprio para o arraste de colunas (o de cima é dos cards). */}
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onColunaDragEnd}>
-            <SortableContext items={colunas} strategy={horizontalListSortingStrategy}>
+          <SortableContext items={colunas} strategy={horizontalListSortingStrategy}>
               {colunas.map((c) => (
                 <ColunaOrdenavel
                   key={c}
@@ -521,7 +556,6 @@ export default function App() {
                 />
               ))}
             </SortableContext>
-          </DndContext>
           <button
             className="glass-soft rounded-2xl w-56 shrink-0 self-start p-3 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-white font-medium text-left"
             onClick={criarColuna}

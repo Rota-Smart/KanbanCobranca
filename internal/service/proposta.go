@@ -34,22 +34,32 @@ var tplProposta = template.Must(template.New("proposta").Funcs(template.FuncMap{
 	"brl": money.Format,
 }).Parse(`{{.Saudacao}}, {{.PrimeiroNome}}! Tudo bem?
 
-Referente ao total em aberto (R$ {{brl .TotalAberto}}), consigo uma condição de renegociação para você:
-{{if .TemEntrada}}• Entrada de R$ {{brl .Entrada}}
-{{end}}• Saldo de R$ {{brl .Saldo}} em {{.Vezes}}x de R$ {{brl .Parcelado}}{{if .TemResto}} (a última parcela fica R$ {{brl .Ultima}}){{end}}
+Para adiantar o assunto do áudio que enviei, já deixo a proposta aqui para você avaliar:
 
-Sua parcela normal é R$ {{brl .ParcelaBase}}. Durante o acordo, a mensalidade passa a ser R$ {{brl .Final}}{{if .TemResto}} (R$ {{brl .UltimaFinal}} na última parcela){{end}}.
+Referente ao total em aberto, contando com o mês de {{.Mes}} (R$ {{brl .TotalAberto}}):
+{{if .TemEntrada}}• Entrada: R$ {{brl .Entrada}}
+{{end}}• Parcelamento: {{.Vezes}}x de R$ {{brl .Parcelado}}
+
+Nesses meses, a parcela ficará em R$ {{brl .Final}} (parcela + renegociação), retornando aos R$ {{brl .ParcelaBase}} normais depois.{{if .TemResto}} A última parcela do acordo fica em R$ {{brl .UltimaFinal}}.{{end}}
 
 Posso formalizar para você?
 `))
 
 type propostaData struct {
-	Saudacao, PrimeiroNome          string
+	Saudacao, PrimeiroNome, Mes     string
 	TotalAberto, Entrada, Saldo     int64
 	Parcelado, Ultima               int64
 	ParcelaBase, Final, UltimaFinal int64
 	TemEntrada, TemResto            bool
 	Vezes                           int
+}
+
+// mesesPT nomeia o mês em português (time.Month.String() só tem inglês).
+var mesesPT = map[time.Month]string{
+	time.January: "janeiro", time.February: "fevereiro", time.March: "março",
+	time.April: "abril", time.May: "maio", time.June: "junho",
+	time.July: "julho", time.August: "agosto", time.September: "setembro",
+	time.October: "outubro", time.November: "novembro", time.December: "dezembro",
 }
 
 // Gerar renderiza o template determinístico a partir do resultado
@@ -60,6 +70,7 @@ func (p *PropostaService) Gerar(nomeCliente string, in ReparcelamentoInput, res 
 	err := tplProposta.Execute(&sb, propostaData{
 		Saudacao:     saudacao(p.agora()),
 		PrimeiroNome: primeiroNome(nomeCliente),
+		Mes:          mesesPT[p.agora().Month()],
 		TotalAberto:  in.TotalAbertoCents,
 		Entrada:      in.EntradaCents,
 		Saldo:        res.SaldoCents,

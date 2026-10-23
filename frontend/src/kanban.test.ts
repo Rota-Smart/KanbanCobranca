@@ -11,6 +11,8 @@ function t(id: number, coluna: string, posicao: number): Ticket {
     codService: '',
     endereco: '',
     telefone: '',
+    ticket360Id: '',
+    ticket360Numero: '',
     colunaAtual: coluna,
     posicao,
     createdAt: '',

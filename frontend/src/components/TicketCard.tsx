@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useState } from 'react';
+import * as bindings from '../../wailsjs/go/main/App';
 import type { Ticket } from '../wails-types';
 
 // Cores por tipo: faixa lateral + avatar, estilo card de pedido (delivery).
@@ -33,6 +34,12 @@ function iniciais(nome: string): string {
   return ((partes[0][0] ?? '') + (partes.length > 1 ? partes[partes.length - 1][0] ?? '' : '')).toUpperCase();
 }
 
+// Avisa o App que o card mudou (vínculo com o ticket 360), para o board
+// atualizar sem prop drilling por coluna.
+function notificarCardAtualizado(t: Ticket) {
+  window.dispatchEvent(new CustomEvent('ticket-atualizado', { detail: t }));
+}
+
 // Modo de visualização do card: compacto (só avatar + nome) ou resumido (atual).
 export type ModoCard = 'min' | 'resumo';
 
@@ -50,7 +57,32 @@ interface Props {
 export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
   const [menuAberto, setMenuAberto] = useState(false);
+  const [vinculando, setVinculando] = useState(false);
+  const [entradaTicket, setEntradaTicket] = useState('');
+  const [erroVinculo, setErroVinculo] = useState('');
   const cor = corPorTipo[ticket.tipoTicket] ?? corPorTipo['Outro'];
+
+  // Vincula (ou desvincula, com entrada vazia) o ticket do 360 ao card.
+  async function vincular(entrada: string) {
+    setErroVinculo('');
+    try {
+      const t = await bindings.VincularTicket360(ticket.id, entrada);
+      notificarCardAtualizado(t);
+      setVinculando(false);
+      setEntradaTicket('');
+    } catch (e) {
+      setErroVinculo(String(e));
+    }
+  }
+
+  async function abrirTicket360() {
+    setErroVinculo('');
+    try {
+      await bindings.AbrirTicket360DoCard(ticket.ticket360Id ?? '');
+    } catch (e) {
+      setErroVinculo(String(e));
+    }
+  }
 
   if (modo === 'min') {
     return (
@@ -78,6 +110,9 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           <span className="font-semibold text-slate-800 dark:text-slate-100 truncate flex-1 min-w-0">
             {ticket.nomeCliente || 'Sem nome'}
           </span>
+          {ticket.ticket360Numero && (
+            <span className="text-[11px] shrink-0" title={`Ticket 360 #${ticket.ticket360Numero}`}>🎫</span>
+          )}
           {qtdAcordos > 0 && (
             <span className="text-[11px] px-1.5 rounded-full font-medium bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200 shrink-0">
               ✓{qtdAcordos}
@@ -141,6 +176,18 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
               <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${cor.pill}`}>
                 {ticket.tipoTicket}
               </span>
+              {ticket.ticket360Numero && (
+                <button
+                  title={`Ticket 360 #${ticket.ticket360Numero} — clique para abrir no navegador`}
+                  className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-indigo-100/80 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200 hover:bg-indigo-200/80"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    abrirTicket360();
+                  }}
+                >
+                  🎫 #{ticket.ticket360Numero}
+                </button>
+              )}
               {qtdAcordos > 0 && (
                 <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200">
                   ✓ {qtdAcordos} acordo{qtdAcordos > 1 ? 's' : ''}
@@ -201,6 +248,51 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           >
             Abrir completo
           </button>
+          <button
+            className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+            onClick={() => {
+              setErroVinculo('');
+              setVinculando((v) => !v);
+            }}
+          >
+            {ticket.ticket360Numero ? `Trocar ticket 360 (agora #${ticket.ticket360Numero})` : 'Vincular ticket 360…'}
+          </button>
+          {vinculando && (
+            <form
+              className="px-3 py-2 border-t border-slate-500/10"
+              onSubmit={(e) => {
+                e.preventDefault();
+                vincular(entradaTicket.trim());
+              }}
+            >
+              <input
+                autoFocus
+                className="w-full border rounded px-2 py-1 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100"
+                placeholder="nº, #nº, uuid ou URL do ticket"
+                value={entradaTicket}
+                onChange={(e) => setEntradaTicket(e.target.value)}
+              />
+              <p className="mt-1 text-[10px] text-slate-500">
+                Cole a URL do ticket no 360, o uuid ou só o número. Vazio + Enter desvincula.
+              </p>
+            </form>
+          )}
+          {ticket.ticket360Numero && (
+            <button
+              className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+              onClick={() => {
+                setMenuAberto(false);
+                vincular('');
+              }}
+            >
+              Desvincular ticket (#{ticket.ticket360Numero})
+            </button>
+          )}
+          {erroVinculo && (
+            <p className="px-3 py-2 text-[10px] text-red-600 dark:text-red-400 max-w-[16rem] break-words">
+              {erroVinculo}
+            </p>
+          )}
           <button
             className="block w-full text-left px-3 py-2 hover:bg-red-500/10 text-red-600 dark:text-red-400"
             onClick={() => {

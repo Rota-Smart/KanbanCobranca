@@ -28,8 +28,9 @@ func TestPadraoRepoUpsertListDelete(t *testing.T) {
 		t.Fatalf("upsert 3: %v", err)
 	}
 
+	// 2 seeds da migration + "assinatura" = 3 padrões.
 	ps, err := r.List(ctx)
-	if err != nil || len(ps) != 2 {
+	if err != nil || len(ps) != 3 {
 		t.Fatalf("list: %v (%d padrões)", err, len(ps))
 	}
 	if ps[0].Nome != "assinatura" {
@@ -45,7 +46,8 @@ func TestPadraoRepoUpsertListDelete(t *testing.T) {
 	if err := r.Delete(ctx, "assinatura"); !errors.Is(err, ErrPadraoNaoEncontrado) {
 		t.Errorf("delete inexistente: %v", err)
 	}
-	if n, _ := r.Contagem(ctx); n != 1 {
+	// Restam os 2 seeds (estilo de tickets + proposta de renegociação).
+	if n, _ := r.Contagem(ctx); n != 2 {
 		t.Errorf("contagem = %d, esperava 1", n)
 	}
 }
