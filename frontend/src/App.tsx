@@ -554,7 +554,7 @@ export default function App() {
       )}
 
       {toast && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 glass text-slate-800 dark:text-slate-100 text-sm px-4 py-2.5 rounded-xl">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] glass text-slate-800 dark:text-slate-100 text-sm px-4 py-2.5 rounded-xl shadow-lg">
           {toast}
         </div>
       )}
