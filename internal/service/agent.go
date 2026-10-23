@@ -50,7 +50,7 @@ func AgentTools() []map[string]any {
 			"Cria uma coluna nova no Kanban (máx. 40 caracteres).",
 			map[string]any{"nome": map[string]any{"type": "string"}}, []string{"nome"}),
 		tool("financeiro_cliente",
-			"Consulta os dados do cliente no 360 pelo código service: financeiro (saldo devedor, faturas atrasadas com multa/mora), ordens de serviço (OS) ativas e atendimentos recentes (Octadesk).",
+			"Consulta os dados do cliente no 360 pelo código service: financeiro (saldo devedor, faturas atrasadas com multa/mora), ordens de serviço (OS) ativas, produtos/equipamentos cadastrados (alarme, câmera, sensores, controles, modelos) e atendimentos recentes (Octadesk).",
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
 		tool("detalhe_ticket_360",
 			"Busca o ticket do helpdesk 360 pelo número: devolve título, status, cliente, descrição e todas as interações (o que foi dito e feito, inclusive o que o técnico registrou).",

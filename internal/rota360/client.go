@@ -147,7 +147,10 @@ type TicketHistorico360 struct {
 
 // Produto360 é um produto/linha de contrato do cliente.
 type Produto360 struct {
+	CodProduto           int64     `json:"codProduto"`
 	Descricao            string    `json:"descricao"`
+	Quantidade           int       `json:"quantidadeAtual"`
+	Tipo                 string    `json:"tipo"` // Locado | Vendido | Brinde...
 	ValorTotal           float64   `json:"valorTotal"`
 	PrimeiraMovimentacao time.Time `json:"primeiraMovimentacao"`
 }
@@ -240,6 +243,28 @@ func (c *Cliente) TicketsDaFila(ctx context.Context, view string, page, limit in
 		return nil, 0, err
 	}
 	return out.Itens, out.Total, nil
+}
+
+// DadosCliente360 é o cadastro completo do cliente (Consulta Clientes →
+// Cadastro Geral), incluindo as observações do cadastro (textos datados
+// com histórico de ampliações, combinados e faturamentos).
+type DadosCliente360 struct {
+	Nome         string `json:"nome"`
+	Situacao     string `json:"situacao"`
+	Observacoes  string `json:"observacoes"`
+	AvisosAtivos any    `json:"avisosAtivos"`
+}
+
+// DadosCliente busca o cadastro completo do cliente por código service.
+func (c *Cliente) DadosCliente(ctx context.Context, codService string) (*DadosCliente360, error) {
+	if _, err := strconv.ParseInt(codService, 10, 64); err != nil {
+		return nil, fmt.Errorf("código service inválido: %s", codService)
+	}
+	var d DadosCliente360
+	if err := c.get(ctx, "/api/cliente/"+codService+"/dados", &d); err != nil {
+		return nil, err
+	}
+	return &d, nil
 }
 
 // ---- Detalhe do ticket (GET /api/helpdesk/tickets/<uuid>) ----

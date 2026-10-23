@@ -234,12 +234,12 @@ func (a *App) sincronizarCliente(ctx context.Context, c *rota360.Cliente, codSer
 
 // ResultadoCobranca é o pacote devolvido ao frontend ao arrastar para Cobrança.
 type ResultadoCobranca struct {
-	Ticket    db.Ticket           `json:"ticket"`
-	Cobranca  db.Cobranca         `json:"cobranca"`
-	Proposta  service.Proposta    `json:"proposta"`
-	Avaliacao *service.Avaliacao  `json:"avaliacao"`
+	Ticket     db.Ticket             `json:"ticket"`
+	Cobranca   db.Cobranca           `json:"cobranca"`
+	Proposta   service.Proposta      `json:"proposta"`
+	Avaliacao  *service.Avaliacao    `json:"avaliacao"`
 	Financeiro rota360.Financeiro360 `json:"financeiro"`
-	Aviso     string              `json:"aviso"`
+	Aviso      string                `json:"aviso"`
 }
 
 // PrepararCobranca roda o fluxo automático da coluna Cobrança: puxa o

@@ -22,19 +22,19 @@ type Captura struct {
 }
 
 var (
-	user32                = windows.NewLazySystemDLL("user32.dll")
-	kernel32              = windows.NewLazySystemDLL("kernel32.dll")
-	procGetForegroundWin  = user32.NewProc("GetForegroundWindow")
-	procGetWindowTextW    = user32.NewProc("GetWindowTextW")
+	user32                 = windows.NewLazySystemDLL("user32.dll")
+	kernel32               = windows.NewLazySystemDLL("kernel32.dll")
+	procGetForegroundWin   = user32.NewProc("GetForegroundWindow")
+	procGetWindowTextW     = user32.NewProc("GetWindowTextW")
 	procGetWindowThreadPID = user32.NewProc("GetWindowThreadProcessId")
-	procOpenClipboard     = user32.NewProc("OpenClipboard")
-	procCloseClipboard    = user32.NewProc("CloseClipboard")
-	procGetClipboardData  = user32.NewProc("GetClipboardData")
-	procOpenProcess       = kernel32.NewProc("OpenProcess")
-	procCloseHandle       = kernel32.NewProc("CloseHandle")
-	procQueryFullProcName = kernel32.NewProc("QueryFullProcessImageNameW")
-	procGlobalLock        = kernel32.NewProc("GlobalLock")
-	procGlobalUnlock      = kernel32.NewProc("GlobalUnlock")
+	procOpenClipboard      = user32.NewProc("OpenClipboard")
+	procCloseClipboard     = user32.NewProc("CloseClipboard")
+	procGetClipboardData   = user32.NewProc("GetClipboardData")
+	procOpenProcess        = kernel32.NewProc("OpenProcess")
+	procCloseHandle        = kernel32.NewProc("CloseHandle")
+	procQueryFullProcName  = kernel32.NewProc("QueryFullProcessImageNameW")
+	procGlobalLock         = kernel32.NewProc("GlobalLock")
+	procGlobalUnlock       = kernel32.NewProc("GlobalUnlock")
 )
 
 const processQueryLimitedInformation = 0x1000
@@ -133,14 +133,14 @@ func textoClipboard() string {
 
 // CUIAutomation / IID_IUIAutomation (uiautomationcore.h).
 var (
-	guidUIAClass = guidDe("{ff48dba4-60ef-4201-aa87-54103eef594e}")
-	guidUIAIID   = guidDe("{30cbe57d-d9d0-452a-ab13-7ac5ac4825ee}")
-	ole32        = windows.NewLazySystemDLL("ole32.dll")
-	procCoInitializeEx = ole32.NewProc("CoInitializeEx")
-	procCoUninitialize = ole32.NewProc("CoUninitialize")
+	guidUIAClass         = guidDe("{ff48dba4-60ef-4201-aa87-54103eef594e}")
+	guidUIAIID           = guidDe("{30cbe57d-d9d0-452a-ab13-7ac5ac4825ee}")
+	ole32                = windows.NewLazySystemDLL("ole32.dll")
+	procCoInitializeEx   = ole32.NewProc("CoInitializeEx")
+	procCoUninitialize   = ole32.NewProc("CoUninitialize")
 	procCoCreateInstance = ole32.NewProc("CoCreateInstance")
-	oleaut32            = windows.NewLazySystemDLL("oleaut32.dll")
-	procVariantClear    = oleaut32.NewProc("VariantClear")
+	oleaut32             = windows.NewLazySystemDLL("oleaut32.dll")
+	procVariantClear     = oleaut32.NewProc("VariantClear")
 )
 
 type guid struct {
@@ -160,17 +160,17 @@ func guidDe(s string) guid {
 
 // variant é a estrutura de 24 bytes do Windows x64; usada só para VT_I4/VT_BSTR.
 type variant struct {
-	vt            uint16
-	reservado     [3]uint16
-	val           uintptr
+	vt        uint16
+	reservado [3]uint16
+	val       uintptr
 }
 
 const (
-	vtI4        = 3
-	vtBSTR      = 8
-	propControlType = 30003
-	propValue   = 30012
-	ctrlEdit    = 50004
+	vtI4             = 3
+	vtBSTR           = 8
+	propControlType  = 30003
+	propValue        = 30012
+	ctrlEdit         = 50004
 	scopeDescendants = 4
 )
 
@@ -198,7 +198,7 @@ func urlDaAbaAtiva(hwnd uintptr) (string, error) {
 		return "", fmt.Errorf("janela vazia")
 	}
 	hr, _, _ := procCoInitializeEx.Call(0, 2) // COINIT_APARTMENTTHREADED
-	mudouModo := hr == 0x80010106              // RPC_E_CHANGED_MODE: segue mesmo assim
+	mudouModo := hr == 0x80010106             // RPC_E_CHANGED_MODE: segue mesmo assim
 	if hr != 0 && !mudouModo {
 		return "", fmt.Errorf("com init: 0x%x", hr)
 	}
@@ -210,7 +210,7 @@ func urlDaAbaAtiva(hwnd uintptr) (string, error) {
 
 	var uiAutomation uintptr
 	hr, _, _ = procCoCreateInstance.Call(
-		uintptr(unsafe.Pointer(&guidUIAClass)), 0, 1 /*INPROC_SERVER*/,
+		uintptr(unsafe.Pointer(&guidUIAClass)), 0, 1, /*INPROC_SERVER*/
 		uintptr(unsafe.Pointer(&guidUIAIID)), uintptr(unsafe.Pointer(&uiAutomation)))
 	if hr != 0 || uiAutomation == 0 {
 		return "", fmt.Errorf("criar UIAutomation: 0x%x", hr)

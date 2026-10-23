@@ -17,10 +17,10 @@ type Chat struct {
 
 // ChatMensagem é uma linha do histórico (papel "user" ou "assistant").
 type ChatMensagem struct {
-	ID       int64  `json:"id"`
-	ChatID   int64  `json:"chatId"`
-	Papel    string `json:"papel"`
-	Conteudo string `json:"conteudo"`
+	ID        int64  `json:"id"`
+	ChatID    int64  `json:"chatId"`
+	Papel     string `json:"papel"`
+	Conteudo  string `json:"conteudo"`
 	AcoesJSON string `json:"acoesJson"` // JSON de []AcaoDoAgente; vazio se sem ações
 }
 

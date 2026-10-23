@@ -130,11 +130,11 @@ func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 	if res.Mensagem == "" {
 		if res.Achou && res.TicketID > 0 {
 			res.Mensagem = fmt.Sprintf(
-				"Continue o atendimento do card #%d — %s (código service %s). Consulte os dados do cliente no 360 (financeiro, OS ativas, atendimentos recentes), revise acordos e avaliação, e sugira os próximos passos.",
+				"Continue o atendimento do card #%d — %s (código service %s). Consulte os dados do cliente no 360 (financeiro, OS ativas, produtos/equipamentos cadastrados, atendimentos recentes), revise acordos e avaliação, e sugira os próximos passos.",
 				res.TicketID, res.NomeCliente, res.CodService)
 		} else {
 			res.Mensagem = fmt.Sprintf(
-				"Estou com o cliente de código %s na tela do 360. Consulte os dados dele (cadastro, financeiro, OS ativas, atendimentos recentes), aponte pendências relevantes e sugira os próximos passos.",
+				"Estou com o cliente de código %s na tela do 360. Consulte os dados dele (cadastro, financeiro, OS ativas, produtos/equipamentos, atendimentos recentes), aponte pendências relevantes e sugira os próximos passos.",
 				res.CodService)
 		}
 	}
@@ -175,7 +175,7 @@ func mensagemTicketDetalhe(det *rota360.TicketDetalhe360) string {
 		fmt.Fprintf(&sb, "[%s] %s: %s\n\n", titulo, m.Autor, limitarTexto(m.Corpo, 700))
 	}
 	sb.WriteString("Resuma: o que o ticket pede, o que já foi feito com o cliente e o que os atendimentos anteriores dizem. ")
-	sb.WriteString("Use as ferramentas para puxar os dados do cliente no 360 (financeiro, OS ativas, atendimentos recentes) e diga os próximos passos.")
+	sb.WriteString("Use as ferramentas para puxar os dados do cliente no 360 (financeiro, OS ativas, produtos/equipamentos cadastrados, atendimentos recentes) e diga os próximos passos.")
 	return sb.String()
 }
 

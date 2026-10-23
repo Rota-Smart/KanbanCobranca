@@ -14,8 +14,8 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"rota-smart/internal/backup"
 	"rota-smart/internal/atualizacao"
+	"rota-smart/internal/backup"
 	"rota-smart/internal/db"
 	"rota-smart/internal/service"
 )

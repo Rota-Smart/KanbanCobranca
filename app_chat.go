@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -397,6 +398,10 @@ func (a *App) agentFinanceiro(ctx context.Context, cod string) (string, string, 
 	} else {
 		sb.WriteString("\nSem OS ativas no cadastro.\n")
 	}
+	sb.WriteString("\n" + resumoEquipamentos(fin.Sources.Produtos.Data))
+	if dc, err := c.DadosCliente(ctx, cod); err == nil && strings.TrimSpace(dc.Observacoes) != "" {
+		sb.WriteString("\nObservações do cadastro:\n" + limitarTexto(dc.Observacoes, 1500) + "\n")
+	}
 	if rec := fin.Sources.Octadesk.Data.TicketsRecentes; len(rec) > 0 {
 		sb.WriteString("\nAtendimentos recentes (Octadesk):\n")
 		for i, t := range rec {
@@ -427,6 +432,69 @@ func resumoMapa(m map[string]any, campos ...string) string {
 		return limitarTexto(string(b), 200)
 	}
 	return strings.Join(partes, " | ")
+}
+
+// regexModeloCamera captura os modelos de câmera wifi usados pela Rota
+// (IM3, IM5, IM7, IM9) nas descrições de produto.
+var regexModeloCamera = regexp.MustCompile(`IM[3579]`)
+
+// resumoEquipamentos deduz do cadastro de produtos o que o cliente tem:
+// alarme e/ou câmera, quantidade de sensores/controles/câmeras e o modelo
+// das câmeras wifi. As descrições do Service marcam o sistema no nome
+// ("-ALARME-" ou "-CFTV-"), então a classificação é heurística.
+func resumoEquipamentos(prods []rota360.Produto360) string {
+	if len(prods) == 0 {
+		return "Produtos cadastrados: nenhum.\n"
+	}
+	temAlarme, temCamera := false, false
+	sensores, controles, cameras := 0, 0, 0
+	modelos := map[string]bool{}
+	var ordemModelos []string
+	var linhas []string
+	for _, p := range prods {
+		d := strings.ToUpper(p.Descricao)
+		temAlarme = temAlarme || strings.Contains(d, "ALARME")
+		ehCamera := strings.Contains(d, "CAMERA") || strings.Contains(d, "CÂMERA")
+		temCamera = temCamera || ehCamera || strings.Contains(d, "CFTV")
+		switch {
+		case strings.Contains(d, "SENSOR"):
+			sensores += p.Quantidade
+		case strings.Contains(d, "CONTROLE"):
+			controles += p.Quantidade
+		case ehCamera:
+			cameras += p.Quantidade
+		}
+		for _, m := range regexModeloCamera.FindAllString(d, -1) {
+			if !modelos[m] {
+				modelos[m] = true
+				ordemModelos = append(ordemModelos, m)
+			}
+		}
+		if len(linhas) < 20 {
+			linhas = append(linhas, fmt.Sprintf("- %dx %s (%s)", p.Quantidade, p.Descricao, p.Tipo))
+		}
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Equipamentos no cadastro: alarme=%s, câmera=%s",
+		simNao(temAlarme), simNao(temCamera))
+	if len(ordemModelos) > 0 {
+		fmt.Fprintf(&sb, " (câmera wifi modelo %s)", strings.Join(ordemModelos, "/"))
+	}
+	fmt.Fprintf(&sb, "; sensores: %d, controles: %d, câmeras: %d. Produtos (%d):\n",
+		sensores, controles, cameras, len(prods))
+	sb.WriteString(strings.Join(linhas, "\n"))
+	if len(prods) > 20 {
+		fmt.Fprintf(&sb, "\n… (+%d mais)", len(prods)-20)
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
+func simNao(b bool) string {
+	if b {
+		return "SIM"
+	}
+	return "não"
 }
 
 // agentDetalheTicket devolve o ticket completo (descrição + interações) pelo

@@ -175,10 +175,10 @@ func (c *Cliente) Enviar(ctx context.Context, localPath, mensagem string) error 
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"message":  mensagem,
-		"content":  base64.StdEncoding.EncodeToString(conteudo),
-		"sha":      sha,
-		"branch":   "main",
+		"message": mensagem,
+		"content": base64.StdEncoding.EncodeToString(conteudo),
+		"sha":     sha,
+		"branch":  "main",
 	})
 	if err != nil {
 		return err

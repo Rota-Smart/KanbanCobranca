@@ -14,20 +14,20 @@ import (
 // a partir do snapshot do 360 (cache) e das cobranças locais. Nunca é
 // fonte de valores financeiros: só de contexto.
 type Avaliacao struct {
-	Renegociou        bool     `json:"renegociou"`
-	QtdRenegociacoes  int      `json:"qtdRenegociacoes"`
-	Fiel              bool     `json:"fiel"`
-	MesesDeCasa       int      `json:"mesesDeCasa"`
-	ElegivelCortesia  bool     `json:"elegivelCortesia"`
-	MensalidadeCents  int64    `json:"mensalidadeCents"`
-	Observacoes       []string `json:"observacoes"`
+	Renegociou       bool     `json:"renegociou"`
+	QtdRenegociacoes int      `json:"qtdRenegociacoes"`
+	Fiel             bool     `json:"fiel"`
+	MesesDeCasa      int      `json:"mesesDeCasa"`
+	ElegivelCortesia bool     `json:"elegivelCortesia"`
+	MensalidadeCents int64    `json:"mensalidadeCents"`
+	Observacoes      []string `json:"observacoes"`
 }
 
 // Avaliador calcula a avaliação do cliente.
 type Avaliador struct {
-	clientes   *db.Cliente360Repo
-	cobrancas  *db.CobrancaRepo
-	agora      func() time.Time
+	clientes  *db.Cliente360Repo
+	cobrancas *db.CobrancaRepo
+	agora     func() time.Time
 }
 
 func NovoAvaliador(clientes *db.Cliente360Repo, cobrancas *db.CobrancaRepo, agora func() time.Time) *Avaliador {

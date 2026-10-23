@@ -21,15 +21,15 @@ const (
 )
 
 const (
-	idTicketTela   = 1 // Shift+F2
+	idTicketTela    = 1 // Shift+F2
 	idBuscaClientes = 2 // Shift+F3
 )
 
 var (
-	user32              = windows.NewLazySystemDLL("user32.dll")
-	procRegisterHotKey  = user32.NewProc("RegisterHotKey")
+	user32               = windows.NewLazySystemDLL("user32.dll")
+	procRegisterHotKey   = user32.NewProc("RegisterHotKey")
 	procUnregisterHotKey = user32.NewProc("UnregisterHotKey")
-	procGetMessageW     = user32.NewProc("GetMessageW")
+	procGetMessageW      = user32.NewProc("GetMessageW")
 )
 
 type msg struct {
