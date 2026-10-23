@@ -46,10 +46,12 @@ func (a *App) iniciarAtalhos() {
 	}()
 }
 
-// mostrarJanela traz o app para frente (minimizado ou coberto).
+// mostrarJanela traz o app para frente em tela cheia (maximizada), mesmo
+// que tenha sido fechada minimizada de um tamanho menor.
 func (a *App) mostrarJanela() {
 	runtime.WindowUnminimise(a.ctx)
 	runtime.WindowShow(a.ctx)
+	runtime.WindowMaximise(a.ctx)
 }
 
 // onAtalhoBusca (Shift+F3): abre o app na busca de clientes.
@@ -64,7 +66,8 @@ func (a *App) onAtalhoTicketTela() {
 	cap := tela.Capturar()
 	dado := a.identificarDaTela(cap)
 	slog.Info("atalho shift+f2", "processo", cap.Processo, "achou", dado.Achou,
-		"fonte", dado.Fonte, "cod", dado.CodService != "")
+		"fonte", dado.Fonte, "cod", dado.CodService != "", "temUrl", cap.URL != "",
+		"urlTicket", regexTicketURL.MatchString(cap.URL))
 	a.mostrarJanela()
 	runtime.EventsEmit(a.ctx, evAtalhoTela, dado)
 }
@@ -101,8 +104,14 @@ func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 			return res
 		}
 		// A URL é de um ticket, mas o detalhe falhou (sem sessão no 360,
-		// erro de rede...). Procurar o código na fila antes de cair nas
-		// pistas genéricas — a URL não tem código de cliente, só o uuid.
+		// erro de rede, sessão expirada...) e a fila não resolveu o código.
+		// Sem sessão o aviso precisa apontar a causa: sem ela nada resolve.
+		if a.rotaAtual() == nil {
+			res.Mensagem = "O app não está conectado ao 360. Abra as Configurações e clique em Conectar; depois aperte Shift+F2 de novo."
+			return res
+		}
+		// Com sessão, pode ser ticket fora da primeira página da fila:
+		// procurar o código nas pistas genéricas antes de desistir.
 		if cod := a.codigoDoTicketNaFila(m[1]); cod != "" {
 			res.CodService = cod
 			res.Fonte = "fila360"

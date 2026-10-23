@@ -84,7 +84,9 @@ func processoDaJanela(hwnd uintptr) string {
 	defer procCloseHandle.Call(h)
 	buf := make([]uint16, 1024)
 	var n uint32 = uint32(len(buf))
-	r, _, _ := procQueryFullProcName.Call(h, uintptr(unsafe.Pointer(&n)), uintptr(unsafe.Pointer(&buf[0])))
+	// Assinatura: (handle, dwFlags, lpExeName, lpdwSize) — buffer e tamanho
+	// estavam trocados, e a chamada falhava sempre.
+	r, _, _ := procQueryFullProcName.Call(h, 0, uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&n)))
 	if r == 0 {
 		return ""
 	}
@@ -169,7 +171,7 @@ const (
 	vtI4             = 3
 	vtBSTR           = 8
 	propControlType  = 30003
-	propValue        = 30012
+	propValue        = 30045 // UIA_ValueValuePropertyId (30012 é ClassName!)
 	ctrlEdit         = 50004
 	scopeDescendants = 4
 )
@@ -259,7 +261,10 @@ func urlDaAbaAtiva(hwnd uintptr) (string, error) {
 	return "", fmt.Errorf("nenhum campo com URL na janela")
 }
 
-// valorURL lê UIA_ValueValuePropertyID do elemento e aceita só URL.
+// valorURL lê UIA_ValueValuePropertyID do elemento e aceita só o que parece
+// URL. O Chrome devolve a URL da omnibox SEM o esquema ("host/caminho"), e
+// campos de login da página também expõem Value — daí excluir "@" e exigir
+// ponto + barra. O chamador filtra pelo domínio do 360.
 func valorURL(elem uintptr) (string, bool) {
 	var v variant
 	if vcall(elem, 10, propValue, uintptr(unsafe.Pointer(&v))) != 0 {
@@ -270,8 +275,14 @@ func valorURL(elem uintptr) (string, bool) {
 		return "", false
 	}
 	url := strings.TrimSpace(bstrParaString(v.val))
-	if !strings.HasPrefix(url, "http") {
+	if url == "" || strings.ContainsAny(url, " \t@") {
 		return "", false
 	}
-	return url, true
+	if strings.HasPrefix(url, "http") {
+		return url, true
+	}
+	if strings.Contains(url, ".") && strings.Contains(url, "/") {
+		return "https://" + url, true
+	}
+	return "", false
 }

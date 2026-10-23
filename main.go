@@ -108,9 +108,10 @@ func main() {
 	}
 
 	err = wails.Run(&options.App{
-		Title:  "RotaSuite",
-		Width:  1024,
-		Height: 768,
+		Title:            "RotaSuite",
+		Width:            1024,
+		Height:           768,
+		WindowStartState: options.Maximised,
 		AssetServer: &assetserver.Options{
 			Assets: frontendFS,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
