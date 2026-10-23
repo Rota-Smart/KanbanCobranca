@@ -12,7 +12,23 @@ var migrations = []string{
 	migration002,
 	migration003,
 	migration004,
+	migration005,
 }
+
+// migration005: padrões do assistente — instruções permanentes que o usuário
+// ensina pelo chat (ex.: estilo de escrita de tickets) e que entram no system
+// prompt de toda conversa.
+const migration005 = `
+CREATE TABLE padroes (
+    nome       TEXT PRIMARY KEY,
+    conteudo   TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+
+INSERT OR IGNORE INTO padroes (nome, conteudo) VALUES
+    ('estilo de tickets',
+    'Ao melhorar/responder tickets de atendimento, use registro formal e impessoal. Estrutura: 1) parágrafo inicial relatando o contato (ex.: "Em contato telefônico com o cliente, foi confirmada...") e os fatos principais; 2) seção "Status atual:" com bullets; 3) seção "Próximos passos:" com bullets; 4) fechamento do tipo "Permanecemos à disposição e seguimos acompanhando o caso até a normalização definitiva.". Nunca invente dados: use apenas nomes, datas e informações presentes no ticket.');
+`
 
 // migration002: integração Rota 360 — cache de clientes, parâmetros de
 // negociação e configurações (chave Groq, modelo, sessão do site).

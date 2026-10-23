@@ -34,6 +34,7 @@ type App struct {
 	groq       *service.GroqCliente
 	avaliador  *service.Avaliador
 	chats      *db.ChatRepo
+	padroes    *db.PadraoRepo
 
 	muRota        sync.Mutex
 	rota          *rota360.Cliente // sessão ativa do 360; nil se desconectado
@@ -76,6 +77,7 @@ func NewApp(database *sql.DB, propostas *service.PropostaService) *App {
 		cobrancas: db.NewCobrancaRepo(database),
 		colunas:   db.NewColumnRepo(database),
 		chats:     db.NewChatRepo(database),
+		padroes:   db.NewPadraoRepo(database),
 		propostas: propostas,
 	}
 }

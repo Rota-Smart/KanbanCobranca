@@ -171,7 +171,7 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 
 	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
 	defer cancel()
-	res, err := a.groq.Conversar(ctx, historico, mensagem, a, nil)
+	res, err := a.groq.Conversar(ctx, historico, mensagem, a.textoPadroes(a.ctx), a, nil)
 	if err != nil {
 		if err == service.ErrGroqSemChave {
 			return service.ChatResultado{}, err
@@ -211,6 +211,53 @@ func (a *App) gravarResposta(chatID int64, res *service.ChatResultado) error {
 	}
 	if err := a.chats.AddMensagem(a.ctx, chatID, "assistant", res.Resposta, string(acoesJSON)); err != nil {
 		return friendly("EnviarChat", err)
+	}
+	return nil
+}
+
+// textoPadroes monta o bloco de padrões salvos para o system prompt do agente
+// ("- nome: conteudo" por linha); vazio se não houver padrões (ou falha na
+// leitura, que não deve impedir a conversa).
+func (a *App) textoPadroes(ctx context.Context) string {
+	if a.padroes == nil {
+		return ""
+	}
+	ps, err := a.padroes.List(ctx)
+	if err != nil || len(ps) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, p := range ps {
+		fmt.Fprintf(&sb, "- %s: %s\n", p.Nome, p.Conteudo)
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// ListarPadroes devolve os padrões permanentes salvos pelo chat (para a UI).
+func (a *App) ListarPadroes() ([]db.Padrao, error) {
+	if a.padroes == nil {
+		return []db.Padrao{}, nil
+	}
+	ps, err := a.padroes.List(a.ctx)
+	if err != nil {
+		return nil, friendly("ListarPadroes", err)
+	}
+	if ps == nil {
+		ps = []db.Padrao{}
+	}
+	return ps, nil
+}
+
+// ApagarPadrao remove um padrão permanente (para a UI).
+func (a *App) ApagarPadrao(nome string) error {
+	if a.padroes == nil {
+		return fmt.Errorf("padrões indisponíveis")
+	}
+	if err := a.padroes.Delete(a.ctx, nome); err != nil {
+		if err == db.ErrPadraoNaoEncontrado {
+			return err
+		}
+		return friendly("ApagarPadrao", err)
 	}
 	return nil
 }
@@ -394,9 +441,62 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		return res.PropostaTexto(cliente),
 			fmt.Sprintf("gerou orçamento %s (R$ %.2f/mês + instalação R$ %.2f)", tipo, res.Mensal, res.TaxaInstalacao), nil
 
+	case "salvar_padrao":
+		nome, conteudo := argStr("nome"), argStr("conteudo")
+		if err := a.padroesUpsert(ctx, nome, conteudo); err != nil {
+			return "", "", err
+		}
+		return fmt.Sprintf("Padrão %q salvo: %s", nome, conteudo),
+			fmt.Sprintf("salvou o padrão %q", nome), nil
+
+	case "listar_padroes":
+		ps, err := a.padroes.List(ctx)
+		if err != nil {
+			return "", "", err
+		}
+		if len(ps) == 0 {
+			return "Nenhum padrão salvo ainda.", "listou os padrões (vazio)", nil
+		}
+		var sb strings.Builder
+		for _, p := range ps {
+			fmt.Fprintf(&sb, "- %s: %s\n", p.Nome, p.Conteudo)
+		}
+		return sb.String(), fmt.Sprintf("listou %d padrão(ões)", len(ps)), nil
+
+	case "apagar_padrao":
+		nome := argStr("nome")
+		if nome == "" {
+			return "", "", fmt.Errorf("nome vazio")
+		}
+		if err := a.padroes.Delete(ctx, nome); err != nil {
+			return "", "", err
+		}
+		return "Padrão apagado: " + nome, "apagou o padrão " + nome, nil
+
 	default:
 		return "", "", fmt.Errorf("ferramenta desconhecida: %s", ferramenta)
 	}
+}
+
+// padroesUpsert valida o limite de padrões e grava (cria ou substitui).
+func (a *App) padroesUpsert(ctx context.Context, nome, conteudo string) error {
+	if a.padroes == nil {
+		return fmt.Errorf("padrões indisponíveis")
+	}
+	if strings.TrimSpace(nome) == "" {
+		return db.ErrPadraoNomeVazio
+	}
+	if strings.TrimSpace(conteudo) == "" {
+		return db.ErrPadraoConteudoVazio
+	}
+	n, err := a.padroes.Contagem(ctx)
+	if err != nil {
+		return err
+	}
+	if n >= db.MaxPadroes {
+		return db.ErrPadroesExcedidos
+	}
+	return a.padroes.Upsert(ctx, nome, conteudo)
 }
 
 func (a *App) contagemColuna(coluna string) int {

@@ -20,6 +20,7 @@ const MaxIteracoesAgente = 4
 // (e em toda mensagem do usuário), então economia aqui multiplica.
 const systemAgente = `Você é o assistente do app Kanban de Cobrança da Rota Smart (desktop local) e age via ferramentas: buscar/importar clientes do 360, cards e colunas do Kanban, financeiro, orçamentos e tickets do helpdesk (ler, abrir, responder, mudar status). ` +
 	`Regras: execute a ação pedida em vez de só descrever; ao adicionar cliente use a coluna indicada (padrão "Fazer contato"); nunca invente códigos, nomes ou valores — consulte as ferramentas; para melhorar texto de ticket, reescreva com redação profissional mantendo todos os dados técnicos, códigos e valores, e só envie com responder_ticket_360 se pedido explicitamente; para status, use o nome exato do detalhe_ticket_360. ` +
+	`Padrões: quando o usuário pedir para você manter um padrão daqui pra frente (ex.: "mantenha esse estilo nos próximos tickets", "sempre assine assim", "guarde essa regra"), destile o padrão em poucas frases e salve com salvar_padrao (nome curto, ex.: "estilo de tickets"); confirme o que salvou em uma linha. Se ele pedir para mudar um padrão existente, salve por cima com o mesmo nome; se pedir para esquecer, use apagar_padrao. ` +
 	`Responda em português do Brasil, curto e direto, confirmando o que fez com os dados obtidos.`
 
 // Ferramentas disponíveis para o agente (formato tools da API OpenAI).
@@ -100,7 +101,28 @@ func AgentTools() []map[string]any {
 				"itens":       map[string]any{"type": "object"},
 				"ticketId":    map[string]any{"type": "number"},
 			}, []string{"tipoSistema", "itens"}),
+		tool("salvar_padrao",
+			"Salva (ou atualiza) um padrão permanente definido pelo usuário — ex.: estilo de escrita de tickets, saudação, regra de negócio. Passe por dentro o padrão destilado em poucas frases.",
+			map[string]any{
+				"nome":     map[string]any{"type": "string", "description": "nome curto do padrão, ex.: 'estilo de tickets'"},
+				"conteudo": map[string]any{"type": "string", "description": "o padrão em si, para você seguir em TODAS as conversas futuras"},
+			}, []string{"nome", "conteudo"}),
+		tool("listar_padroes",
+			"Lista os padrões permanentes salvos pelo usuário.",
+			map[string]any{}, nil),
+		tool("apagar_padrao",
+			"Apaga um padrão permanente pelo nome (o usuário pediu para esquecer).",
+			map[string]any{"nome": map[string]any{"type": "string"}}, []string{"nome"}),
 	}
+}
+
+// SystemComPadroes monta o system prompt com os padrões salvos embutidos —
+// eles valem para o loop com ferramentas e para o fast-path sem ferramentas.
+func SystemComPadroes(padroes string) string {
+	if strings.TrimSpace(padroes) == "" {
+		return systemAgente
+	}
+	return systemAgente + "\n\nPadrões definidos pelo usuário — siga em TODA resposta:\n" + padroes
 }
 
 // Heurística do fast-path: responde sem o loop de ferramentas (1 requisição,
@@ -164,16 +186,18 @@ type MensagemDeChat struct {
 // Conversar roda o loop de function calling: mensagem do usuário → chamadas
 // de ferramenta (até MaxIteracoesAgente rodadas) → resposta final.
 // progresso é chamado a cada ferramenta executada (para a UI).
-func (g *GroqCliente) Conversar(ctx context.Context, historico []MensagemDeChat, mensagem string, exec ToolExecutor, progresso func(AcaoDoAgente)) (*ChatResultado, error) {
+// padroes é o texto dos padrões salvos pelo usuário (vazio se não houver).
+func (g *GroqCliente) Conversar(ctx context.Context, historico []MensagemDeChat, mensagem string, padroes string, exec ToolExecutor, progresso func(AcaoDoAgente)) (*ChatResultado, error) {
 	if g.chave() == "" {
 		return nil, ErrGroqSemChave
 	}
+	sistema := SystemComPadroes(padroes)
 	// Fast-path: mensagem que não precisa de ação sai em 1 requisição, sem
 	// os schemas das tools nem o loop (a troca mais comum do dia custa ~15%
 	// do que custaria com o loop completo).
 	compacto := historicoCompacto(historico)
 	if MensagemSemFerramentas(mensagem) {
-		msgs := []groqMensagem{{Role: "system", Content: systemAgente}}
+		msgs := []groqMensagem{{Role: "system", Content: sistema}}
 		for _, m := range compacto {
 			msgs = append(msgs, groqMensagem{Role: m.Papel, Content: m.Conteudo})
 		}
@@ -185,7 +209,7 @@ func (g *GroqCliente) Conversar(ctx context.Context, historico []MensagemDeChat,
 		return &ChatResultado{Resposta: resp, Acoes: []AcaoDoAgente{}}, nil
 	}
 
-	msgs := []groqMensagem{{Role: "system", Content: systemAgente}}
+	msgs := []groqMensagem{{Role: "system", Content: sistema}}
 	for _, m := range compacto {
 		msgs = append(msgs, groqMensagem{Role: m.Papel, Content: m.Conteudo})
 	}

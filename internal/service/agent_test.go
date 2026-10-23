@@ -71,7 +71,7 @@ func TestConversarExecutaFerramenta(t *testing.T) {
 	g := groqParaTeste(t, srv)
 	exec := &executorDeTeste{}
 
-	res, err := g.Conversar(context.Background(), nil, "crie a coluna Renegociação", exec, nil)
+	res, err := g.Conversar(context.Background(), nil, "crie a coluna Renegociação", "", exec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestConversarLimiteDeRodadas(t *testing.T) {
 	g := groqParaTeste(t, srv)
 	exec := &executorDeTeste{}
 
-	res, err := g.Conversar(context.Background(), nil, "oi", exec, nil)
+	res, err := g.Conversar(context.Background(), nil, "oi", "", exec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,8 +118,8 @@ func TestConversarLimiteDeRodadas(t *testing.T) {
 
 func TestAgentToolsSchema(t *testing.T) {
 	tools := AgentTools()
-	if len(tools) != 15 {
-		t.Fatalf("esperava 15 ferramentas, veio %d", len(tools))
+	if len(tools) != 18 {
+		t.Fatalf("esperava 18 ferramentas, veio %d", len(tools))
 	}
 	nomes := map[string]bool{}
 	for _, tl := range tools {
@@ -173,7 +173,7 @@ func TestConversarFastPathSemFerramentas(t *testing.T) {
 	exec := &executorDeTeste{}
 
 	texto := "reescreva com tom cordial: " + strings.Repeat("prezado cliente, ", 30)
-	res, err := g.Conversar(context.Background(), nil, texto, exec, nil)
+	res, err := g.Conversar(context.Background(), nil, texto, "", exec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

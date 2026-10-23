@@ -20,6 +20,13 @@ COMO INSTALAR (outro computador):
    e continuar trabalhando; o app reinicia sozinho ao concluir.
 7. Os botões de minimizar/maximizar/tela cheia/fechar que ficavam dentro do
    app foram removidos na v1.4.1 — use os da própria janela do Windows.
+8. PADRÕES DO ASSISTENTE (novo na v1.6.0): ensine um padrão pelo próprio chat
+   do assistente — ex.: depois de melhorar a escrita de um ticket, diga
+   "mantenha esse estilo nos próximos tickets" e ele guarda o padrão
+   permanentemente, valendo para TODAS as conversas futuras. Também funciona:
+   "liste os padrões que você guardou" e "esqueça o padrão estilo de tickets".
+   O app já vem com um padrão inicial de estilo de escrita de tickets, que
+   você pode pedir para ele ajustar ou apagar quando quiser.
 
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
