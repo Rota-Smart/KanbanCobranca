@@ -39,6 +39,9 @@ type App struct {
 	rota          *rota360.Cliente // sessão ativa do 360; nil se desconectado
 	muConectando  sync.Mutex
 	conectando360 bool // detecção CDP em andamento (ConectarRota360 em background)
+
+	muAtualiza          sync.Mutex
+	baixandoAtualizacao bool // download do exe novo em background
 }
 
 // WireIntegracao injeta as dependências da integração (chamado pelo main).

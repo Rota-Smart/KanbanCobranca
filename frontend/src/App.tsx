@@ -304,6 +304,50 @@ export default function App() {
     }
   }
 
+  async function criarColuna() {
+    const nome = window.prompt('Nome da nova coluna (até 40 caracteres):');
+    if (!nome || !nome.trim()) return;
+    try {
+      await bindings.CriarColuna(nome.trim());
+      await recarregarBoard();
+    } catch (e) {
+      showToast(String(e));
+    }
+  }
+
+  async function renomearColuna(antigo: string, novo: string) {
+    try {
+      await bindings.RenomearColuna(antigo, novo);
+      await recarregarBoard();
+    } catch (e) {
+      showToast(String(e));
+    }
+  }
+
+  async function removerColuna(nomeColuna: string) {
+    try {
+      await bindings.RemoverColuna(nomeColuna);
+      await recarregarBoard();
+    } catch (e) {
+      showToast(String(e));
+    }
+  }
+
+  async function moverColuna(nomeColuna: string, direcao: -1 | 1) {
+    const i = colunas.indexOf(nomeColuna);
+    const j = i + direcao;
+    if (i < 0 || j < 0 || j >= colunas.length) return;
+    const nova = [...colunas];
+    [nova[i], nova[j]] = [nova[j], nova[i]];
+    setColunas(nova); // feedback imediato; o banco grava a ordem nova
+    try {
+      await bindings.ReordenarColunas(nova);
+    } catch (e) {
+      showToast(String(e));
+      await recarregarBoard();
+    }
+  }
+
   if (carregando) return <div className="p-8 text-slate-500">Carregando…</div>;
   if (erro) return <div className="p-8 text-red-600">Erro ao carregar: {erro}</div>;
 
@@ -395,8 +439,17 @@ export default function App() {
               onExcluir={excluir}
               onNovoCard={novoCard}
               onBuscar360={setBuscar360Coluna}
+              onRenomear={renomearColuna}
+              onRemover={removerColuna}
+              onMover={moverColuna}
             />
           ))}
+          <button
+            className="glass-soft rounded-2xl w-56 shrink-0 self-start p-3 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-white font-medium text-left"
+            onClick={criarColuna}
+          >
+            + Nova coluna
+          </button>
         </div>
       </DndContext>
 

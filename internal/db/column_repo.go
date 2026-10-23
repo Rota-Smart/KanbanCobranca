@@ -52,6 +52,86 @@ func (r *ColumnRepo) Add(ctx context.Context, nome string) (string, error) {
 	return nome, nil
 }
 
+// Renomear troca o nome da coluna e reescreve o coluna_atual dos tickets
+// na mesma transação. Falha se o nome novo já existir ou estiver vazio.
+func (r *ColumnRepo) Renomear(ctx context.Context, antigo, novo string) error {
+	novo = strings.TrimSpace(novo)
+	if novo == "" || len(novo) > 40 {
+		return errors.New("nome de coluna inválido (1 a 40 caracteres)")
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var n int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM kanban_columns WHERE nome = ?`, novo).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return errors.New("já existe uma coluna com esse nome")
+	}
+	res, err := tx.ExecContext(ctx,
+		`UPDATE kanban_columns SET nome = ? WHERE nome = ?`, novo, antigo)
+	if err != nil {
+		return err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return sql.ErrNoRows
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE tickets SET coluna_atual = ? WHERE coluna_atual = ?`, novo, antigo); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// Reordenar grava a ordem do board: nomes na ordem desejada. A lista deve
+// conter exatamente as colunas existentes (nenhuma a mais, a menos ou repetida).
+func (r *ColumnRepo) Reordenar(ctx context.Context, nomes []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	atuais := map[string]bool{}
+	rows, err := tx.QueryContext(ctx, `SELECT nome FROM kanban_columns`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			rows.Close()
+			return err
+		}
+		atuais[n] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	vistos := map[string]bool{}
+	for _, n := range nomes {
+		if !atuais[n] || vistos[n] {
+			return errors.New("lista de colunas não corresponde ao board atual")
+		}
+		vistos[n] = true
+	}
+	if len(vistos) != len(atuais) {
+		return errors.New("lista de colunas não corresponde ao board atual")
+	}
+	for i, n := range nomes {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE kanban_columns SET posicao = ? WHERE nome = ?`, i, n); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // Existe informa se a coluna está registrada.
 func (r *ColumnRepo) Existe(ctx context.Context, nome string) (bool, error) {
 	var n int

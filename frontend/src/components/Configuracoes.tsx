@@ -58,16 +58,40 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
     }
   }
 
+  const [progresso, setProgresso] = useState<number | null>(null);
+
+  // Clicar em atualizar devolve na hora: o download do exe (~79 MB) roda em
+  // background no Go e continua mesmo se o usuário fechar esta tela. O
+  // resultado chega pelos eventos atualizacao:*.
   async function instalarAtualizacao() {
     setAtualizando(true);
+    setProgresso(null);
     try {
-      await App.InstalarAtualizacao();
-      // o app reinicia sozinho ao ter sucesso
+      const versao = await App.InstalarAtualizacao();
+      props.onToast(`Baixando a versão ${versao} em segundo plano…`);
     } catch (e) {
       props.onToast(String(e));
       setAtualizando(false);
     }
   }
+
+  useEffect(() => {
+    const offP = EventsOn('atualizacao:progresso', (d: { percento: number }) => setProgresso(d.percento));
+    const offOk = EventsOn('atualizacao:pronto', () => {
+      setProgresso(100);
+      // o app reinicia sozinho em seguida
+    });
+    const offErr = EventsOn('atualizacao:erro', (d: { mensagem: string }) => {
+      props.onToast(d.mensagem || 'Falha ao baixar a atualização.');
+      setAtualizando(false);
+      setProgresso(null);
+    });
+    return () => {
+      offP();
+      offOk();
+      offErr();
+    };
+  }, []);
 
   async function salvarGroq() {
     setSalvando(true);
@@ -524,13 +548,20 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
             )}
           </div>
           {infoAtual?.temNova && (
-            <button
-              className="mt-2 bg-emerald-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
-              disabled={atualizando}
-              onClick={instalarAtualizacao}
-            >
-              {atualizando ? 'Baixando e reinstalando…' : `Atualizar para ${infoAtual.versaoNova} (o app reinicia)`}
-            </button>
+            <>
+              <button
+                className="mt-2 bg-emerald-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
+                disabled={atualizando}
+                onClick={instalarAtualizacao}
+              >
+                {atualizando ? 'Baixando em segundo plano…' : `Atualizar para ${infoAtual.versaoNova} (o app reinicia)`}
+              </button>
+              {progresso !== null && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Baixando… {progresso}% — pode fechar esta tela, o download continua.
+                </p>
+              )}
+            </>
           )}
         </section>
       </div>

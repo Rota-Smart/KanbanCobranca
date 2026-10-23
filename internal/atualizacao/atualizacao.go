@@ -19,7 +19,7 @@ import (
 )
 
 // VersaoApp é a versão deste binário; bump a cada release.
-const VersaoApp = "1.4.5"
+const VersaoApp = "1.5.0"
 
 // BasePadrao é a fonte de atualização padrão (branch release do repo).
 const BasePadrao = "https://raw.githubusercontent.com/Rota-Smart/KanbanCobranca/release"
@@ -77,18 +77,82 @@ func (c *Cliente) Verificar(ctx context.Context) (Info, error) {
 
 // Baixar grava o exe novo em destino (caminho completo do arquivo).
 func (c *Cliente) Baixar(ctx context.Context, destino string) error {
-	raw, err := c.get(ctx, "rotasuite.exe")
+	return c.BaixarProgresso(ctx, destino, nil)
+}
+
+// BaixarProgresso baixa o exe novo em streaming (sem carregar os ~79 MB na
+// memória) e chama fn a cada pedaço com (baixados, total); total vem do
+// Content-Length e pode ser 0 se o servidor não informar.
+func (c *Cliente) BaixarProgresso(ctx context.Context, destino string, fn func(baixados, total int64)) error {
+	baixar := func(arquivo string) (io.ReadCloser, int64, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Base+"/"+arquivo, nil)
+		if err != nil {
+			return nil, 0, err
+		}
+		resp, err := c.HTTP.Do(req)
+		if err != nil {
+			return nil, 0, fmt.Errorf("sem acesso à fonte de atualização: %w", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, 0, fmt.Errorf("fonte de atualização respondeu HTTP %d para %s", resp.StatusCode, arquivo)
+		}
+		return resp.Body, resp.ContentLength, nil
+	}
+
+	body, total, err := baixar("rotasuite.exe")
 	if err != nil {
 		// Compatibilidade: releases antigas publicavam só o nome antigo.
-		raw, err = c.get(ctx, "rota-smart.exe")
+		body, total, err = baixar("rota-smart.exe")
 		if err != nil {
 			return err
 		}
 	}
-	if len(raw) < 1<<20 {
-		return fmt.Errorf("arquivo baixado pequeno demais (%d bytes) — release inválida", len(raw))
+	defer body.Close()
+
+	tmp := destino + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
 	}
-	return os.WriteFile(destino, raw, 0o755)
+	var baixados int64
+	buf := make([]byte, 256<<10)
+	for {
+		n, errRead := body.Read(buf)
+		if n > 0 {
+			if _, errWrite := f.Write(buf[:n]); errWrite != nil {
+				f.Close()
+				os.Remove(tmp)
+				return errWrite
+			}
+			baixados += int64(n)
+			if fn != nil {
+				fn(baixados, total)
+			}
+		}
+		if errRead == io.EOF {
+			break
+		}
+		if errRead != nil {
+			f.Close()
+			os.Remove(tmp)
+			return errRead
+		}
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	st, err := os.Stat(tmp)
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if st.Size() < 1<<20 {
+		os.Remove(tmp)
+		return fmt.Errorf("arquivo baixado pequeno demais (%d bytes) — release inválida", st.Size())
+	}
+	return os.Rename(tmp, destino)
 }
 
 // Instalar troca o executável em execução pelo arquivo novo e reinicia o app.

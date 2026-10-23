@@ -45,23 +45,57 @@ func (a *App) SetFonteAtualizacao(base string) error {
 // GetFonteAtualizacao devolve a URL-base em uso.
 func (a *App) GetFonteAtualizacao() string { return a.fonteAtualizacao() }
 
-// InstalarAtualizacao baixa o exe novo, troca o binário em execução e
-// reinicia o app. Em caso de sucesso o processo atual termina.
+// Eventos emitidos ao frontend durante a atualização em background.
+const (
+	evAtualizaProgresso = "atualizacao:progresso" // {baixados, total, percento}
+	evAtualizaPronto    = "atualizacao:pronto"    // {versao} — instalado, o app reinicia
+	evAtualizaErro      = "atualizacao:erro"      // {mensagem}
+)
+
+// InstalarAtualizacao valida a versão nova e devolve na hora; o download
+// (dezenas de MB) roda em goroutine — sair da tela de Configurações, ou até
+// navegar no board, não interrompe. Ao terminar, instala e reinicia sozinho,
+// anunciando cada fase pelos eventos atualizacao:*.
 func (a *App) InstalarAtualizacao() (string, error) {
-	ctx, cancel := context.WithTimeout(a.ctx, 120*time.Second)
-	defer cancel()
+	a.muAtualiza.Lock()
+	if a.baixandoAtualizacao {
+		a.muAtualiza.Unlock()
+		return "", fmt.Errorf("já há uma atualização baixando em segundo plano")
+	}
+	a.baixandoAtualizacao = true
+	a.muAtualiza.Unlock()
 
 	info, err := a.VerificarAtualizacao()
 	if err != nil {
+		a.muAtualiza.Lock()
+		a.baixandoAtualizacao = false
+		a.muAtualiza.Unlock()
 		return "", friendly("InstalarAtualizacao", err)
 	}
 	if !info.TemNova {
+		a.muAtualiza.Lock()
+		a.baixandoAtualizacao = false
+		a.muAtualiza.Unlock()
 		return "", fmt.Errorf("você já está na versão mais recente (%s)", atualizacao.VersaoApp)
 	}
 
+	go a.baixarEInstalar(info)
+	return info.VersaoNova, nil
+}
+
+// baixarEInstalar roda em background: baixa o exe com progresso, troca o
+// binário e reinicia o app.
+func (a *App) baixarEInstalar(info atualizacao.Info) {
+	defer func() {
+		a.muAtualiza.Lock()
+		a.baixandoAtualizacao = false
+		a.muAtualiza.Unlock()
+	}()
+
 	exeAtual, err := atualizacao.CaminhoExe()
 	if err != nil {
-		return "", friendly("InstalarAtualizacao", err)
+		wailsRuntime.EventsEmit(a.ctx, evAtualizaErro, map[string]string{"mensagem": friendly("InstalarAtualizacao", err).Error()})
+		return
 	}
 	dir := filepath.Dir(exeAtual)
 	novo := filepath.Join(dir, "rotasuite.novo.exe")
@@ -70,21 +104,42 @@ func (a *App) InstalarAtualizacao() (string, error) {
 	// o Timeout de 20s do cliente serve para metadados (versao.txt); o exe
 	// tem ~79 MB e estouraria os 20s — o ctx de 120s é quem limita o download.
 	cliente.HTTP.Timeout = 0
-	if err := cliente.Baixar(ctx, novo); err != nil {
-		return "", friendly("InstalarAtualizacao", err)
-	}
-	if err := atualizacao.Instalar(exeAtual, novo); err != nil {
-		return "", friendly("InstalarAtualizacao", err)
+	ctx, cancel := context.WithTimeout(a.ctx, 120*time.Second)
+	defer cancel()
+	ultimo := time.Time{}
+	err = cliente.BaixarProgresso(ctx, novo, func(baixados, total int64) {
+		if total <= 0 {
+			return
+		}
+		// emite no máximo ~2x por segundo para não inundar a WebView
+		if time.Since(ultimo) < 500*time.Millisecond && baixados < total {
+			return
+		}
+		ultimo = time.Now()
+		wailsRuntime.EventsEmit(a.ctx, evAtualizaProgresso, map[string]any{
+			"baixados": baixados, "total": total,
+			"percento": int(100 * baixados / total),
+		})
+	})
+	if err != nil {
+		os.Remove(novo)
+		wailsRuntime.EventsEmit(a.ctx, evAtualizaErro, map[string]string{"mensagem": friendly("InstalarAtualizacao", err).Error()})
+		return
 	}
 
+	if err := atualizacao.Instalar(exeAtual, novo); err != nil {
+		wailsRuntime.EventsEmit(a.ctx, evAtualizaErro, map[string]string{"mensagem": friendly("InstalarAtualizacao", err).Error()})
+		return
+	}
+	wailsRuntime.EventsEmit(a.ctx, evAtualizaPronto, map[string]string{"versao": info.VersaoNova})
+
 	// Relança o app novo e encerra o atual.
-	comando := exeAtual
 	args := os.Args[1:]
-	cmd := exec.Command(comando, args...)
+	cmd := exec.Command(exeAtual, args...)
 	cmd.Dir = dir
 	if err := cmd.Start(); err != nil {
-		return "", friendly("InstalarAtualizacao", err)
+		wailsRuntime.EventsEmit(a.ctx, evAtualizaErro, map[string]string{"mensagem": friendly("InstalarAtualizacao", err).Error()})
+		return
 	}
 	wailsRuntime.Quit(a.ctx)
-	return info.VersaoNova, nil
 }

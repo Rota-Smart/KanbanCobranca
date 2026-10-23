@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -35,6 +36,44 @@ func (a *App) RemoverColuna(nome string) error {
 			return err
 		}
 		return friendly("RemoverColuna", err)
+	}
+	return nil
+}
+
+// ColunasFixas não podem ser renomeadas: o app as identifica pelo nome
+// para disparar automações (fluxo de cobrança, coluna de orçamento).
+var ColunasFixas = []string{service.ColunaCobranca, ColunaOrcamento}
+
+func colunaFixa(nome string) bool {
+	for _, c := range ColunasFixas {
+		if c == nome {
+			return true
+		}
+	}
+	return false
+}
+
+// RenomearColuna troca o nome de uma coluna e dos cards dela.
+func (a *App) RenomearColuna(antigo, novo string) error {
+	if colunaFixa(antigo) {
+		return fmt.Errorf("a coluna %q participa de automações do app e não pode ser renomeada", antigo)
+	}
+	if err := a.colunas.Renomear(a.ctx, antigo, novo); err != nil {
+		if strings.Contains(err.Error(), "coluna") || err == sql.ErrNoRows {
+			return err
+		}
+		return friendly("RenomearColuna", err)
+	}
+	return nil
+}
+
+// ReordenarColunas grava a nova ordem do board (lista completa na ordem).
+func (a *App) ReordenarColunas(nomes []string) error {
+	if err := a.colunas.Reordenar(a.ctx, nomes); err != nil {
+		if strings.Contains(err.Error(), "colunas") {
+			return err
+		}
+		return friendly("ReordenarColunas", err)
 	}
 	return nil
 }

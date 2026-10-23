@@ -43,6 +43,9 @@ interface Props {
   onExcluir: (ticket: Ticket) => void;
   onNovoCard: (coluna: string, nome: string, tipo: string) => void;
   onBuscar360: (coluna: string) => void;
+  onRenomear: (antigo: string, novo: string) => void;
+  onRemover: (coluna: string) => void;
+  onMover: (coluna: string, direcao: -1 | 1) => void;
 }
 
 // Botãozinho de modo (minimizar/resumir) aplicado a todos os cards da coluna.
@@ -63,12 +66,23 @@ function BotaoModo({ ativo, titulo, children, onClick }: { ativo: boolean; titul
   );
 }
 
-export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onNovoCard, onBuscar360 }: Props) {
+export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onNovoCard, onBuscar360, onRenomear, onRemover, onMover }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna });
   const [recolhida, setRecolhida] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
   const [nome, setNome] = useState('');
   const [tipo, setTipo] = useState('Outro');
+  const [menuAberto, setMenuAberto] = useState(false);
+  const [editando, setEditando] = useState(false);
+  const [nomeNovo, setNomeNovo] = useState(coluna);
+
+  function confirmarRenomear() {
+    const n = nomeNovo.trim();
+    setEditando(false);
+    setMenuAberto(false);
+    if (!n || n === coluna) return;
+    onRenomear(coluna, n);
+  }
 
   if (recolhida) {
     return (
@@ -96,10 +110,32 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDo
       <div className="flex items-center justify-between px-1.5 pb-2.5">
         <div className="flex items-center gap-2 min-w-0">
           <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${corPorColuna[coluna] ?? 'bg-slate-400'}`} aria-hidden />
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{coluna}</h2>
-          <span className="text-[11px] font-medium text-slate-500 bg-slate-500/10 rounded-full px-2 py-0.5 shrink-0">
-            {tickets.length}
-          </span>
+          {editando ? (
+            <form
+              className="flex items-center gap-1 min-w-0"
+              onSubmit={(e) => {
+                e.preventDefault();
+                confirmarRenomear();
+              }}
+            >
+              <input
+                className="border-0 rounded-lg px-2 py-1 text-sm bg-white/70 dark:bg-slate-800/70 focus:ring-2 focus:ring-sky-400 outline-none w-40"
+                value={nomeNovo}
+                maxLength={40}
+                onChange={(e) => setNomeNovo(e.target.value)}
+                onBlur={confirmarRenomear}
+                autoFocus
+                onFocus={(e) => e.currentTarget.select()}
+              />
+            </form>
+          ) : (
+            <>
+              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{coluna}</h2>
+              <span className="text-[11px] font-medium text-slate-500 bg-slate-500/10 rounded-full px-2 py-0.5 shrink-0">
+                {tickets.length}
+              </span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <BotaoModo ativo={modoColuna === 'min'} titulo={`Minimizar todos os cards de ${coluna}`} onClick={() => onModoColuna(coluna, 'min')}>
@@ -108,6 +144,61 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDo
           <BotaoModo ativo={modoColuna === 'resumo'} titulo={`Deixar resumidos todos os cards de ${coluna}`} onClick={() => onModoColuna(coluna, 'resumo')}>
             ▤
           </BotaoModo>
+          <div className="relative">
+            <button
+              aria-label={`Opções da coluna ${coluna}`}
+              title="Renomear, mover ou apagar a coluna"
+              className="p-0.5 rounded text-[13px] leading-none text-slate-400 hover:text-slate-600 dark:hover:text-white"
+              onClick={() => setMenuAberto((v) => !v)}
+            >
+              ⋯
+            </button>
+            {menuAberto && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMenuAberto(false)} />
+                <div className="absolute right-0 top-6 z-50 glass rounded-xl shadow-xl py-1 w-44 text-sm">
+                  <button
+                    className="block w-full text-left px-3 py-1.5 hover:bg-sky-500/10"
+                    onClick={() => {
+                      setNomeNovo(coluna);
+                      setEditando(true);
+                      setMenuAberto(false);
+                    }}
+                  >
+                    ✏️ Renomear
+                  </button>
+                  <button
+                    className="block w-full text-left px-3 py-1.5 hover:bg-sky-500/10"
+                    onClick={() => {
+                      setMenuAberto(false);
+                      onMover(coluna, -1);
+                    }}
+                  >
+                    ← Mover para a esquerda
+                  </button>
+                  <button
+                    className="block w-full text-left px-3 py-1.5 hover:bg-sky-500/10"
+                    onClick={() => {
+                      setMenuAberto(false);
+                      onMover(coluna, 1);
+                    }}
+                  >
+                    → Mover para a direita
+                  </button>
+                  <button
+                    className="block w-full text-left px-3 py-1.5 text-red-600 hover:bg-red-500/10"
+                    onClick={() => {
+                      setMenuAberto(false);
+                      if (window.confirm(`Apagar a coluna "${coluna}"? Só funciona se ela estiver vazia.`))
+                        onRemover(coluna);
+                    }}
+                  >
+                    🗑 Apagar coluna
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button
             aria-label={`Recolher coluna ${coluna}`}
             onClick={() => setRecolhida(true)}
