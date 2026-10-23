@@ -15,14 +15,61 @@ interface OuvintesVoz {
 
 type ModeloVosk = Awaited<ReturnType<typeof import('vosk-browser').createModel>>;
 
+// abrirMicrofone tenta abrir o dispositivo com restrições progressivas.
+// O NotReadableError costuma significar que a WebView2 não conseguiu INICIAR
+// o microfone (ocupado por outro programa, acesso de apps de área de trabalho
+// bloqueado no Windows, ou o driver não aceita o processamento pedido), então
+// a segunda tentativa vai sem echoCancellation/noiseSuppression/mono.
+async function abrirMicrofone(): Promise<MediaStream> {
+  const cheias: MediaStreamConstraints = {
+    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+  };
+  const basicas: MediaStreamConstraints = { audio: true };
+  try {
+    return await navigator.mediaDevices.getUserMedia(cheias);
+  } catch (e) {
+    const nome = e instanceof DOMException ? e.name : '';
+    if (nome === 'NotAllowedError') {
+      // O app roda com o auto-concede de permissão (--use-fake-ui-for-media-
+      // stream); se mesmo assim vier negado, tentar de novo — às vezes o
+      // primeiro pedido chega antes do ambiente do WebView2 estar pronto.
+      await new Promise((r) => setTimeout(r, 300));
+      return await navigator.mediaDevices.getUserMedia(basicas);
+    }
+    if (nome !== 'NotReadableError' && nome !== 'AbortError' && nome !== 'NotSupportedError') throw e;
+    return await navigator.mediaDevices.getUserMedia(basicas);
+  }
+}
+
+// mensagemDeErro traduz os erros do getUserMedia para algo acionável.
+function mensagemDeErro(e: unknown): string {
+  const nome = e instanceof DOMException ? e.name : '';
+  switch (nome) {
+    case 'NotReadableError':
+    case 'TrackStartError':
+      return 'o microfone não pôde ser aberto: feche outros programas que usem microfone (Teams, Chrome em chamada, gravador) e verifique Configurações do Windows › Privacidade › Microfone › permitir que apps de área de trabalho acessem o microfone';
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'o acesso ao microfone foi negado — reinicie o app';
+    case 'NotFoundError':
+    case 'OverconstrainedError':
+      return 'nenhum microfone compatível encontrado — verifique se há um microfone conectado e selecionado como padrão no Windows';
+    default:
+      return String(e);
+  }
+}
+
 // iniciarVoz abre o microfone e começa a transcrever. Devolve a função de
 // parada, que encerra stream, reconhecedor e modelo.
 export async function iniciarVoz(ouvintes: OuvintesVoz): Promise<() => void> {
   const { createModel } = await import('vosk-browser');
 
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-  });
+  let stream: MediaStream;
+  try {
+    stream = await abrirMicrofone();
+  } catch (e) {
+    throw new Error(mensagemDeErro(e));
+  }
   // 16 kHz mono no próprio navegador: o Vosk exige esse formato e o
   // Chromium reamostra a faixa do microfone na criação do contexto.
   const audioCtx = new AudioContext({ sampleRate: 16000 });
