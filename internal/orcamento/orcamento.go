@@ -11,6 +11,8 @@ type Selecao struct {
 	TipoSistema    string         `json:"tipoSistema"`              // aba da planilha (ex.: ALARME)
 	Itens          map[string]int `json:"itens"`                    // nome do item → quantidade
 	TaxaInstalacao *float64       `json:"taxaInstalacao,omitempty"` // override da taxa da aba
+	// Classificacao manual do usuário: "" (automática), "ampliacao" ou "service".
+	Classificacao string `json:"classificacao,omitempty"`
 }
 
 // Resultado é o orçamento calculado.

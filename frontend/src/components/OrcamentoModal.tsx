@@ -18,6 +18,7 @@ export default function OrcamentoModal({ ticket, onFechar }: Props) {
   const [erro, setErro] = useState('');
   const [tipoIdx, setTipoIdx] = useState(0);
   const [qtds, setQtds] = useState<Record<string, number>>({});
+  const [classe, setClasse] = useState<'' | 'service' | 'ampliacao'>('');
   const [gerando, setGerando] = useState(false);
   const [proposta, setProposta] = useState('');
   const [copiado, setCopiado] = useState(false);
@@ -66,7 +67,7 @@ export default function OrcamentoModal({ ticket, onFechar }: Props) {
     setGerando(true);
     setErro('');
     try {
-      setProposta(await App.GerarOrcamento(ticket.id, { tipoSistema: tipo.nome, itens }));
+      setProposta(await App.GerarOrcamento(ticket.id, { tipoSistema: tipo.nome, itens, classificacao: classe }));
       setCopiado(false);
     } catch (e) {
       setErro(String(e));
@@ -168,6 +169,32 @@ export default function OrcamentoModal({ ticket, onFechar }: Props) {
                 ))}
               </div>
             )}
+
+            <div className="mt-3 flex items-center gap-2 text-sm">
+              <span className="text-xs text-slate-500">Marcar como:</span>
+              {(
+                [
+                  ['', 'Automático'],
+                  ['service', 'Orçamento'],
+                  ['ampliacao', 'Ampliação (RD)'],
+                ] as const
+              ).map(([v, rotulo]) => (
+                <button
+                  key={v}
+                  className={`text-xs rounded-lg px-2.5 py-1 border transition font-medium ${
+                    classe === v
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white/40 dark:bg-white/10 border-white/50 dark:border-white/10'
+                  }`}
+                  onClick={() => {
+                    setClasse(v);
+                    setProposta('');
+                  }}
+                >
+                  {rotulo}
+                </button>
+              ))}
+            </div>
 
             <div className="mt-3 flex gap-2">
               <button

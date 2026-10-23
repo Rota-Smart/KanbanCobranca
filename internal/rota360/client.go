@@ -245,14 +245,23 @@ func (c *Cliente) TicketsDaFila(ctx context.Context, view string, page, limit in
 	return out.Itens, out.Total, nil
 }
 
+// ServicoContratado360 é um serviço do cadastro (ex.: "MONITORAMENTO DE
+// ALARME", "CÂMERA WIFI EXTERNA - GRÁTIS").
+type ServicoContratado360 struct {
+	Descricao  string  `json:"descricaoServico"`
+	Valor      float64 `json:"valor"`
+	Quantidade int     `json:"quantidade"`
+}
+
 // DadosCliente360 é o cadastro completo do cliente (Consulta Clientes →
 // Cadastro Geral), incluindo as observações do cadastro (textos datados
 // com histórico de ampliações, combinados e faturamentos).
 type DadosCliente360 struct {
-	Nome         string `json:"nome"`
-	Situacao     string `json:"situacao"`
-	Observacoes  string `json:"observacoes"`
-	AvisosAtivos any    `json:"avisosAtivos"`
+	Nome         string                 `json:"nome"`
+	Situacao     string                 `json:"situacao"`
+	Observacoes  string                 `json:"observacoes"`
+	AvisosAtivos any                    `json:"avisosAtivos"`
+	Servicos     []ServicoContratado360 `json:"servicos"`
 }
 
 // DadosCliente busca o cadastro completo do cliente por código service.
