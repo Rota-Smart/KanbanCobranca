@@ -1,2 +1,52 @@
-Rota Smart - Kanban de Cobranca
-Release: veja versao.txt. O app baixa rota-smart.exe desta branch ao atualizar.
+Rota Smart — Kanban de Cobrança
+================================
+
+COMO INSTALAR (outro computador):
+1. Copie rota-smart.exe para qualquer pasta e execute com dois cliques — não
+   precisa instalar nada (apenas WebView2, já incluso no Windows 10/11).
+2. Dados ficam em %APPDATA%\RotaSmart (banco, backups diários, logs).
+3. O exe é maior desde a v1.3.0 (~79 MB): traz o modelo de voz em português
+   embutido (veja abaixo).
+
+PRIMEIROS PASSOS:
+1. ⚙ Configurações → Sessão do 360: com o Chrome logado em 360.rotagroup.com.br,
+   "Detectar no Chrome" (ou cole o cookie: F12 → Application → Cookies).
+2. ⚙ Configurações → Groq: cole sua chave gratuita (console.groq.com); modelo
+   sugerido openai/gpt-oss-120b (alternativa rápida: openai/gpt-oss-20b).
+3. 💬 Assistente: peça ações em português ("adicione o cliente 24755 em Cobrança",
+   "abra o ticket 67220", "melhore o texto do ticket 67220 adicionando X e envie",
+   "mude o status do ticket 67220 para Concluído").
+4. Arraste um card para a coluna "Cobrança" para gerar a proposta automática.
+
+-----------------------------------------------
+FALE COM O ASSISTENTE (novo na v1.3.0)
+-----------------------------------------------
+No chat do assistente há um botão 🎤: clique, fale e a fala vira texto na hora —
+transcrição 100% local (Vosk, modelo já embutido no app, sem internet e sem
+configurar nada). O que aparece em cinza é a transcrição parcial enquanto você
+fala; a frase final entra no campo de mensagem. Clique de novo para parar.
+
+O assistente também atua em tickets do helpdesk do 360: ler o detalhe com as
+interações, abrir o ticket na aba do Chrome que já está no 360, escrever a
+resposta (diga "melhore o texto e envie") e alterar o status.
+
+ATUALIZAÇÕES:
+⚙ Configurações → Atualizações → "Verificar atualizações" — o app baixa e se
+reinicia sozinho a partir da branch release de github.com/luisboneta/KanbanCobranca
+(versao.txt + rota-smart.exe). Para publicar versão nova: bump em
+internal/atualizacao/atualizacao.go (VersaoApp), wails build, e suba o exe + o
+versao.txt novos nessa branch.
+
+-----------------------------------------------
+SINCRONIZAR ENTRE PCs
+-----------------------------------------------
+Os dados agora podem ficar iguais em vários PCs via GitHub:
+
+1. Crie um token em github.com/settings/tokens (clássico, escopo "repo").
+2. No app, abra Configurações → Sincronização (GitHub), cole o token e salve.
+3. Use o botão "⟳ Sincronizar" no topo do app:
+   - Envia suas mudanças para o repositório, ou
+   - Baixa os dados mais recentes (aplica ao reiniciar o app).
+
+Se os dois PCs mudarem ao mesmo tempo, o app pergunta qual lado vence.
+Repositório: github.com/luisboneta/banco-de-dados (privado).
