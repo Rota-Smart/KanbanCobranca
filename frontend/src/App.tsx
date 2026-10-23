@@ -34,15 +34,10 @@ interface TicketDaTela {
   mensagem: string;
 }
 
-// mensagemChatDaTela monta a primeira mensagem do Groq a partir do que o
-// Shift+F2 identificou na tela em foco.
+// mensagemChatDaTela devolve o briefing montado no backend (o que o ticket
+// pede, interações e o que o agente deve buscar no 360). Sem código, nada.
 function mensagemChatDaTela(d: TicketDaTela): string | null {
-  if (d.achou && d.ticketId > 0) {
-    return `Continue o atendimento do card #${d.ticketId} — ${d.nomeCliente} (código ${d.codService}). Revise o financeiro do 360, os acordos e a avaliação, e sugira os próximos passos.`;
-  }
-  if (d.codService) {
-    return `Estou com o cliente de código ${d.codService} na tela (360). Busque-o, resuma o financeiro e sugira os próximos passos de cobrança.`;
-  }
+  if (d.mensagem && (d.achou || d.codService)) return d.mensagem;
   return null;
 }
 

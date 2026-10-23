@@ -90,16 +90,16 @@ func (c *Cliente) get(ctx context.Context, path string, out any) error {
 
 // ResumoCliente é um resultado da busca por código/nome.
 type ResumoCliente struct {
-	CodCliente int64  `json:"CodCliente"`
-	Nome       string `json:"Nome"`
-	CGCCPF     string `json:"CGCCPF"`
-	Fone1      string `json:"Fone1"`
-	Celular    string `json:"Celular"`
-	Cidade     string `json:"Cidade"`
-	Estado     string `json:"Estado"`
-	Endereco   string `json:"Endereco"`
+	CodCliente  int64  `json:"CodCliente"`
+	Nome        string `json:"Nome"`
+	CGCCPF      string `json:"CGCCPF"`
+	Fone1       string `json:"Fone1"`
+	Celular     string `json:"Celular"`
+	Cidade      string `json:"Cidade"`
+	Estado      string `json:"Estado"`
+	Endereco    string `json:"Endereco"`
 	NumEndereco string `json:"NumEndereco"`
-	Situacao   string `json:"Situacao"`
+	Situacao    string `json:"Situacao"`
 }
 
 // BuscarClientes pesquisa no 360 por código, nome, CPF/CNPJ etc.
@@ -119,29 +119,29 @@ func (c *Cliente) BuscarClientes(ctx context.Context, q, filtro string) ([]Resum
 
 // Fatura360 é uma fatura em aberto do cliente.
 type Fatura360 struct {
-	NumeroDoc       string  `json:"NumeroDoc"`
-	Vencimento      time.Time `json:"Vencimento"`
-	ValorDuplicata  float64 `json:"ValorDuplicata"`
-	MultaValor      float64 `json:"MultaValor"`
-	MoraValor       float64 `json:"MoraValor"`
-	DiasAtraso      int     `json:"DiasAtraso"`
-	Situacao        string  `json:"Situacao"`
-	BoletoLinha     string  `json:"BoletoLinhaDigitavel"`
+	NumeroDoc      string    `json:"NumeroDoc"`
+	Vencimento     time.Time `json:"Vencimento"`
+	ValorDuplicata float64   `json:"ValorDuplicata"`
+	MultaValor     float64   `json:"MultaValor"`
+	MoraValor      float64   `json:"MoraValor"`
+	DiasAtraso     int       `json:"DiasAtraso"`
+	Situacao       string    `json:"Situacao"`
+	BoletoLinha    string    `json:"BoletoLinhaDigitavel"`
 }
 
 // Financeiro360 resume o bloco financeiro do dashboard.
 type Financeiro360 struct {
-	TotalDevendo             float64 `json:"TotalDevendo"`
-	TotalDevendoComEncargos  float64 `json:"TotalDevendoComEncargos"`
-	TotalEncargosAtraso      float64 `json:"TotalEncargosAtraso"`
-	TotalAtrasadas           int     `json:"TotalAtrasadas"`
+	TotalDevendo            float64 `json:"TotalDevendo"`
+	TotalDevendoComEncargos float64 `json:"TotalDevendoComEncargos"`
+	TotalEncargosAtraso     float64 `json:"TotalEncargosAtraso"`
+	TotalAtrasadas          int     `json:"TotalAtrasadas"`
 }
 
 // TicketHistorico360 é um atendimento recente do cliente (Octadesk).
 type TicketHistorico360 struct {
-	Numero   string `json:"number"`
-	Summary  string `json:"summary"`
-	Status   string `json:"status"` // preenchido do objeto aninhado no scan
+	Numero    string `json:"number"`
+	Summary   string `json:"summary"`
+	Status    string `json:"status"` // preenchido do objeto aninhado no scan
 	CreatedAt string `json:"createdAt"`
 }
 
@@ -168,8 +168,10 @@ type Dashboard360 struct {
 					Estado     string `json:"Estado"`
 					Situacao   string `json:"Situacao"`
 				} `json:"dados"`
-				FaturasAbertas []Fatura360 `json:"faturasAbertas"`
-				Financeiro     Financeiro360 `json:"financeiro"`
+				// OS ativas do Service (ordens de serviço em aberto no cadastro).
+				OSAtivas       []map[string]any `json:"osAtivas"`
+				FaturasAbertas []Fatura360      `json:"faturasAbertas"`
+				Financeiro     Financeiro360    `json:"financeiro"`
 			} `json:"data"`
 		} `json:"inside_service"`
 		Octadesk struct {
@@ -206,16 +208,16 @@ func (c *Cliente) FinanceiroCliente(ctx context.Context, codService string) (*Da
 
 // Ticket360 é um item da fila de tickets.
 type Ticket360 struct {
-	ID             string `json:"id"`
-	Numero         string `json:"numero"`
-	Titulo         string `json:"titulo"`
-	Status         string `json:"status"`
-	AssuntoNome    string `json:"assunto_nome"`
-	CodigoService  string `json:"codigo_service"`
-	Solicitante    string `json:"solicitante_nome"`
-	Responsavel    string `json:"responsavel_nome"`
-	CanalOrigem    string `json:"canal_origem"`
-	CriadoEm       string `json:"criado_em"`
+	ID            string `json:"id"`
+	Numero        string `json:"numero"`
+	Titulo        string `json:"titulo"`
+	Status        string `json:"status"`
+	AssuntoNome   string `json:"assunto_nome"`
+	CodigoService string `json:"codigo_service"`
+	Solicitante   string `json:"solicitante_nome"`
+	Responsavel   string `json:"responsavel_nome"`
+	CanalOrigem   string `json:"canal_origem"`
+	CriadoEm      string `json:"criado_em"`
 }
 
 // TicketsDaFila lista a fila de tickets (views: em_aberto, meus_em_aberto...).
@@ -238,4 +240,44 @@ func (c *Cliente) TicketsDaFila(ctx context.Context, view string, page, limit in
 		return nil, 0, err
 	}
 	return out.Itens, out.Total, nil
+}
+
+// ---- Detalhe do ticket (GET /api/helpdesk/tickets/<uuid>) ----
+
+// MensagemTicket360 é uma interação do ticket (descrição, resposta pública,
+// anotação interna ou mensagem de sistema).
+type MensagemTicket360 struct {
+	Tipo     string `json:"tipo"` // "descricao" | "publica" | "interna" | "sistema"
+	Autor    string `json:"autor_nome"`
+	Corpo    string `json:"corpo"`
+	CriadoEm string `json:"criado_em"`
+}
+
+// TicketDetalhe360 é o ticket completo, com o histórico de mensagens.
+type TicketDetalhe360 struct {
+	ID              string              `json:"id"`
+	Numero          string              `json:"numero"`
+	Titulo          string              `json:"titulo"`
+	Status          string              `json:"status"`
+	CodService      string              `json:"codigo_service"`
+	Solicitante     string              `json:"solicitante_nome"`
+	CategoriaNome   string              `json:"categoria_nome"`
+	AssuntoNome     string              `json:"assunto_nome"`
+	ResponsavelNome string              `json:"responsavel_nome"`
+	ContatoNome     string              `json:"contato_nome"`
+	ContatoTelefone string              `json:"contato_telefone"`
+	CriadoEm        string              `json:"criado_em"`
+	Mensagens       []MensagemTicket360 `json:"mensagens"`
+}
+
+// DetalheTicket busca o ticket completo (com interações) pelo uuid na URL.
+func (c *Cliente) DetalheTicket(ctx context.Context, uuid string) (*TicketDetalhe360, error) {
+	if uuid == "" {
+		return nil, fmt.Errorf("uuid do ticket vazio")
+	}
+	var t TicketDetalhe360
+	if err := c.get(ctx, "/api/helpdesk/tickets/"+url.PathEscape(uuid), &t); err != nil {
+		return nil, err
+	}
+	return &t, nil
 }

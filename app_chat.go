@@ -233,6 +233,13 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		}
 		return a.agentFinanceiro(ctx, cod)
 
+	case "detalhe_ticket_360":
+		numero := argStr("numero")
+		if numero == "" {
+			return "", "", fmt.Errorf("numero vazio")
+		}
+		return a.agentDetalheTicket(ctx, numero)
+
 	case "listar_tickets":
 		return a.agentListarTickets(ctx, argStr("coluna"))
 
@@ -369,15 +376,102 @@ func (a *App) agentFinanceiro(ctx context.Context, cod string) (string, string, 
 	if err != nil {
 		return "", "", err
 	}
-	f := fin.Sources.InsideService.Data.Financeiro
+	dados := fin.Sources.InsideService.Data
+	f := dados.Financeiro
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Cliente %s — saldo devedor: R$ %.2f (com encargos R$ %.2f; encargos R$ %.2f); %d fatura(s) atrasada(s).\n",
 		cod, f.TotalDevendo, f.TotalDevendoComEncargos, f.TotalEncargosAtraso, f.TotalAtrasadas)
-	for _, fat := range fin.Sources.InsideService.Data.FaturasAbertas {
+	for _, fat := range dados.FaturasAbertas {
 		fmt.Fprintf(&sb, "Doc %s: R$ %.2f, venceu %s, %d dias de atraso (multa R$ %.2f, mora R$ %.2f)\n",
 			fat.NumeroDoc, fat.ValorDuplicata, fat.Vencimento.Format("02/01/2006"), fat.DiasAtraso, fat.MultaValor, fat.MoraValor)
 	}
-	return sb.String(), fmt.Sprintf("consultou o financeiro do cliente %s", cod), nil
+	if n := len(dados.OSAtivas); n > 0 {
+		sb.WriteString("\nOS ativas:\n")
+		for i, os := range dados.OSAtivas {
+			if i >= 10 {
+				fmt.Fprintf(&sb, "… (+%d mais)\n", n-10)
+				break
+			}
+			fmt.Fprintf(&sb, "- %s\n", resumoMapa(os, "numero", "descricao", "status", "data", "situacao"))
+		}
+	} else {
+		sb.WriteString("\nSem OS ativas no cadastro.\n")
+	}
+	if rec := fin.Sources.Octadesk.Data.TicketsRecentes; len(rec) > 0 {
+		sb.WriteString("\nAtendimentos recentes (Octadesk):\n")
+		for i, t := range rec {
+			if i >= 8 {
+				fmt.Fprintf(&sb, "… (+%d mais)\n", len(rec)-8)
+				break
+			}
+			fmt.Fprintf(&sb, "- #%s %s [%s] (%s)\n", t.Number, t.Summary, t.Status.Name, t.CreatedAt)
+		}
+	}
+	return sb.String(), fmt.Sprintf("consultou os dados do cliente %s", cod), nil
+}
+
+// resumoMapa junta os valores dos campos pedidos de um mapa genérico
+// (OS ativas e outros blocos do dashboard vêm sem schema fixo).
+func resumoMapa(m map[string]any, campos ...string) string {
+	var partes []string
+	for _, c := range campos {
+		if v, ok := m[c]; ok && v != nil {
+			s := strings.TrimSpace(fmt.Sprintf("%v", v))
+			if s != "" && s != "<nil>" {
+				partes = append(partes, s)
+			}
+		}
+	}
+	if len(partes) == 0 {
+		b, _ := json.Marshal(m)
+		return limitarTexto(string(b), 200)
+	}
+	return strings.Join(partes, " | ")
+}
+
+// agentDetalheTicket devolve o ticket completo (descrição + interações) pelo
+// número; o uuid é localizado nas filas do helpdesk.
+func (a *App) agentDetalheTicket(ctx context.Context, numero string) (string, string, error) {
+	c := a.rotaAtual()
+	if c == nil {
+		return "", "", rota360.ErrSemSessao
+	}
+	var det *rota360.TicketDetalhe360
+	for _, view := range []string{"em_aberto", "meus_em_aberto", "pendentes"} {
+		itens, _, err := c.TicketsDaFila(ctx, view, 1, 100)
+		if err != nil {
+			return "", "", err
+		}
+		for _, t := range itens {
+			if strings.EqualFold(t.Numero, numero) {
+				det, err = c.DetalheTicket(ctx, t.ID)
+				if err != nil {
+					return "", "", err
+				}
+				break
+			}
+		}
+		if det != nil {
+			break
+		}
+	}
+	if det == nil {
+		return "", "", fmt.Errorf("ticket %s não encontrado nas filas em aberto/pendentes", numero)
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Ticket #%s — %s [%s] | cliente %s (código %s) | assunto %s/%s | responsável %s\n\n",
+		det.Numero, det.Titulo, det.Status, det.Solicitante, det.CodService, det.CategoriaNome, det.AssuntoNome, det.ResponsavelNome)
+	for _, m := range det.Mensagens {
+		if m.Tipo == "sistema" || strings.TrimSpace(m.Corpo) == "" {
+			continue
+		}
+		tipo := m.Tipo
+		if tipo == "descricao" {
+			tipo = "descrição"
+		}
+		fmt.Fprintf(&sb, "[%s] %s: %s\n\n", tipo, m.Autor, limitarTexto(m.Corpo, 700))
+	}
+	return sb.String(), fmt.Sprintf("leu o ticket #%s do 360", det.Numero), nil
 }
 
 func (a *App) agentListarTickets(ctx context.Context, coluna string) (string, string, error) {

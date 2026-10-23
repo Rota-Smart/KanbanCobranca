@@ -50,8 +50,11 @@ func AgentTools() []map[string]any {
 			"Cria uma coluna nova no Kanban (máx. 40 caracteres).",
 			map[string]any{"nome": map[string]any{"type": "string"}}, []string{"nome"}),
 		tool("financeiro_cliente",
-			"Consulta o financeiro do cliente no 360: saldo devedor com multa/mora, faturas em aberto e dias de atraso.",
+			"Consulta os dados do cliente no 360 pelo código service: financeiro (saldo devedor, faturas atrasadas com multa/mora), ordens de serviço (OS) ativas e atendimentos recentes (Octadesk).",
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
+		tool("detalhe_ticket_360",
+			"Busca o ticket do helpdesk 360 pelo número: devolve título, status, cliente, descrição e todas as interações (o que foi dito e feito, inclusive o que o técnico registrou).",
+			map[string]any{"numero": map[string]any{"type": "string", "description": "Número do ticket (ex.: 67220)"}}, []string{"numero"}),
 		tool("listar_tickets",
 			"Lista os cards do Kanban (id, nome, coluna), opcionalmente de uma coluna só.",
 			map[string]any{"coluna": map[string]any{"type": "string", "description": "Filtra por coluna (opcional)"}}, nil),
@@ -90,7 +93,7 @@ type ToolExecutor interface {
 
 // MensagemDeChat é uma mensagem do histórico vinda do frontend.
 type MensagemDeChat struct {
-	Papel   string `json:"papel"` // "user" | "assistant"
+	Papel    string `json:"papel"` // "user" | "assistant"
 	Conteudo string `json:"conteudo"`
 }
 

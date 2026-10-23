@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"rota-smart/internal/hotkey"
+	"rota-smart/internal/rota360"
 	"rota-smart/internal/tela"
 )
 
@@ -69,15 +71,35 @@ func (a *App) onAtalhoTicketTela() {
 // regexUUID captura ids de ticket no estilo Octadesk/360 na URL.
 var regexUUID = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
 
+// regexTicketURL captura o uuid quando a tela é a página de um ticket.
+var regexTicketURL = regexp.MustCompile(`/helpdesk/tickets/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})`)
+
 // regexCodigo procura um código numérico curto (cod service / nº do ticket).
 var regexCodigo = regexp.MustCompile(`\d{3,10}`)
 
 // identificarDaTela deduz qual cliente/ticket estava na tela:
-//  1. código numérico na URL ou no título da janela → card local;
-//  2. uuid de ticket na URL → acha o código service na fila do 360;
-//  3. texto recém-copiado (clipboard) como último recurso.
+//  1. página de ticket do 360 na URL → detalhe completo do ticket;
+//  2. código numérico na URL ou no título da janela → card local;
+//  3. uuid de ticket na URL → acha o código service na fila do 360;
+//  4. texto recém-copiado (clipboard) como último recurso.
 func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 	res := TicketDaTela{Titulo: cap.Titulo}
+
+	if m := regexTicketURL.FindStringSubmatch(cap.URL); m != nil {
+		if det := a.detalheDoTicket(m[1]); det != nil {
+			res.Fonte = "tela"
+			res.CodService = det.CodService
+			res.NomeCliente = det.Solicitante
+			res.Titulo = "#" + det.Numero + " " + det.Titulo
+			res.Mensagem = mensagemTicketDetalhe(det)
+			if t, err := a.tickets.GetPorCodService(a.ctx, det.CodService); err == nil && t != nil {
+				res.Achou = true
+				res.TicketID = t.ID
+				res.NomeCliente = t.NomeCliente
+			}
+			return res
+		}
+	}
 
 	urlSemUUID := regexUUID.ReplaceAllString(cap.URL, " ")
 	if cod := primeiroCodigo(urlSemUUID); cod != "" {
@@ -100,11 +122,61 @@ func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 		res.Mensagem = "Não reconheci um ticket ou cliente na tela em foco. Cole o código ou peça no chat."
 		return res
 	}
-	if t, err := a.tickets.GetPorCodService(a.ctx, res.CodService); err == nil && t != nil {		res.Achou = true
+	if t, err := a.tickets.GetPorCodService(a.ctx, res.CodService); err == nil && t != nil {
+		res.Achou = true
 		res.TicketID = t.ID
 		res.NomeCliente = t.NomeCliente
 	}
+	if res.Mensagem == "" {
+		if res.Achou && res.TicketID > 0 {
+			res.Mensagem = fmt.Sprintf(
+				"Continue o atendimento do card #%d — %s (código service %s). Consulte os dados do cliente no 360 (financeiro, OS ativas, atendimentos recentes), revise acordos e avaliação, e sugira os próximos passos.",
+				res.TicketID, res.NomeCliente, res.CodService)
+		} else {
+			res.Mensagem = fmt.Sprintf(
+				"Estou com o cliente de código %s na tela do 360. Consulte os dados dele (cadastro, financeiro, OS ativas, atendimentos recentes), aponte pendências relevantes e sugira os próximos passos.",
+				res.CodService)
+		}
+	}
 	return res
+}
+
+// detalheDoTicket busca o ticket completo pelo uuid; devolve nil se não houver
+// sessão no 360 ou se a busca falhar (o fluxo segue pelos caminhos antigos).
+func (a *App) detalheDoTicket(uuid string) *rota360.TicketDetalhe360 {
+	c := a.rotaAtual()
+	if c == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 10*time.Second)
+	defer cancel()
+	t, err := c.DetalheTicket(ctx, uuid)
+	if err != nil {
+		slog.Warn("detalhe do ticket do 360", "uuid", uuid, "err", err)
+		return nil
+	}
+	return t
+}
+
+// mensagemTicketDetalhe monta o briefing inicial do chat: o que o ticket
+// pede, o que já foi tratado nele e o que o agente deve buscar no 360.
+func mensagemTicketDetalhe(det *rota360.TicketDetalhe360) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Analise o ticket #%s (%s) do cliente %s (código service %s).\n\n",
+		det.Numero, det.Titulo, det.Solicitante, det.CodService)
+	for _, m := range det.Mensagens {
+		if m.Tipo == "sistema" || strings.TrimSpace(m.Corpo) == "" {
+			continue
+		}
+		titulo := m.Tipo
+		if titulo == "descricao" {
+			titulo = "descrição"
+		}
+		fmt.Fprintf(&sb, "[%s] %s: %s\n\n", titulo, m.Autor, limitarTexto(m.Corpo, 700))
+	}
+	sb.WriteString("Resuma: o que o ticket pede, o que já foi feito com o cliente e o que os atendimentos anteriores dizem. ")
+	sb.WriteString("Use as ferramentas para puxar os dados do cliente no 360 (financeiro, OS ativas, atendimentos recentes) e diga os próximos passos.")
+	return sb.String()
 }
 
 // primeiroCodigo devolve o primeiro código numérico isolado do texto
