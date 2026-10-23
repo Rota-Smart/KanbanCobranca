@@ -18,12 +18,12 @@ import (
 )
 
 // VersaoApp é a versão deste binário; bump a cada release.
-const VersaoApp = "1.4.0"
+const VersaoApp = "1.4.1"
 
 // BasePadrao é a fonte de atualização padrão (branch release do repo).
 const BasePadrao = "https://raw.githubusercontent.com/Rota-Smart/KanbanCobranca/release"
 
-const maxExe = 64 << 20 // 64 MB
+const maxExe = 96 << 20 // 96 MB (exe atual ~79 MB com o modelo Vosk embutido)
 
 // Cliente consulta a fonte de atualização.
 type Cliente struct {

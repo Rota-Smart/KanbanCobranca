@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -99,9 +100,32 @@ func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 			}
 			return res
 		}
+		// A URL é de um ticket, mas o detalhe falhou (sem sessão no 360,
+		// erro de rede...). Procurar o código na fila antes de cair nas
+		// pistas genéricas — a URL não tem código de cliente, só o uuid.
+		if cod := a.codigoDoTicketNaFila(m[1]); cod != "" {
+			res.CodService = cod
+			res.Fonte = "fila360"
+			if t, err := a.tickets.GetPorCodService(a.ctx, cod); err == nil && t != nil {
+				res.Achou = true
+				res.TicketID = t.ID
+				res.NomeCliente = t.NomeCliente
+			}
+			if res.Mensagem == "" {
+				res.Mensagem = fmt.Sprintf(
+					"Estou no ticket do cliente de código %s no 360. Consulte os dados dele (cadastro, financeiro, OS ativas, produtos/equipamentos, atendimentos recentes), aponte pendências relevantes e sugira os próximos passos.",
+					cod)
+			}
+			return res
+		}
 	}
 
 	urlSemUUID := regexUUID.ReplaceAllString(cap.URL, " ")
+	// O host (360.rotagroup.com.br) não tem código de cliente — só o caminho
+	// interessa, senão o "360" do domínio vira falso positivo.
+	if u, err := url.Parse(urlSemUUID); err == nil && u.Host != "" {
+		urlSemUUID = u.Path + "?" + u.RawQuery
+	}
 	if cod := primeiroCodigo(urlSemUUID); cod != "" {
 		res.CodService = cod
 		res.Fonte = "tela"
@@ -181,8 +205,12 @@ func mensagemTicketDetalhe(det *rota360.TicketDetalhe360) string {
 
 // primeiroCodigo devolve o primeiro código numérico isolado do texto
 // (não pode estar colado em letra, para não pegar pedaços de palavras).
+// "360" é pulado: é o nome do sistema (domínio/título da janela), não código.
 func primeiroCodigo(s string) string {
 	for _, m := range regexCodigo.FindAllString(s, -1) {
+		if m == "360" {
+			continue
+		}
 		if _, err := strconv.ParseInt(m, 10, 64); err == nil {
 			return m
 		}

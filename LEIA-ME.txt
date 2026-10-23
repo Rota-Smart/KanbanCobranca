@@ -11,6 +11,8 @@ COMO INSTALAR (outro computador):
    lado do exe, TODO o dados local (banco com configurações, colunas,
    parâmetros) é lido dela — o zip já vem com a pasta, então o app abre
    já configurado. Para zera, basta apagar a pasta.
+5. Os botões de minimizar/maximizar/tela cheia/fechar que ficavam dentro do
+   app foram removidos na v1.4.1 — use os da própria janela do Windows.
 
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa

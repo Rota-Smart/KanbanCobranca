@@ -62,7 +62,7 @@ func Registrar(onTicketTela, onBuscaClientes func()) error {
 		for _, a := range atalhos {
 			r, _, err := procRegisterHotKey.Call(0, a.id, uintptr(modShift|modNoRepeat), a.vk)
 			if r == 0 {
-				errCh <- fmt.Errorf("Shift+F%d já em uso por outro programa (%w)", a.id, err)
+				errCh <- fmt.Errorf("Shift+F%d já em uso por outro programa (%w)", a.id+1, err)
 				return
 			}
 			defer procUnregisterHotKey.Call(0, a.id) //nolint:errcheck
