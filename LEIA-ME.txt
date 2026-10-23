@@ -11,7 +11,14 @@ COMO INSTALAR (outro computador):
    lado do exe, TODO o dados local (banco com configurações, colunas,
    parâmetros) é lido dela — o zip já vem com a pasta, então o app abre
    já configurado. Para zera, basta apagar a pasta.
-5. Os botões de minimizar/maximizar/tela cheia/fechar que ficavam dentro do
+5. COLUNAS DO KANBAN (novo na v1.5.0): o menu ⋯ no cabeçalho de cada
+   coluna renomeia, move (esquerda/direita) e apaga; o botão "+ Nova coluna"
+   cria outras. As colunas "Cobrança" e "Orçamento" não podem ser renomeadas
+   (participam de automações do app).
+6. ATUALIZAÇÃO EM SEGUNDO PLANO (novo na v1.5.0): ao clicar em "Atualizar"
+   nas Configurações o download acontece em background — pode fechar a tela
+   e continuar trabalhando; o app reinicia sozinho ao concluir.
+7. Os botões de minimizar/maximizar/tela cheia/fechar que ficavam dentro do
    app foram removidos na v1.4.1 — use os da própria janela do Windows.
 
 PRIMEIROS PASSOS:
