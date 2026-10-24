@@ -67,6 +67,11 @@ COMO INSTALAR (outro computador):
    O assistente também pesquisa tickets pelo chat: "pesquise os tickets do
    cliente 24755" ou "ache o ticket 12345".
 
+14. MICROFONE (v1.10.0): o 🎤 do chat agora abre o microfone no modo mais
+   cru possível e captura na taxa nativa do dispositivo (48 kHz), sem
+   forçar reconfiguração do driver — corrige o erro "NotReadableError" em
+   notebooks onde o microfone trava na abertura pelo app.
+
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
    guia do Chrome; faça login lá UMA vez e o app captura e salva o cookie
