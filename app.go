@@ -43,6 +43,9 @@ type App struct {
 
 	muAtualiza          sync.Mutex
 	baixandoAtualizacao bool // download do exe novo em background
+
+	muModeloVoz sync.Mutex
+	gzModeloVoz []byte // .tar.gz do modelo montado p/ o vosk-browser (cache)
 }
 
 // WireIntegracao injeta as dependências da integração (chamado pelo main).

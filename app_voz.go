@@ -1,172 +1,108 @@
 package main
 
+// Fala→texto local via whisper.cpp (whisper-cli.exe + modelo ggml small
+// quantizado, ~190 MB, OpenAI Whisper MIT). Os binários e o modelo vivem na
+// pasta de dados do app (%APPDATA%\RotaSmart\whisper), FORA do exe — o
+// vosk-browser/WASM foi abandonado: o modelo pequeno dele era impreciso e o
+// grande estourava a memória do WASM. O frontend grava WAV 16 kHz, manda os
+// bytes, e aqui roda o whisper-cli e devolve o texto.
+
 import (
-	"embed"
+	"bytes"
+	"context"
+	"encoding/base64"
 	"fmt"
-	"io/fs"
-	"net/http"
-	"net/url"
+	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"syscall"
+	"time"
 
 	"rota-smart/internal/appdata"
 )
 
-// Fala→texto local (Vosk via vosk-browser no WebView2). O modelo
-// (vosk-model-small-pt, ~52 MB, Apache-2.0) vem embutido no app e é servido
-// ao frontend em /vosk/; se o usuário escolher outro modelo nas Configurações
-// (pasta copiada para a pasta de dados), ele tem precedência.
+const modeloWhisperNome = "ggml-small-q5_1.bin"
 
-//go:embed all:modelos/vosk-model-small-pt-0.3
-var modeloVozEmbutido embed.FS
-
-const modeloVozEmbutidoRaiz = "modelos/vosk-model-small-pt-0.3"
-
-const configModeloVoz = "vosk_model"
-
-// pastaModeloVoz é onde o modelo copiado vive (sobrevive a mudanças na pasta original).
-func pastaModeloVoz() string {
-	dir, err := appdata.Caminho("vosk-model")
+// caminhoWhisper devolve a pasta onde devem estar o whisper-cli.exe (em
+// Release/) e o modelo ggml.
+func caminhoWhisper() string {
+	dir, err := appdata.Caminho("whisper")
 	if err != nil {
 		return ""
 	}
 	return dir
 }
 
-// VozStatus é o estado do modelo de voz para o frontend.
-type VozStatus struct {
-	Configurado bool   `json:"configurado"`
-	Origem      string `json:"origem"` // "embutido" | "pasta"
-	Caminho     string `json:"caminho"`
-	Mensagem    string `json:"mensagem"`
-}
-
-// ModeloVozStatus informa o modelo de fala→texto em uso: embutido no app
-// por padrão, ou a pasta escolhida nas Configurações (que tem precedência).
-func (a *App) ModeloVozStatus() VozStatus {
-	if caminho := a.configGet(a.ctx, configModeloVoz); caminho != "" && ehPastaModeloVosk(caminho) {
-		return VozStatus{Configurado: true, Origem: "pasta", Caminho: caminho}
-	}
-	return VozStatus{
-		Configurado: true,
-		Origem:      "embutido",
-		Caminho:     modeloVozEmbutidoRaiz,
-		Mensagem:    "Modelo embutido no app (vosk-model-small-pt). Para usar outro, escolha a pasta abaixo.",
-	}
-}
-
-// ehPastaModeloVosk valida o mínimo da estrutura de um modelo Vosk
-// (padrão Kaldi: am/, conf/, graph/ ou final.mdl na raiz).
-func ehPastaModeloVosk(caminho string) bool {
-	st, err := os.Stat(caminho)
-	if err != nil || !st.IsDir() {
+// whisperInstalado informa se os binários e o modelo estão no lugar.
+func whisperInstalado() bool {
+	base := caminhoWhisper()
+	if base == "" {
 		return false
 	}
-	for _, marca := range []string{"conf", "am", "final.mdl", "graph"} {
-		if _, err := os.Stat(filepath.Join(caminho, marca)); err == nil {
-			return true
-		}
+	if _, err := os.Stat(filepath.Join(base, "Release", "whisper-cli.exe")); err != nil {
+		return false
 	}
-	return false
+	_, err := os.Stat(filepath.Join(base, modeloWhisperNome))
+	return err == nil
 }
 
-// DefinirModeloVoz abre o diálogo de pasta, valida, copia o modelo para a
-// pasta de dados do app e grava o caminho na config (passa a ter precedência
-// sobre o embutido). Devolve o resumo.
-func (a *App) DefinirModeloVoz() (string, error) {
-	caminho, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Escolher a pasta do modelo Vosk (vosk-model-small-pt-br)",
-	})
+// TranscreverVoz recebe o WAV 16 kHz mono gravado no frontend (em base64 —
+// a ponte do Wails não carrega Uint8Array), roda o whisper-cli e devolve o
+// texto reconhecido em português.
+func (a *App) TranscreverVoz(wavB64 string) (string, error) {
+	wav, err := base64.StdEncoding.DecodeString(wavB64)
 	if err != nil {
-		return "", friendly("DefinirModeloVoz", err)
+		return "", fmt.Errorf("áudio inválido")
 	}
-	if caminho == "" {
-		return "", nil // cancelado
+	base := caminhoWhisper()
+	exe := filepath.Join(base, "Release", "whisper-cli.exe")
+	modelo := filepath.Join(base, modeloWhisperNome)
+	if _, err := os.Stat(exe); err != nil {
+		return "", fmt.Errorf("o reconhecedor de voz (Whisper) não está instalado na pasta %s", base)
 	}
-	if !ehPastaModeloVosk(caminho) {
-		return "", fmt.Errorf("a pasta escolhida não parece um modelo Vosk (falta am/, conf/ ou final.mdl)")
-	}
-	destino := pastaModeloVoz()
-	if destino == "" {
-		return "", fmt.Errorf("não foi possível determinar a pasta de dados do app")
-	}
-	if err := os.RemoveAll(destino); err != nil {
-		return "", friendly("DefinirModeloVoz", err)
-	}
-	if err := copiarPasta(caminho, destino); err != nil {
-		return "", friendly("DefinirModeloVoz", err)
-	}
-	if a.config != nil {
-		if err := a.config.Set(a.ctx, configModeloVoz, destino); err != nil {
-			return "", friendly("DefinirModeloVoz", err)
-		}
-	}
-	return "Modelo de voz configurado (copiado para " + destino + ").", nil
-}
-
-// LimparModeloVoz volta a usar o modelo embutido: limpa a config e apaga a
-// cópia local da pasta escolhida pelo usuário.
-func (a *App) LimparModeloVoz() error {
-	if a.config != nil {
-		if err := a.config.Set(a.ctx, configModeloVoz, ""); err != nil {
-			return friendly("LimparModeloVoz", err)
-		}
-	}
-	if destino := pastaModeloVoz(); destino != "" {
-		if err := os.RemoveAll(destino); err != nil {
-			return friendly("LimparModeloVoz", err)
-		}
-	}
-	return nil
-}
-
-// copiarPasta copia a árvore de diretórios de origem para destino.
-func copiarPasta(origem, destino string) error {
-	return filepath.WalkDir(origem, func(caminho string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(origem, caminho)
-		if err != nil {
-			return err
-		}
-		alvo := filepath.Join(destino, rel)
-		if d.IsDir() {
-			return os.MkdirAll(alvo, 0o700)
-		}
-		dados, err := os.ReadFile(caminho)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(alvo, dados, 0o600)
-	})
-}
-
-// servirModeloVosk serve o modelo em /vosk/… para o frontend (vosk-browser
-// busca os arquivos do modelo por HTTP): da pasta escolhida pelo usuário se
-// houver, senão do embed. Só caminhos dentro da pasta do modelo são aceitos.
-func (a *App) servirModeloVosk(w http.ResponseWriter, r *http.Request) {
-	rel, err := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/vosk"))
-	rel = strings.TrimPrefix(rel, "/")
-	if err != nil || rel == "" || strings.Contains(rel, "..") {
-		http.Error(w, "caminho inválido", http.StatusBadRequest)
-		return
+	if _, err := os.Stat(modelo); err != nil {
+		return "", fmt.Errorf("o modelo de voz não está em %s", modelo)
 	}
 
-	if caminho := a.configGet(a.ctx, configModeloVoz); caminho != "" && ehPastaModeloVosk(caminho) {
-		w.Header().Set("Cache-Control", "no-store")
-		http.ServeFile(w, r, filepath.Join(caminho, filepath.FromSlash(rel)))
-		return
-	}
-
-	sub, err := fs.Sub(modeloVozEmbutido, modeloVozEmbutidoRaiz)
+	tmp, err := os.CreateTemp("", "rotasuite-voz-*.wav")
 	if err != nil {
-		http.Error(w, "modelo embutido indisponível", http.StatusInternalServerError)
-		return
+		return "", friendly("TranscreverVoz", err)
 	}
-	w.Header().Set("Cache-Control", "no-store")
-	http.FileServer(http.FS(sub)).ServeHTTP(w, r)
+	caminho := tmp.Name()
+	defer os.Remove(caminho)
+	if _, err := tmp.Write(wav); err != nil {
+		tmp.Close()
+		return "", friendly("TranscreverVoz", err)
+	}
+	tmp.Close()
+
+	// -nt: só o texto, sem carimbos; -l pt fixa o idioma (evita detecção
+	// errada em frases curtas); 90s de teto para não pendurar o chat.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "-m", modelo, "-f", caminho, "-l", "pt", "-nt")
+	// Sem janela de console: o app é GUI e o console aberto além de feio,
+	// quando fechado mata o whisper (status 0xc000013a).
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	var saida, erros bytes.Buffer
+	cmd.Stdout = &saida
+	cmd.Stderr = &erros
+	if err := cmd.Run(); err != nil {
+		detalhe := erros.String()
+		if len(detalhe) > 300 {
+			detalhe = detalhe[len(detalhe)-300:]
+		}
+		slog.Error("whisper-cli", "err", err, "stderr", detalhe)
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("a transcrição demorou demais e foi cancelada")
+		}
+		return "", fmt.Errorf("o reconhecedor de voz falhou ao processar o áudio")
+	}
+	texto := strings.Join(strings.Fields(strings.TrimSpace(saida.String())), " ")
+	if texto == "" {
+		return "", fmt.Errorf("não entendi o que você falou — tente de novo, mais perto do microfone")
+	}
+	return texto, nil
 }

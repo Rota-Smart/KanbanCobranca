@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"rota-smart/internal/db"
+	"rota-smart/internal/rota360"
 	"rota-smart/internal/service"
 )
 
@@ -202,7 +204,7 @@ func TestGenerateProposalTemplate(t *testing.T) {
 	if prop.Origem != "template" {
 		t.Fatalf("origem: %s", prop.Origem)
 	}
-	for _, trecho := range []string{"Bom dia, Maria!", "R$ 584,00", "R$ 140,00", "12x de R$ 37,00", "R$ 141,00"} {
+	for _, trecho := range []string{"Bom dia, Maria!", "R$ 584,00", "R$ 140,00", "*12*x de R$ 37,00", "R$ 141,00"} {
 		if !contains(prop.Texto, trecho) {
 			t.Errorf("proposta sem %q:\n%s", trecho, prop.Texto)
 		}
@@ -231,4 +233,78 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+func TestGerarRenegociacaoSemSessao(t *testing.T) {
+	a := newTestApp(t)
+	tk, err := a.SaveTicket(exemploTicket())
+	if err != nil {
+		t.Fatalf("SaveTicket: %v", err)
+	}
+	if _, err := a.GerarRenegociacao(tk.ID); !errors.Is(err, rota360.ErrSemSessao) {
+		t.Fatalf("esperava ErrSemSessao, veio %v", err)
+	}
+}
+
+func TestCortesiasUsadas(t *testing.T) {
+	casos := []struct {
+		nome string
+		obs  string
+		want int
+	}{
+		{"sem menção", "AMPLIAÇÃO CÂMERA WIFI EM 28.01.2026\r\nSISTEMA INSTALADO EM 20.08.2025", 0},
+		{"sem número usa as 3", "concedida cortesia conforme combinado - bruna", 3},
+		{"duas cortesias", "liberado 2 cortesias no mes - vivian", 2},
+		{"cortesia 1x", "CORTESIA 1X APROVADA - marcielly", 1},
+		{"cortesia de 1 mes", "cortesia de 1 mes diluida em 3x - taiane", 1},
+		{"maior entre linhas", "usou 1 cortesia\r\ndepois usou 3 cortesias", 3},
+		{"data não vira número", "cortesia em 03/2026 cancelada", 3},
+	}
+	for _, c := range casos {
+		if got := cortesiasUsadas(c.obs); got != c.want {
+			t.Errorf("%s: cortesiasUsadas=%d, esperava %d", c.nome, got, c.want)
+		}
+	}
+}
+
+func TestAvaliarCortesia(t *testing.T) {
+	agora := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
+	assin := agora.AddDate(0, -14, 0)
+
+	if n, motivo := avaliarCortesia(agora, assin, ""); n != 3 || motivo == "" {
+		t.Errorf("1 ano + nunca usou: restantes=%d motivo=%q", n, motivo)
+	}
+	if n, _ := avaliarCortesia(agora, assin, "usou 2 cortesias - bruna"); n != 1 {
+		t.Errorf("usou 2: restantes=%d, esperava 1", n)
+	}
+	if n, _ := avaliarCortesia(agora, assin, "cortesia concedida"); n != 0 {
+		t.Errorf("mencionada sem número: restantes=%d, esperava 0", n)
+	}
+	if n, _ := avaliarCortesia(agora, agora.AddDate(0, -6, 0), ""); n != 0 {
+		t.Errorf("contrato novo: restantes=%d, esperava 0", n)
+	}
+	if n, _ := avaliarCortesia(agora, time.Time{}, ""); n != 0 {
+		t.Errorf("sem data: restantes=%d, esperava 0", n)
+	}
+}
+
+func TestGenerateProposalAVista(t *testing.T) {
+	a := newTestApp(t)
+	tk, _ := a.SaveTicket(exemploTicket())
+
+	// entrada quita o total: vira oferta à vista, sem linha de parcelamento
+	prop, err := a.GenerateProposal(tk.ID, service.ReparcelamentoInput{
+		TotalAbertoCents: 50200, EntradaCents: 50200, NumeroVezes: 1, ParcelaBaseCents: 33500,
+	}, false)
+	if err != nil {
+		t.Fatalf("GenerateProposal à vista: %v", err)
+	}
+	for _, trecho := range []string{"Pagamento à vista: R$ 502,00", "mensalidade volta ao normal de R$ 335,00"} {
+		if !contains(prop.Texto, trecho) {
+			t.Errorf("proposta à vista sem %q:\n%s", trecho, prop.Texto)
+		}
+	}
+	if contains(prop.Texto, "Parcelamento") {
+		t.Errorf("proposta à vista não deveria ter parcelamento:\n%s", prop.Texto)
+	}
 }

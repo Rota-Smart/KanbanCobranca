@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,13 +19,25 @@ import (
 const (
 	GroqEndpoint     = "https://api.groq.com/openai/v1/chat/completions"
 	GroqModeloPadrao = "openai/gpt-oss-120b" // llama-3.3-70b-versatile foi descontinuado pela Groq (ago/2026)
-	groqTimeout      = 12 * time.Second
-	groqMaxResposta  = 64 << 10
-	groqMaxTokens    = 400
+	// DeepInfra é OpenAI-compatible no mesmo formato de request/response da
+	// Groq — o mesmo GroqCliente atende os dois provedores.
+	DeepInfraEndpoint     = "https://api.deepinfra.com/v1/openai/chat/completions"
+	DeepInfraModeloPadrao = "meta-llama/Llama-3.3-70B-Instruct"
+	groqTimeout           = 12 * time.Second
+	groqMaxResposta       = 64 << 10
+	groqMaxTokens         = 400
+	// maxTentativasGroq cobre a janela de TPM do plano free (8K/min): 429 vem
+	// com Retry-After dizendo quando a janela reseta, e esperar vale mais que
+	// falhar. Erros de rede/5xx continuam com 1 retry apenas.
+	maxTentativasGroq = 4
+
+	// ProvedorGroq / ProvedorDeepInfra: valores gravados no config ia_provedor.
+	ProvedorGroq      = "groq"
+	ProvedorDeepInfra = "deepinfra"
 )
 
 // ErrGroqSemChave sinaliza ausência de chave — não é erro para o usuário.
-var ErrGroqSemChave = errors.New("chave da Groq não configurada")
+var ErrGroqSemChave = errors.New("chave da IA não configurada")
 
 // GroqCliente chama a API da Groq. ChaveInjetavel/ModeloInjetavel são
 // consultados a cada chamada (vêm das configurações, podem mudar em tempo real).
@@ -34,14 +47,30 @@ type GroqCliente struct {
 	HTTP            *http.Client
 	ChaveInjetavel  func() string
 	ModeloInjetavel func() string
-	OnUsage         func(promptTokens, completionTokens int)
-	// Endpoint sobrescrevível nos testes (padrão: GroqEndpoint).
+	// ProvedorInjetavel devolve "groq" (padrão) ou "deepinfra" — decide o
+	// endpoint e o modelo default; consultado a cada chamada.
+	ProvedorInjetavel func() string
+	OnUsage           func(promptTokens, completionTokens int)
+	// Endpoint sobrescrevível nos testes (padrão: depende do provedor).
 	Endpoint string
+}
+
+// provedor diz o provedor ativo nesta chamada.
+func (g *GroqCliente) provedor() string {
+	if g != nil && g.ProvedorInjetavel != nil {
+		if p := strings.TrimSpace(g.ProvedorInjetavel()); p != "" {
+			return p
+		}
+	}
+	return ProvedorGroq
 }
 
 func (g *GroqCliente) endpoint() string {
 	if g != nil && g.Endpoint != "" {
 		return g.Endpoint
+	}
+	if g.provedor() == ProvedorDeepInfra {
+		return DeepInfraEndpoint
 	}
 	return GroqEndpoint
 }
@@ -62,11 +91,13 @@ func (g *GroqCliente) chave() string {
 }
 
 func (g *GroqCliente) modelo() string {
-	if g == nil || g.ModeloInjetavel == nil {
-		return GroqModeloPadrao
+	if g != nil && g.ModeloInjetavel != nil {
+		if m := strings.TrimSpace(g.ModeloInjetavel()); m != "" {
+			return m
+		}
 	}
-	if m := strings.TrimSpace(g.ModeloInjetavel()); m != "" {
-		return m
+	if g.provedor() == ProvedorDeepInfra {
+		return DeepInfraModeloPadrao
 	}
 	return GroqModeloPadrao
 }
@@ -117,8 +148,51 @@ func (g *GroqCliente) reportarUsage(resp *groqResponse) {
 	g.OnUsage(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 }
 
-// Completar envia as mensagens com 1 retry em rede/429/5xx. Para 400/401/403
-// não repete (erro permanente).
+// esperaDeRetry diz quanto aguardar antes de repetir um 429 (janela de TPM
+// do plano free): o Retry-After que a Groq manda na resposta, ou o reset da
+// janela no header de ratelimit; sem os dois, backoff fixo. Teto de 60s —
+// espera maior que isso não cabe no ctx da conversa.
+func esperaDeRetry(resp *http.Response, tentativa int) time.Duration {
+	backoff := []time.Duration{2 * time.Second, 5 * time.Second, 12 * time.Second}
+	d := backoff[len(backoff)-1]
+	if tentativa < len(backoff) {
+		d = backoff[tentativa]
+	}
+	if resp == nil {
+		return d
+	}
+	if v := strings.TrimSpace(resp.Header.Get("Retry-After")); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+			if f > 60 {
+				f = 60
+			}
+			return time.Duration(f * float64(time.Second))
+		}
+	}
+	if v := strings.TrimSpace(resp.Header.Get("X-Ratelimit-Reset-Tokens")); v != "" {
+		if dur, err := time.ParseDuration(v); err == nil && dur > 0 {
+			dur += 250 * time.Millisecond
+			if dur > 60*time.Second {
+				dur = 60 * time.Second
+			}
+			return dur
+		}
+	}
+	return d
+}
+
+// cabeNoCtx diz se dá para esperar d e ainda sobrar margem para a chamada.
+func cabeNoCtx(ctx context.Context, d time.Duration) bool {
+	dl, ok := ctx.Deadline()
+	if !ok {
+		return true
+	}
+	return time.Until(dl) > d+8*time.Second
+}
+
+// Completar envia as mensagens com retry: em 429 honra o Retry-After da
+// janela de TPM (até maxTentativasGroq); em rede/5xx repete 1 vez. Para
+// 400/401/403 não repete (erro permanente).
 func (g *GroqCliente) Completar(ctx context.Context, system, user string) (string, error) {
 	chave := g.chave()
 	if chave == "" {
@@ -135,12 +209,16 @@ func (g *GroqCliente) Completar(ctx context.Context, system, user string) (strin
 		return "", err
 	}
 	var ultimoErr error
-	for tentativa := 0; tentativa < 2; tentativa++ {
+	espera := 2 * time.Second
+	for tentativa := 0; tentativa < maxTentativasGroq; tentativa++ {
 		if tentativa > 0 {
+			if !cabeNoCtx(ctx, espera) {
+				return "", fmt.Errorf("groq: HTTP 429 — sem tempo de esperar a janela de TPM; tente de novo em ~%s", espera.Truncate(time.Second))
+			}
 			select {
 			case <-ctx.Done():
 				return "", ctx.Err()
-			case <-time.After(time.Second):
+			case <-time.After(espera):
 			}
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.endpoint(), bytes.NewReader(body))
@@ -152,19 +230,35 @@ func (g *GroqCliente) Completar(ctx context.Context, system, user string) (strin
 		resp, err := g.HTTP.Do(req)
 		if err != nil {
 			ultimoErr = err
+			if tentativa >= 1 {
+				break
+			}
+			espera = esperaDeRetry(nil, tentativa)
 			continue
 		}
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, groqMaxResposta))
 		resp.Body.Close()
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			ultimoErr = fmt.Errorf("groq: HTTP %d", resp.StatusCode)
+		switch {
+		case resp.StatusCode == http.StatusTooManyRequests:
+			ultimoErr = fmt.Errorf("groq: HTTP 429 — limite de tokens por minuto atingido")
+			espera = esperaDeRetry(resp, tentativa)
 			continue
-		}
-		if resp.StatusCode != http.StatusOK {
+		case resp.StatusCode >= 500:
+			ultimoErr = fmt.Errorf("groq: HTTP %d", resp.StatusCode)
+			if tentativa >= 1 {
+				break
+			}
+			espera = esperaDeRetry(nil, tentativa)
+			continue
+		case resp.StatusCode != http.StatusOK:
 			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusBadRequest {
 				return "", fmt.Errorf("groq: HTTP %d — verifique a chave e o modelo nas configurações", resp.StatusCode)
 			}
 			ultimoErr = fmt.Errorf("groq: HTTP %d", resp.StatusCode)
+			if tentativa >= 1 {
+				break
+			}
+			espera = esperaDeRetry(nil, tentativa)
 			continue
 		}
 		if err != nil {
@@ -212,12 +306,16 @@ func (g *GroqCliente) chatUmaRodada(ctx context.Context, mensagens []groqMensage
 		return saida{}, err
 	}
 	var ultimoErr error
-	for tentativa := 0; tentativa < 2; tentativa++ {
+	espera := 2 * time.Second
+	for tentativa := 0; tentativa < maxTentativasGroq; tentativa++ {
 		if tentativa > 0 {
+			if !cabeNoCtx(ctx, espera) {
+				return saida{}, fmt.Errorf("groq: HTTP 429 — sem tempo de esperar a janela de TPM; tente de novo em ~%s", espera.Truncate(time.Second))
+			}
 			select {
 			case <-ctx.Done():
 				return saida{}, ctx.Err()
-			case <-time.After(time.Second):
+			case <-time.After(espera):
 			}
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.endpoint(), bytes.NewReader(body))
@@ -229,22 +327,38 @@ func (g *GroqCliente) chatUmaRodada(ctx context.Context, mensagens []groqMensage
 		resp, err := g.HTTP.Do(req)
 		if err != nil {
 			ultimoErr = err
+			if tentativa >= 1 {
+				break
+			}
+			espera = esperaDeRetry(nil, tentativa)
 			continue
 		}
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, groqMaxResposta))
 		resp.Body.Close()
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			ultimoErr = fmt.Errorf("groq: HTTP %d", resp.StatusCode)
+		switch {
+		case resp.StatusCode == http.StatusTooManyRequests:
+			ultimoErr = fmt.Errorf("groq: HTTP 429 — limite de tokens por minuto atingido")
+			espera = esperaDeRetry(resp, tentativa)
 			continue
-		}
-		if resp.StatusCode != http.StatusOK {
+		case resp.StatusCode >= 500:
+			ultimoErr = fmt.Errorf("groq: HTTP %d", resp.StatusCode)
+			if tentativa >= 1 {
+				break
+			}
+			espera = esperaDeRetry(nil, tentativa)
+			continue
+		case resp.StatusCode != http.StatusOK:
 			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusBadRequest {
 				return saida{}, fmt.Errorf("groq: HTTP %d — verifique a chave e o modelo nas configurações", resp.StatusCode)
 			}
 			if resp.StatusCode == http.StatusNotFound {
-				return saida{}, fmt.Errorf("groq: HTTP 404 — o modelo %q não existe mais na Groq; escolha outro em ⚙ Configurações", g.modelo())
+				return saida{}, fmt.Errorf("groq: HTTP 404 — o modelo %q não existe mais no provedor; escolha outro em ⚙ Configurações", g.modelo())
 			}
 			ultimoErr = fmt.Errorf("groq: HTTP %d", resp.StatusCode)
+			if tentativa >= 1 {
+				break
+			}
+			espera = esperaDeRetry(nil, tentativa)
 			continue
 		}
 		if err != nil {

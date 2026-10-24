@@ -9,12 +9,20 @@ const MODELOS_SUGERIDOS = [
   'qwen/qwen3.6-27b',
 ];
 
+const MODELOS_DEEPINFRA = [
+  'meta-llama/Llama-3.3-70B-Instruct',
+  'meta-llama/Meta-Llama-3.1-8B-Instruct',
+  'Qwen/Qwen2.5-72B-Instruct',
+];
+
 // Configuracoes reúne: sessão do 360, chave/modelo Groq e parâmetros
 // de negociação (texto ou arquivo).
 export default function Configuracoes(props: { onFechar: () => void; onToast: (msg: string) => void }) {
   const [cfg, setCfg] = useState<ConfigApp | null>(null);
   const [chave, setChave] = useState('');
   const [modelo, setModelo] = useState('');
+  const [chaveDI, setChaveDI] = useState('');
+  const [modeloDI, setModeloDI] = useState('');
   const [cookieTxt, setCookieTxt] = useState('');
   const [paramTexto, setParamTexto] = useState('');
   const [params, setParams] = useState<ParametroNegociacao[]>([]);
@@ -27,7 +35,6 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   const [syncRepo, setSyncRepo] = useState('');
   const [syncInfo, setSyncInfo] = useState<SyncInfo | null>(null);
   const [syncOcupado, setSyncOcupado] = useState(false);
-  const [voz, setVoz] = useState<import('../wails-types').VozStatus | null>(null);
   const [usoGroq, setUsoGroq] = useState<import('../wails-types').UsoGroq | null>(null);
 
   function recarregarSync() {
@@ -44,7 +51,6 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
     recarregar();
     App.GetFonteAtualizacao().then(setFonte).catch(() => {});
     recarregarSync();
-    App.ModeloVozStatus().then(setVoz).catch(() => {});
   }, []);
 
   async function verificarAtualizacao() {
@@ -108,6 +114,47 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
       props.onToast(String(e));
     } finally {
       setSalvando(false);
+    }
+  }
+
+  async function salvarDeepInfra() {
+    setSalvando(true);
+    try {
+      await App.SetDeepInfraConfig(chaveDI.trim(), modeloDI.trim());
+      setChaveDI('');
+      props.onToast('Configurações da DeepInfra salvas.');
+      recarregar();
+    } catch (e) {
+      props.onToast(String(e));
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function escolherProvedor(p: string) {
+    try {
+      await App.SetProvedorIA(p);
+      props.onToast(p === 'deepinfra' ? 'Provedor: DeepInfra.' : 'Provedor: Groq.');
+      recarregar();
+    } catch (e) {
+      props.onToast(String(e));
+    }
+  }
+
+  const [autorTxt, setAutorTxt] = useState('');
+
+  // O nome no 360 chega junto do cfg; sincroniza o input quando carregar.
+  useEffect(() => {
+    if (cfg) setAutorTxt(cfg.autor360 ?? '');
+  }, [cfg]);
+
+  async function salvarAutor() {
+    try {
+      await App.SetAutor360(autorTxt.trim());
+      props.onToast('Nome no 360 salvo.');
+      recarregar();
+    } catch (e) {
+      props.onToast(String(e));
     }
   }
 
@@ -198,26 +245,6 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
     }
   }
 
-  async function escolherModeloVoz() {
-    try {
-      const res = await App.DefinirModeloVoz();
-      if (res) props.onToast(res);
-      setVoz(await App.ModeloVozStatus());
-    } catch (e) {
-      props.onToast(String(e));
-    }
-  }
-
-  async function restaurarModeloVoz() {
-    try {
-      await App.LimparModeloVoz();
-      props.onToast('Voltando a usar o modelo embutido.');
-      setVoz(await App.ModeloVozStatus());
-    } catch (e) {
-      props.onToast(String(e));
-    }
-  }
-
   async function salvarSync() {
     setSyncOcupado(true);
     try {
@@ -302,60 +329,145 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
           </div>
         </section>
 
-        {/* Groq */}
+        {/* IA (Groq ou DeepInfra) */}
         <section className="mt-3 border rounded-lg p-3">
-          <h3 className="text-sm font-semibold text-slate-700">Groq (polimento com IA)</h3>
-          {usoGroq && (
+          <h3 className="text-sm font-semibold text-slate-700">IA (polimento e assistente)</h3>
+          <div className="mt-2 flex items-center gap-2 text-sm">
+            <span className="text-slate-600">Provedor:</span>
+            {[
+              ['groq', 'Groq'],
+              ['deepinfra', 'DeepInfra'],
+            ].map(([valor, rotulo]) => (
+              <button
+                key={valor}
+                className={
+                  'border rounded px-3 py-1 text-sm ' +
+                  (cfg?.provedor === valor
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'border-slate-300 text-slate-600')
+                }
+                onClick={() => escolherProvedor(valor)}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+          {usoGroq && cfg?.provedor !== 'deepinfra' && (
             <p className="text-xs text-slate-500 mt-1">
               Uso hoje: <strong>{usoGroq.requisicoes}</strong> requisições ·{' '}
               <strong>{Math.round((usoGroq.promptTokens + usoGroq.completionTokens) / 100) / 10}k</strong> tokens{' '}
               <span className="text-slate-400">(limites do plano free: 1.000 req/dia, 200k tokens/dia)</span>
             </p>
           )}
-          <p className="text-xs text-slate-500 mt-1">
-            Chave gratuita em console.groq.com. Modelo sugerido:{' '}
-            <strong>openai/gpt-oss-120b</strong> (alternativa rápida: openai/gpt-oss-20b — o
-            antigo llama-3.3-70b-versatile foi descontinuado pela Groq).
-            {cfg?.groqTemChave && ' Uma chave já está salva.'}
-          </p>
-          <div className="mt-2 flex flex-col gap-2">
+          {cfg?.provedor === 'deepinfra' ? (
+            <>
+              <p className="text-xs text-slate-500 mt-2">
+                Chave em deepinfra.com/dashboard/api-tokens. Modelo sugerido:{' '}
+                <strong>meta-llama/Llama-3.3-70B-Instruct</strong> (pago por token, sem cota free).
+                {cfg?.deepInfraTemChave && ' Uma chave já está salva.'}
+              </p>
+              <div className="mt-2 flex flex-col gap-2">
+                <input
+                  className="border rounded px-2 py-1 text-sm"
+                  type="password"
+                  placeholder="Chave da API DeepInfra"
+                  value={chaveDI}
+                  onChange={(e) => setChaveDI(e.target.value)}
+                />
+                <input
+                  className="border rounded px-2 py-1 text-sm"
+                  placeholder="Modelo (padrão: meta-llama/Llama-3.3-70B-Instruct)"
+                  value={modeloDI}
+                  onChange={(e) => setModeloDI(e.target.value)}
+                  list="modelos-deepinfra"
+                />
+                <datalist id="modelos-deepinfra">
+                  {MODELOS_DEEPINFRA.map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+                <div className="flex gap-2">
+                  <button
+                    className="bg-blue-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
+                    disabled={salvando || (!chaveDI.trim() && !modeloDI.trim())}
+                    onClick={salvarDeepInfra}
+                  >
+                    Salvar
+                  </button>
+                  {cfg?.deepInfraTemChave && (
+                    <button
+                      className="border rounded px-3 py-1 text-sm text-red-600"
+                      onClick={() => App.LimparDeepInfraChave().then(recarregar)}
+                    >
+                      Remover chave
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-slate-500 mt-2">
+                Chave gratuita em console.groq.com. Modelo sugerido:{' '}
+                <strong>openai/gpt-oss-120b</strong> (alternativa rápida: openai/gpt-oss-20b — o
+                antigo llama-3.3-70b-versatile foi descontinuado pela Groq).
+                {cfg?.groqTemChave && ' Uma chave já está salva.'}
+              </p>
+              <div className="mt-2 flex flex-col gap-2">
+                <input
+                  className="border rounded px-2 py-1 text-sm"
+                  type="password"
+                  placeholder="Chave da API (gsk_…)"
+                  value={chave}
+                  onChange={(e) => setChave(e.target.value)}
+                />
+                <input
+                  className="border rounded px-2 py-1 text-sm"
+                  placeholder={cfg?.groqModelo || 'Modelo'}
+                  value={modelo}
+                  onChange={(e) => setModelo(e.target.value)}
+                  list="modelos-groq"
+                />
+                <datalist id="modelos-groq">
+                  {MODELOS_SUGERIDOS.map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+                <div className="flex gap-2">
+                  <button
+                    className="bg-blue-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
+                    disabled={salvando || (!chave.trim() && !modelo.trim())}
+                    onClick={salvarGroq}
+                  >
+                    Salvar
+                  </button>
+                  {cfg?.groqTemChave && (
+                    <button
+                      className="border rounded px-3 py-1 text-sm text-red-600"
+                      onClick={() => App.LimparGroqChave().then(recarregar)}
+                    >
+                      Remover chave
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+          <div className="mt-2 flex gap-1">
             <input
               className="border rounded px-2 py-1 text-sm"
-              type="password"
-              placeholder="Chave da API (gsk_…)"
-              value={chave}
-              onChange={(e) => setChave(e.target.value)}
+              placeholder="Seu nome no 360 (como aparece nas suas respostas)"
+              value={autorTxt}
+              onChange={(e) => setAutorTxt(e.target.value)}
             />
-            <input
-              className="border rounded px-2 py-1 text-sm"
-              placeholder={cfg?.groqModelo || 'Modelo'}
-              value={modelo}
-              onChange={(e) => setModelo(e.target.value)}
-              list="modelos-groq"
-            />
-            <datalist id="modelos-groq">
-              {MODELOS_SUGERIDOS.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-            <div className="flex gap-2">
-              <button
-                className="bg-blue-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
-                disabled={salvando || (!chave.trim() && !modelo.trim())}
-                onClick={salvarGroq}
-              >
-                Salvar
-              </button>
-              {cfg?.groqTemChave && (
-                <button
-                  className="border rounded px-3 py-1 text-sm text-red-600"
-                  onClick={() => App.LimparGroqChave().then(recarregar)}
-                >
-                  Remover chave
-                </button>
-              )}
-            </div>
+            <button className="border rounded px-3 py-1 text-sm" disabled={!autorTxt.trim()} onClick={salvarAutor}>
+              Salvar
+            </button>
           </div>
+          <p className="text-xs text-slate-500">
+            O assistente resume o ticket com a descrição e a última mensagem que não é sua; diga aqui
+            quem é você para ele filtrar direito.
+          </p>
         </section>
 
         {/* Parâmetros de negociação */}
@@ -482,37 +594,15 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
           </div>
         </section>
 
-        {/* Voz do assistente (fala→texto local) */}
+        {/* Voz do assistente (fala→texto local via Whisper) */}
         <section className="mt-3 border rounded-lg p-3">
           <h3 className="text-sm font-semibold text-slate-700">Voz do assistente (fala→texto)</h3>
           <p className="text-xs text-slate-500 mt-1">
-            O botão 🎤 no chat transcreve sua fala localmente (Vosk, sem internet). O app já traz o
-            modelo em português <strong>embutido</strong>. Opcionalmente, escolha a pasta de outro modelo
-            (alphacephei.com/vosk/models) para substituí-lo — a pasta é copiada para os dados do app.
+            O botão 🎤 no chat grava sua fala e transcreve <strong>localmente</strong> com Whisper
+            (whisper.cpp, modelo small em português — sem internet, sem gastar tokens). Clique no 🎤,
+            fale e clique de novo para transcrever. Binários e modelo ficam na pasta de dados do app
+            (<code>whisper\</code>).
           </p>
-          {voz && (
-            <p className="mt-2 text-sm">
-              Status:{' '}
-              {voz.configurado ? (
-                <span className="text-emerald-600 font-medium">
-                  {voz.origem === 'pasta' ? 'Pasta do usuário' : 'Embutido no app'}
-                </span>
-              ) : (
-                <span className="text-amber-600 font-medium">Sem modelo</span>
-              )}
-              {voz.caminho && <span className="block text-xs text-slate-500 break-all">{voz.caminho}</span>}
-            </p>
-          )}
-          <div className="mt-2 flex gap-2">
-            <button className="border rounded px-3 py-1 text-sm" onClick={escolherModeloVoz}>
-              Escolher outro modelo…
-            </button>
-            {voz?.origem === 'pasta' && (
-              <button className="border rounded px-3 py-1 text-sm text-red-600" onClick={restaurarModeloVoz}>
-                Restaurar embutido
-              </button>
-            )}
-          </div>
         </section>
 
         {/* Atualizações */}

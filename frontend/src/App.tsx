@@ -21,6 +21,7 @@ import * as bindings from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 import type { ResultadoCobranca, Ticket } from './wails-types';
 import BuscarCliente360Dialog from './components/BuscarCliente360Dialog';
+import BuscarTickets360Dialog from './components/BuscarTickets360Dialog';
 import ChatDrawer from './components/ChatDrawer';
 import Configuracoes from './components/Configuracoes';
 import KanbanColumn from './components/KanbanColumn';
@@ -59,6 +60,14 @@ interface TicketDaTela {
   ticketId: number;
   nomeCliente: string;
   codService: string;
+  titulo: string;
+  mensagem: string;
+}
+
+// LeituraAcesso: payload do evento "atalho:acesso" (Shift+F5 leu a tela).
+interface LeituraAcesso {
+  achou: boolean;
+  processo: string;
   titulo: string;
   mensagem: string;
 }
@@ -120,6 +129,7 @@ export default function App() {
   const [aberto, setAberto] = useState<Ticket | null>(null);
   const [preCobranca, setPreCobranca] = useState<ResultadoCobranca | null>(null);
   const [buscar360Coluna, setBuscar360Coluna] = useState<string | null>(null);
+  const [buscaTicketsAberta, setBuscaTicketsAberta] = useState(false);
   const [configAberta, setConfigAberta] = useState(false);
   const [chatAberto, setChatAberto] = useState(false);
   const [chatMsgInicial, setChatMsgInicial] = useState<string | null>(null);
@@ -226,9 +236,24 @@ export default function App() {
     const offBusca = EventsOn('atalho:busca', () => {
       setBuscar360Coluna(colunas[0] ?? fallbackColunas[0]);
     });
+    const offBuscaTickets = EventsOn('atalho:busca-tickets', () => {
+      setBuscaTicketsAberta(true);
+    });
+    // Shift+F5: leitura da tela do Access (OS) — abre o chat com o briefing.
+    const offAcesso = EventsOn('atalho:acesso', (d: LeituraAcesso) => {
+      if (d?.mensagem && d.achou) {
+        setChatKey((k) => k + 1);
+        setChatAberto(true);
+        setChatMsgInicial(d.mensagem);
+      } else {
+        showToast(d?.mensagem || 'Não consegui ler a tela em foco.');
+      }
+    });
     return () => {
       offTela();
       offBusca();
+      offBuscaTickets();
+      offAcesso();
     };
   }, [colunas]);
 
@@ -504,6 +529,13 @@ export default function App() {
           </button>
           <button
             className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
+            title="Pesquisar tickets abertos do 360 (Shift+F4)"
+            onClick={() => setBuscaTicketsAberta(true)}
+          >
+            🎟 Tickets
+          </button>
+          <button
+            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
             onClick={() => setChatAberto(true)}
           >
             💬 Assistente
@@ -568,6 +600,7 @@ export default function App() {
       {aberto && (
         <NegotiationModal
           ticket={aberto}
+          podeGerar={aberto.colunaAtual === colunaDisparaCobranca}
           preCobranca={preCobranca}
           onFechouComSave={() => {
             setAberto(null);
@@ -590,6 +623,8 @@ export default function App() {
           onFechar={() => setBuscar360Coluna(null)}
         />
       )}
+
+      {buscaTicketsAberta && <BuscarTickets360Dialog onFechar={() => setBuscaTicketsAberta(false)} />}
 
       {configAberta && <Configuracoes onFechar={() => setConfigAberta(false)} onToast={showToast} />}
 

@@ -343,6 +343,27 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		}
 		return a.agentFinanceiro(ctx, cod)
 
+	case "equipamentos_cliente":
+		cod := argStr("codService")
+		if cod == "" {
+			return "", "", fmt.Errorf("codService vazio")
+		}
+		return a.agentEquipamentos(ctx, cod)
+
+	case "atendimentos_cliente":
+		cod := argStr("codService")
+		if cod == "" {
+			return "", "", fmt.Errorf("codService vazio")
+		}
+		return a.agentAtendimentos(ctx, cod)
+
+	case "pesquisar_tickets":
+		q := argStr("query")
+		if q == "" {
+			return "", "", fmt.Errorf("query vazia")
+		}
+		return a.agentPesquisarTickets(ctx, q)
+
 	case "detalhe_ticket_360":
 		numero := argStr("numero")
 		if numero == "" {
@@ -625,6 +646,10 @@ func limitarTexto(s string, n int) string {
 	return s
 }
 
+// agentFinanceiro devolve só a parte de dinheiro: saldo devedor e faturas
+// atrasadas. É a fatia que a IA puxa quando o ticket é de cobrança — o resto
+// (equipamentos, atendimentos) fica em ferramentas separadas, para o Groq
+// receber apenas o que o caso precisa.
 func (a *App) agentFinanceiro(ctx context.Context, cod string) (string, string, error) {
 	c := a.rotaAtual()
 	if c == nil {
@@ -643,33 +668,63 @@ func (a *App) agentFinanceiro(ctx context.Context, cod string) (string, string, 
 		fmt.Fprintf(&sb, "Doc %s: R$ %.2f, venceu %s, %d dias de atraso (multa R$ %.2f, mora R$ %.2f)\n",
 			fat.NumeroDoc, fat.ValorDuplicata, fat.Vencimento.Format("02/01/2006"), fat.DiasAtraso, fat.MultaValor, fat.MoraValor)
 	}
+	return sb.String(), fmt.Sprintf("consultou o financeiro do cliente %s", cod), nil
+}
+
+// agentEquipamentos devolve o que o cliente tem cadastrado (alarme, câmera,
+// sensores, produtos) — a fatia para tickets técnicos e orçamentos.
+func (a *App) agentEquipamentos(ctx context.Context, cod string) (string, string, error) {
+	c := a.rotaAtual()
+	if c == nil {
+		return "", "", rota360.ErrSemSessao
+	}
+	fin, err := c.FinanceiroCliente(ctx, cod)
+	if err != nil {
+		return "", "", err
+	}
+	resumo := resumoEquipamentos(fin.Sources.Produtos.Data)
+	if dc, err := c.DadosCliente(ctx, cod); err == nil && strings.TrimSpace(dc.Observacoes) != "" {
+		resumo += "\nObservações do cadastro:\n" + limitarTexto(dc.Observacoes, 500) + "\n"
+	}
+	return resumo, fmt.Sprintf("consultou os equipamentos do cliente %s", cod), nil
+}
+
+// agentAtendimentos devolve OS ativas e os atendimentos recentes (Octadesk) —
+// a fatia para entender o histórico do cliente com o suporte.
+func (a *App) agentAtendimentos(ctx context.Context, cod string) (string, string, error) {
+	c := a.rotaAtual()
+	if c == nil {
+		return "", "", rota360.ErrSemSessao
+	}
+	fin, err := c.FinanceiroCliente(ctx, cod)
+	if err != nil {
+		return "", "", err
+	}
+	dados := fin.Sources.InsideService.Data
+	var sb strings.Builder
 	if n := len(dados.OSAtivas); n > 0 {
-		sb.WriteString("\nOS ativas:\n")
+		sb.WriteString("OS ativas:\n")
 		for i, os := range dados.OSAtivas {
-			if i >= 10 {
-				fmt.Fprintf(&sb, "… (+%d mais)\n", n-10)
+			if i >= 5 {
+				fmt.Fprintf(&sb, "… (+%d mais)\n", n-5)
 				break
 			}
 			fmt.Fprintf(&sb, "- %s\n", resumoMapa(os, "numero", "descricao", "status", "data", "situacao"))
 		}
 	} else {
-		sb.WriteString("\nSem OS ativas no cadastro.\n")
-	}
-	sb.WriteString("\n" + resumoEquipamentos(fin.Sources.Produtos.Data))
-	if dc, err := c.DadosCliente(ctx, cod); err == nil && strings.TrimSpace(dc.Observacoes) != "" {
-		sb.WriteString("\nObservações do cadastro:\n" + limitarTexto(dc.Observacoes, 1500) + "\n")
+		sb.WriteString("Sem OS ativas no cadastro.\n")
 	}
 	if rec := fin.Sources.Octadesk.Data.TicketsRecentes; len(rec) > 0 {
 		sb.WriteString("\nAtendimentos recentes (Octadesk):\n")
 		for i, t := range rec {
-			if i >= 8 {
-				fmt.Fprintf(&sb, "… (+%d mais)\n", len(rec)-8)
+			if i >= 5 {
+				fmt.Fprintf(&sb, "… (+%d mais)\n", len(rec)-5)
 				break
 			}
 			fmt.Fprintf(&sb, "- #%s %s [%s] (%s)\n", t.Number, t.Summary, t.Status.Name, t.CreatedAt)
 		}
 	}
-	return sb.String(), fmt.Sprintf("consultou os dados do cliente %s", cod), nil
+	return sb.String(), fmt.Sprintf("consultou os atendimentos do cliente %s", cod), nil
 }
 
 // resumoMapa junta os valores dos campos pedidos de um mapa genérico
@@ -698,7 +753,9 @@ var regexModeloCamera = regexp.MustCompile(`IM[3579]`)
 // resumoEquipamentos deduz do cadastro de produtos o que o cliente tem:
 // alarme e/ou câmera, quantidade de sensores/controles/câmeras e o modelo
 // das câmeras wifi. As descrições do Service marcam o sistema no nome
-// ("-ALARME-" ou "-CFTV-"), então a classificação é heurística.
+// ("-ALARME-" ou "-CFTV-"), então a classificação é heurística. A lista de
+// produtos é um bônus de contexto: contagens entram primeiro, e só as
+// primeiras linhas vão para a IA.
 func resumoEquipamentos(prods []rota360.Produto360) string {
 	if len(prods) == 0 {
 		return "Produtos cadastrados: nenhum.\n"
@@ -727,7 +784,7 @@ func resumoEquipamentos(prods []rota360.Produto360) string {
 				ordemModelos = append(ordemModelos, m)
 			}
 		}
-		if len(linhas) < 20 {
+		if len(linhas) < 8 {
 			linhas = append(linhas, fmt.Sprintf("- %dx %s (%s)", p.Quantidade, p.Descricao, p.Tipo))
 		}
 	}
@@ -740,8 +797,8 @@ func resumoEquipamentos(prods []rota360.Produto360) string {
 	fmt.Fprintf(&sb, "; sensores: %d, controles: %d, câmeras: %d. Produtos (%d):\n",
 		sensores, controles, cameras, len(prods))
 	sb.WriteString(strings.Join(linhas, "\n"))
-	if len(prods) > 20 {
-		fmt.Fprintf(&sb, "\n… (+%d mais)", len(prods)-20)
+	if len(prods) > 8 {
+		fmt.Fprintf(&sb, "\n… (+%d mais)\n", len(prods)-8)
 	}
 	sb.WriteString("\n")
 	return sb.String()
@@ -890,8 +947,33 @@ func (a *App) AbrirTicket360DoCard(uuid string) error {
 	return nil
 }
 
-// agentDetalheTicket devolve o ticket completo (descrição + interações) pelo
-// número; o uuid é localizado nas filas do helpdesk.
+// agentPesquisarTickets lista os tickets abertos do 360 que casam com o
+// termo (número, código service ou solicitante), enxuto para o tool result.
+func (a *App) agentPesquisarTickets(ctx context.Context, q string) (string, string, error) {
+	c := a.rotaAtual()
+	if c == nil {
+		return "", "", rota360.ErrSemSessao
+	}
+	itens, err := c.PesquisarTickets(ctx, q)
+	if err != nil {
+		return "", "", err
+	}
+	if len(itens) == 0 {
+		return "Nenhum ticket aberto encontrado para " + q + ".", "pesquisa de tickets sem resultados", nil
+	}
+	var sb strings.Builder
+	for _, t := range itens {
+		fmt.Fprintf(&sb, "#%s | %s | cliente %s (código %s) | status %s | responsável %s\n",
+			t.Numero, t.Titulo, t.Solicitante, t.CodigoService, t.Status, t.Responsavel)
+	}
+	resumo := fmt.Sprintf("pesquisou tickets %q: %d resultado(s)", q, len(itens))
+	return sb.String(), resumo, nil
+}
+
+// agentDetalheTicket devolve o resumo do ticket pelo número (identificação +
+// descrição + última interação de fora da sessão); o uuid é localizado nas
+// filas do helpdesk. O ticket inteiro continua no 360 — abrir_ticket_360
+// mostra tudo no navegador.
 func (a *App) agentDetalheTicket(ctx context.Context, numero string) (string, string, error) {
 	item, err := a.resolverTicket360(ctx, numero)
 	if err != nil {
@@ -908,16 +990,11 @@ func (a *App) agentDetalheTicket(ctx context.Context, numero string) (string, st
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Ticket #%s — %s [%s] | cliente %s (código %s) | assunto %s/%s | responsável %s\n\n",
 		det.Numero, det.Titulo, det.Status, det.Solicitante, det.CodService, det.CategoriaNome, det.AssuntoNome, det.ResponsavelNome)
-	for _, m := range det.Mensagens {
-		if m.Tipo == "sistema" || strings.TrimSpace(m.Corpo) == "" {
-			continue
-		}
-		tipo := m.Tipo
-		if tipo == "descricao" {
-			tipo = "descrição"
-		}
-		fmt.Fprintf(&sb, "[%s] %s: %s\n\n", tipo, m.Autor, limitarTexto(m.Corpo, 700))
+	autor := a.autorSessao360()
+	if autor == "" {
+		autor = det.ResponsavelNome
 	}
+	sb.WriteString(resumoMensagensTicket(det.Mensagens, autor))
 	return sb.String(), fmt.Sprintf("leu o ticket #%s do 360", det.Numero), nil
 }
 
@@ -927,19 +1004,30 @@ func (a *App) agentListarTickets(ctx context.Context, coluna string) (string, st
 		return "", "", err
 	}
 	var sb strings.Builder
-	n := 0
+	n, escritas := 0, 0
 	for _, t := range ts {
 		if coluna != "" && t.ColunaAtual != coluna {
 			continue
 		}
 		n++
-		fmt.Fprintf(&sb, "id=%d | %s | coluna=%s | cod_service=%s\n", t.ID, t.NomeCliente, t.ColunaAtual, t.CodService)
+		if escritas < maxCardsNoResultado {
+			fmt.Fprintf(&sb, "id=%d | %s | coluna=%s | cod_service=%s\n", t.ID, t.NomeCliente, t.ColunaAtual, t.CodService)
+			escritas++
+		}
 	}
 	if n == 0 {
 		return "Nenhum card" + mapaSe(coluna != "", " na coluna "+coluna) + ".", "listou cards", nil
 	}
+	if n > escritas {
+		fmt.Fprintf(&sb, "… (+%d cards não listados — peça por coluna)\n", n-escritas)
+	}
 	return sb.String(), fmt.Sprintf("listou %d card(s)", n), nil
 }
+
+// maxCardsNoResultado limita a listagem de cards: a linha é densa (~70
+// runes) e o resultado inteiro passa pelo cap de tool result — melhor 20
+// linhas inteiras do que o corte cego no meio da lista.
+const maxCardsNoResultado = 20
 
 func mapaSe(cond bool, s string) string {
 	if cond {

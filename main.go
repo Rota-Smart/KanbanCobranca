@@ -5,10 +5,8 @@ import (
 	"embed"
 	"log"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
@@ -72,20 +70,38 @@ func main() {
 	app := NewApp(database, propostas)
 	app.DefinirCaminhoBanco(path)
 
-	// Integração Rota 360 + Groq + parâmetros de negociação.
+	// Integração Rota 360 + Groq/DeepInfra + parâmetros de negociação.
+	// O provedor ativo (ia_provedor) decide qual chave/modelo/endpoint usar.
 	config := db.NewConfigRepo(database)
+	provedorIA := func() string {
+		v, _ := config.Get(context.Background(), "ia_provedor")
+		return v
+	}
 	groq := service.NovoGroqCliente(
 		func() string {
-			if v, _ := config.Get(context.Background(), "groq_chave"); v != "" {
+			ctx := context.Background()
+			if provedorIA() == service.ProvedorDeepInfra {
+				if v, _ := config.Get(ctx, "deepinfra_chave"); v != "" {
+					return v
+				}
+				return os.Getenv("DEEPINFRA_API_KEY")
+			}
+			if v, _ := config.Get(ctx, "groq_chave"); v != "" {
 				return v
 			}
 			return os.Getenv("GROQ_API_KEY")
 		},
 		func() string {
-			v, _ := config.Get(context.Background(), "groq_modelo")
+			ctx := context.Background()
+			if provedorIA() == service.ProvedorDeepInfra {
+				v, _ := config.Get(ctx, "deepinfra_modelo")
+				return v
+			}
+			v, _ := config.Get(ctx, "groq_modelo")
 			return v
 		},
 	)
+	groq.ProvedorInjetavel = provedorIA
 	// Contador diário de uso (limites do plano free da Groq), exibido nas
 	// Configurações. ctx em background: roda também durante o boot.
 	groq.OnUsage = func(prompt, completion int) {
@@ -114,14 +130,6 @@ func main() {
 		WindowStartState: options.Maximised,
 		AssetServer: &assetserver.Options{
 			Assets: frontendFS,
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Arquivos do modelo Vosk servidos do disco (fora do embed).
-				if strings.HasPrefix(r.URL.Path, "/vosk/") {
-					app.servirModeloVosk(w, r)
-					return
-				}
-				http.NotFound(w, r)
-			}),
 		},
 		OnStartup:  app.startup,
 		OnShutdown: func(context.Context) {},

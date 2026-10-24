@@ -40,6 +40,7 @@ func DetectaCookieCDP() (*Cookie, error) {
 	if userdata, err := pastaUserData(); err == nil {
 		if porta, ok := portaCDPAtiva(userdata); ok {
 			if c, err := cookiesViaCDP(porta); err == nil {
+				c.Usuario = usuarioViaCDP(porta)
 				return c, nil
 			}
 		}
@@ -86,6 +87,9 @@ func cookiesPerfilAssistido() (*Cookie, error) {
 	deadline := time.Now().Add(cdpTimeoutLogin)
 	for time.Now().Before(deadline) {
 		if cookie, err := cookiesViaCDP(porta); err == nil {
+			// A janela está aberta no portal já logado: aproveita para ler o
+			// nome do usuário no cabeçalho (falha silenciosa se não achar).
+			cookie.Usuario = usuarioViaCDP(porta)
 			return cookie, nil
 		}
 		if cmd.ProcessState != nil {
@@ -231,6 +235,99 @@ func portaLivre() (int, error) {
 	}
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+// ---- Nome do usuário logado (cabeçalho do portal) ----
+
+// alvoCDP é uma entrada do /json/list do DevTools.
+type alvoCDP struct {
+	Type                 string `json:"type"`
+	URL                  string `json:"url"`
+	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+}
+
+// usuarioViaCDP acha uma aba aberta no 360 e extrai da página o nome do
+// usuário logado — o mesmo do cabeçalho do portal ("p" com font-semibold,
+// leading-none e text-slate-800). Melhor esforço: vazio se não houver porta
+// de debug, aba logada ou o elemento ainda não renderizou.
+func usuarioViaCDP(porta int) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/list", porta), nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	var alvos []alvoCDP
+	if err := json.NewDecoder(resp.Body).Decode(&alvos); err != nil {
+		resp.Body.Close()
+		return ""
+	}
+	resp.Body.Close()
+	for _, alvo := range alvos {
+		if alvo.Type != "page" || !strings.Contains(alvo.URL, CookieDomain) || alvo.WebSocketDebuggerURL == "" {
+			continue
+		}
+		if nome, err := avaliarUsuarioWS(ctx, alvo.WebSocketDebuggerURL); err == nil && nome != "" {
+			return nome
+		}
+	}
+	return ""
+}
+
+// jsNomeUsuario busca no DOM o parágrafo do nome do usuário no cabeçalho do
+// portal. Seleção por substring da classe (o seletor CSS exigiria escapar o
+// "dark:text-slate-100").
+const jsNomeUsuario = `(function(){
+var ps = document.querySelectorAll('p');
+for (var i = 0; i < ps.length; i++) {
+  var c = ps[i].className || '';
+  if (c.indexOf('font-semibold') >= 0 && c.indexOf('leading-none') >= 0 && c.indexOf('text-slate-800') >= 0) {
+    return (ps[i].textContent || '').trim();
+  }
+}
+return '';
+})()`
+
+// avaliarUsuarioWS roda jsNomeUsuario numa aba via Runtime.evaluate.
+func avaliarUsuarioWS(ctx context.Context, wsURL string) (string, error) {
+	dialer := websocket.Dialer{HandshakeTimeout: 3 * time.Second}
+	conn, _, err := dialer.DialContext(ctx, wsURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("conectar à aba do 360: %w", err)
+	}
+	defer conn.Close()
+	if err := conn.WriteJSON(map[string]any{
+		"id":     1,
+		"method": "Runtime.evaluate",
+		"params": map[string]any{"expression": jsNomeUsuario, "returnByValue": true},
+	}); err != nil {
+		return "", fmt.Errorf("pedir avaliação ao CDP: %w", err)
+	}
+	for {
+		var msg struct {
+			ID     int `json:"id"`
+			Result struct {
+				Result struct {
+					Value any `json:"value"`
+				} `json:"result"`
+			} `json:"result"`
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := conn.ReadJSON(&msg); err != nil {
+			return "", fmt.Errorf("ler resposta do CDP: %w", err)
+		}
+		if msg.ID != 1 {
+			continue
+		}
+		if msg.Error != nil {
+			return "", fmt.Errorf("erro do CDP: %s", msg.Error.Message)
+		}
+		nome, _ := msg.Result.Result.Value.(string)
+		return strings.TrimSpace(nome), nil
+	}
 }
 
 // pastaPerfilCDP é o perfil dedicado do app para a conexão assistida.

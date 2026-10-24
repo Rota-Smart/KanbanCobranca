@@ -15,16 +15,17 @@ func NewCliente360Repo(db *sql.DB) *Cliente360Repo { return &Cliente360Repo{db: 
 func (r *Cliente360Repo) Upsert(ctx context.Context, c *Cliente360) error {
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO clientes_360 (cod_service, nome, cnpj, telefone, endereco, unidade,
-    saldo_cents, faturas_json, score_json, historico_json, synced_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    saldo_cents, faturas_json, score_json, historico_json, contratos_json, synced_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 ON CONFLICT(cod_service) DO UPDATE SET
     nome = excluded.nome, cnpj = excluded.cnpj, telefone = excluded.telefone,
     endereco = excluded.endereco, unidade = excluded.unidade,
     saldo_cents = excluded.saldo_cents, faturas_json = excluded.faturas_json,
     score_json = excluded.score_json, historico_json = excluded.historico_json,
+    contratos_json = excluded.contratos_json,
     synced_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')`,
 		c.CodService, c.Nome, c.CNPJ, c.Telefone, c.Endereco, c.Unidade,
-		c.SaldoCents, c.FaturasJSON, c.ScoreJSON, c.HistoricoJSON)
+		c.SaldoCents, c.FaturasJSON, c.ScoreJSON, c.HistoricoJSON, c.ContratosJSON)
 	return err
 }
 
@@ -34,11 +35,11 @@ func (r *Cliente360Repo) Get(ctx context.Context, codService string) (*Cliente36
 	err := r.db.QueryRowContext(ctx, `
 SELECT cod_service, nome, COALESCE(cnpj,''), COALESCE(telefone,''), COALESCE(endereco,''),
        COALESCE(unidade,''), saldo_cents, COALESCE(faturas_json,''),
-       COALESCE(score_json,''), COALESCE(historico_json,''), synced_at
+       COALESCE(score_json,''), COALESCE(historico_json,''), COALESCE(contratos_json,''), synced_at
 FROM clientes_360 WHERE cod_service = ?`, codService).Scan(
 		&c.CodService, &c.Nome, &c.CNPJ, &c.Telefone, &c.Endereco,
 		&c.Unidade, &c.SaldoCents, &c.FaturasJSON, &c.ScoreJSON,
-		&c.HistoricoJSON, &c.SyncedAt)
+		&c.HistoricoJSON, &c.ContratosJSON, &c.SyncedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

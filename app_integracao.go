@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,9 +20,13 @@ import (
 
 // Chaves da tabela config.
 const (
-	cfgGroqChave    = "groq_chave"
-	cfgGroqModelo   = "groq_modelo"
+	cfgGroqChave       = "groq_chave"
+	cfgGroqModelo      = "groq_modelo"
+	cfgDeepInfraChave  = "deepinfra_chave"
+	cfgDeepInfraModelo = "deepinfra_modelo"
+	cfgIaProvedor      = "ia_provedor"
 	cfgRotaCookie   = "rota360_cookie"
+	cfgAutor360     = "autor_360" // nome do usuário logado no 360 (filtra o resumo do ticket)
 	evRotaConectado = "rota360:conectado"
 )
 
@@ -112,6 +117,12 @@ func (a *App) ConectarRota360() (Rota360Status, error) {
 		// passiva do banco do Chrome não é mais possível no Chrome recente).
 		if ck := c.CookieSalva(); ck != nil {
 			a.definirRota(c, origem, ck.Nome+"="+ck.Valor)
+			// O nome vindo do cabeçalho do portal é quem está logado — é o
+			// "autor da sessão" que o resumo de ticket usa. Detecção vence
+			// valor manual: se trocar o login, o filtro acompanha.
+			if ck.Usuario != "" && a.config != nil {
+				_ = a.config.Set(a.ctx, cfgAutor360, ck.Usuario)
+			}
 		}
 		runtime.EventsEmit(a.ctx, evRotaConectado,
 			Rota360Status{Conectado: true, Origem: origem})
@@ -165,6 +176,42 @@ func (a *App) Rota360BuscarClientes(q string) ([]rota360.ResumoCliente, error) {
 		res = []rota360.ResumoCliente{}
 	}
 	return res, nil
+}
+
+// Rota360PesquisarTickets pesquisa tickets do helpdesk por número, código
+// service do cliente ou nome do solicitante (lê as filas em aberto do 360).
+func (a *App) Rota360PesquisarTickets(q string) ([]rota360.Ticket360, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return []rota360.Ticket360{}, nil
+	}
+	c := a.rotaAtual()
+	if c == nil {
+		return nil, rota360.ErrSemSessao
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 25*time.Second)
+	defer cancel()
+	res, err := c.PesquisarTickets(ctx, q)
+	if err != nil {
+		return nil, friendly("Rota360PesquisarTickets", err)
+	}
+	if res == nil {
+		res = []rota360.Ticket360{}
+	}
+	return res, nil
+}
+
+// Rota360AbrirTicket abre o ticket do 360 (pelo número exibido) no navegador
+// — o botão 🌐 da pesquisa de tickets do Shift+F4.
+func (a *App) Rota360AbrirTicket(numero string) (string, error) {
+	numero = strings.TrimSpace(numero)
+	if numero == "" {
+		return "", fmt.Errorf("número do ticket vazio")
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
+	defer cancel()
+	msg, _, err := a.agentAbrirTicket(ctx, numero)
+	return msg, err
 }
 
 // ImportarCliente360 cria um card no Kanban com os dados do 360 e
@@ -277,6 +324,7 @@ type ResultadoCobranca struct {
 	Proposta   service.Proposta      `json:"proposta"`
 	Avaliacao  *service.Avaliacao    `json:"avaliacao"`
 	Financeiro rota360.Financeiro360 `json:"financeiro"`
+	Faturas    []rota360.Fatura360   `json:"faturas"`
 	Aviso      string                `json:"aviso"`
 }
 
@@ -306,6 +354,9 @@ func (a *App) PrepararCobranca(ticketID int64) (ResultadoCobranca, error) {
 		}
 	} else if fin != nil {
 		res.Financeiro = fin.Sources.InsideService.Data.Financeiro
+		if fin.Sources.InsideService.Data.FaturasAbertas != nil {
+			res.Faturas = fin.Sources.InsideService.Data.FaturasAbertas
+		}
 		totalCents = floatParaCents(res.Financeiro.TotalDevendoComEncargos)
 	} else if cli, _ := a.clientes.Get(ctx, t.CodService); cli != nil {
 		totalCents = cli.SaldoCents
@@ -313,6 +364,9 @@ func (a *App) PrepararCobranca(ticketID int64) (ResultadoCobranca, error) {
 
 	if totalCents <= 0 {
 		return ResultadoCobranca{}, fmt.Errorf("sem saldo em aberto no 360 para o cliente %s", t.CodService)
+	}
+	if res.Faturas == nil {
+		res.Faturas = []rota360.Fatura360{}
 	}
 
 	// Acordo padrão: total do 360, sem entrada, 12x, sem parcela base.
@@ -357,12 +411,269 @@ func floatParaCents(v float64) int64 {
 	return int64(math.Round(v * 100))
 }
 
+// RenegociacaoPronta é o resultado do botão "Gerar renegociação" (card na
+// coluna Cobrança): valores em aberto puxados do 360, contrato (mensalidade
+// exata, vencimento, vigência), cortesia e a proposta no padrão fixo.
+type RenegociacaoPronta struct {
+	TotalAbertoCents          int64                 `json:"totalAbertoCents"`
+	TotalVencidoCents         int64                 `json:"totalVencidoCents"`         // faturas já vencidas, sem encargos
+	TotalVencidoEncargosCents int64                 `json:"totalVencidoEncargosCents"` // vencidas + multa/mora
+	EntradaCents              int64                 `json:"entradaCents"`
+	NumeroVezes               int                   `json:"numeroVezes"`
+	ParcelaBaseCents          int64                 `json:"parcelaBaseCents"`
+	ValorMensalidadeCents     int64                 `json:"valorMensalidadeCents"` // mensalidade exata do contrato
+	DiaVencimento             int                   `json:"diaVencimento"`
+	ContratoAssinatura        string                `json:"contratoAssinatura"`
+	ContratoPrazoMeses        int                   `json:"contratoPrazoMeses"`
+	ContratoTermino           string                `json:"contratoTermino"`
+	DireitoCortesia           bool                  `json:"direitoCortesia"`
+	CortesiaRestantes         int                   `json:"cortesiaRestantes"`
+	CortesiaMotivo            string                `json:"cortesiaMotivo"`
+	Proposta                  service.Proposta      `json:"proposta"`
+	Avaliacao                 *service.Avaliacao    `json:"avaliacao"`
+	Financeiro                rota360.Financeiro360 `json:"financeiro"`
+	Faturas                   []rota360.Fatura360   `json:"faturas"`
+	Aviso                     string                `json:"aviso"`
+}
+
+// cortesiasUsadas conta quantas cortesias o cliente já gastou, lendo as
+// observações do cadastro (regra do setor): quando a frase diz "usou N
+// cortesias" (ou "cortesia 2x", "cortesia de 1 mês"), vale N; menção sem
+// número vale as 3. Devolve o máximo achado.
+func cortesiasUsadas(obs string) int {
+	reLinha := regexp.MustCompile(`(?i)[^\r\n]*cortesia[^\r\n]*`)
+	reDepois := regexp.MustCompile(`(?i)(\d{1,2})\s*cortesias?`)
+	reAntes := regexp.MustCompile(`(?i)cortesias?\s*(?:x|de)?\s*([1-3])(?:[^0-9]|$)`)
+	usadas := 0
+	for _, linha := range reLinha.FindAllString(obs, -1) {
+		n := 0
+		if m := reDepois.FindStringSubmatch(linha); m != nil {
+			if v, err := strconv.Atoi(m[1]); err == nil && v >= 1 && v <= 3 {
+				n = v
+			}
+		}
+		if n == 0 {
+			if m := reAntes.FindStringSubmatch(linha); m != nil {
+				n, _ = strconv.Atoi(m[1])
+			}
+		}
+		if n > usadas {
+			usadas = n
+		} else if n == 0 {
+			usadas = 3 // menção sem número: usou todas
+		}
+	}
+	return usadas
+}
+
+// avaliarCortesia aplica a regra do usuário: contrato com mais de 1 ano dá
+// direito a até 3 cortesias (1 mensalidade cada) — as já usadas, contadas
+// nas observações do cadastro, são descontadas do total de 3.
+func avaliarCortesia(agora time.Time, assinatura time.Time, obs string) (restantes int, motivo string) {
+	const maxCortesias = 3
+	if assinatura.IsZero() {
+		return 0, "sem data de contrato no 360 — confirmar elegibilidade com o comercial"
+	}
+	meses := int(agora.Sub(assinatura).Hours() / (24 * 30))
+	usadas := cortesiasUsadas(obs)
+	restantes = maxCortesias - usadas
+	if restantes < 0 {
+		restantes = 0
+	}
+	switch {
+	case meses < 12:
+		return 0, fmt.Sprintf("contrato há %d mês(es) — cortesia exige mais de 1 ano", meses)
+	case usadas >= maxCortesias:
+		return 0, fmt.Sprintf("contrato há %d meses, mas já usou as %d cortesias", meses, usadas)
+	default:
+		return restantes, fmt.Sprintf("contrato há %d meses; %d cortesia(s) já usada(s) — resta(m) %d", meses, usadas, restantes)
+	}
+}
+
+// contratoVigente escolhe o contrato mais relevante: prefere mensalidade
+// preenchida e situação não cancelada; empate fica com o primeiro.
+func contratoVigente(contratos []rota360.Contrato360) *rota360.Contrato360 {
+	var melhor *rota360.Contrato360
+	for i := range contratos {
+		ct := &contratos[i]
+		if melhor == nil {
+			melhor = ct
+			continue
+		}
+		melhorCancelado := strings.Contains(strings.ToLower(melhor.Situacao), "cancel")
+		ctCancelado := strings.Contains(strings.ToLower(ct.Situacao), "cancel")
+		switch {
+		case melhorCancelado && !ctCancelado:
+			melhor = ct
+		case melhor.ValorME <= 0 && ct.ValorME > 0:
+			melhor = ct
+		}
+	}
+	return melhor
+}
+
+// GerarRenegociacao puxa os valores em aberto do 360, o contrato (mensalidade
+// exata e vigência), avalia a cortesia pelas observações do cadastro e gera a
+// proposta no padrão. As condições da Política (PDF nas Configurações) são
+// lidas à parte via ListarParametros. Não grava acordo: o usuário ajusta
+// entrada/vezes e clica em salvar.
+func (a *App) GerarRenegociacao(ticketID int64) (RenegociacaoPronta, error) {
+	t, err := a.tickets.Get(a.ctx, ticketID)
+	if err != nil {
+		return RenegociacaoPronta{}, friendly("GerarRenegociacao", err)
+	}
+	c := a.rotaAtual()
+	if c == nil {
+		return RenegociacaoPronta{}, rota360.ErrSemSessao
+	}
+	if strings.TrimSpace(t.CodService) == "" {
+		return RenegociacaoPronta{}, fmt.Errorf("card sem código service — importe o cliente do 360")
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 25*time.Second)
+	defer cancel()
+
+	res := RenegociacaoPronta{EntradaCents: 0, NumeroVezes: 12, Faturas: []rota360.Fatura360{}}
+	var totalCents int64
+	if _, fin, err := a.sincronizarCliente(ctx, c, t.CodService); err != nil {
+		res.Aviso = "Não foi possível atualizar o financeiro do 360; usando valores em cache."
+		if cli, _ := a.clientes.Get(ctx, t.CodService); cli != nil {
+			totalCents = cli.SaldoCents
+			res.Faturas = faturasDoCache(cli)
+		}
+	} else if fin != nil {
+		res.Financeiro = fin.Sources.InsideService.Data.Financeiro
+		if fin.Sources.InsideService.Data.FaturasAbertas != nil {
+			res.Faturas = fin.Sources.InsideService.Data.FaturasAbertas
+		}
+		totalCents = floatParaCents(res.Financeiro.TotalDevendoComEncargos)
+	} else if cli, _ := a.clientes.Get(ctx, t.CodService); cli != nil {
+		totalCents = cli.SaldoCents
+		res.Faturas = faturasDoCache(cli)
+	}
+	if totalCents <= 0 {
+		return RenegociacaoPronta{}, fmt.Errorf("sem saldo em aberto no 360 para o cliente %s", t.CodService)
+	}
+	res.TotalAbertoCents = totalCents
+
+	// Valores já vencidos (para a oferta à vista): soma das faturas atrasadas.
+	for _, f := range res.Faturas {
+		if f.DiasAtraso > 0 {
+			res.TotalVencidoCents += floatParaCents(f.ValorDuplicata)
+			res.TotalVencidoEncargosCents += floatParaCents(f.ValorDuplicata + f.MultaValor + f.MoraValor)
+		}
+	}
+
+	// Parcela base: mensalidade exata do contrato no 360; sem contrato, cai
+	// para a mensalidade dos produtos e depois para o acordo ativo.
+	var assinatura time.Time
+	if contratos, err := c.ContratosCliente(ctx, t.CodService); err == nil && len(contratos) > 0 {
+		if ct := contratoVigente(contratos); ct != nil {
+			res.ValorMensalidadeCents = floatParaCents(ct.ValorME)
+			res.DiaVencimento = ct.DiaVcto
+			res.ContratoPrazoMeses = ct.Prazo
+			if !ct.DataAssinatura.IsZero() {
+				assinatura = ct.DataAssinatura
+				res.ContratoAssinatura = ct.DataAssinatura.Format("02/01/2006")
+			}
+			if !ct.TerminoContrato.IsZero() {
+				res.ContratoTermino = ct.TerminoContrato.Format("02/01/2006")
+			}
+		}
+	} else if cli, _ := a.clientes.Get(ctx, t.CodService); cli != nil && cli.ContratosJSON != "" {
+		var contratos []rota360.Contrato360
+		if json.Unmarshal([]byte(cli.ContratosJSON), &contratos) == nil && len(contratos) > 0 {
+			if ct := contratoVigente(contratos); ct != nil {
+				res.ValorMensalidadeCents = floatParaCents(ct.ValorME)
+				res.DiaVencimento = ct.DiaVcto
+				res.ContratoPrazoMeses = ct.Prazo
+				if !ct.DataAssinatura.IsZero() {
+					assinatura = ct.DataAssinatura
+					res.ContratoAssinatura = ct.DataAssinatura.Format("02/01/2006")
+				}
+				if !ct.TerminoContrato.IsZero() {
+					res.ContratoTermino = ct.TerminoContrato.Format("02/01/2006")
+				}
+			}
+		}
+	}
+	res.ParcelaBaseCents = res.ValorMensalidadeCents
+
+	// Cortesia: precisa das observações do cadastro (contam quantas já usou).
+	observacoes := ""
+	if dc, err := c.DadosCliente(ctx, t.CodService); err == nil {
+		observacoes = dc.Observacoes
+		if assinatura.IsZero() && !dc.AtivoDesde.IsZero() {
+			assinatura = dc.AtivoDesde
+			if res.ContratoAssinatura == "" {
+				res.ContratoAssinatura = dc.AtivoDesde.Format("02/01/2006")
+			}
+		}
+		if res.ValorMensalidadeCents <= 0 && dc.Faturamento.ValorNF > 0 {
+			res.ValorMensalidadeCents = floatParaCents(dc.Faturamento.ValorNF)
+			res.ParcelaBaseCents = res.ValorMensalidadeCents
+		}
+		if res.DiaVencimento == 0 {
+			res.DiaVencimento = dc.Faturamento.DiaVencimento
+		}
+	}
+	res.CortesiaRestantes, res.CortesiaMotivo = avaliarCortesia(time.Now(), assinatura, observacoes)
+	res.DireitoCortesia = res.CortesiaRestantes > 0
+
+	if res.ParcelaBaseCents <= 0 && a.avaliador != nil {
+		if av, err := a.avaliador.Avaliar(ctx, ticketID, t.CodService); err == nil {
+			res.Avaliacao = av
+			res.ParcelaBaseCents = av.MensalidadeCents
+		}
+	} else if a.avaliador != nil {
+		if av, err := a.avaliador.Avaliar(ctx, ticketID, t.CodService); err == nil {
+			res.Avaliacao = av
+		}
+	}
+	if res.ParcelaBaseCents <= 0 {
+		if cob, _ := a.cobrancas.GetAtiva(a.ctx, ticketID); cob != nil {
+			res.ParcelaBaseCents = cob.ParcelaBaseCents
+		}
+	}
+
+	in := service.ReparcelamentoInput{
+		TotalAbertoCents: res.TotalAbertoCents,
+		EntradaCents:     res.EntradaCents,
+		NumeroVezes:      res.NumeroVezes,
+		ParcelaBaseCents: res.ParcelaBaseCents,
+	}
+	prop, err := a.GenerateProposal(ticketID, in, false)
+	if err != nil {
+		return RenegociacaoPronta{}, friendly("GerarRenegociacao", err)
+	}
+	res.Proposta = prop
+	return res, nil
+}
+
+// faturasDoCache devolve as faturas guardadas no cache do cliente (usadas
+// quando o 360 não responde na hora).
+func faturasDoCache(cli *db.Cliente360) []rota360.Fatura360 {
+	if cli == nil || cli.FaturasJSON == "" {
+		return []rota360.Fatura360{}
+	}
+	var faturas []rota360.Fatura360
+	if json.Unmarshal([]byte(cli.FaturasJSON), &faturas) != nil {
+		return []rota360.Fatura360{}
+	}
+	if faturas == nil {
+		return []rota360.Fatura360{}
+	}
+	return faturas
+}
+
 // ---- Configurações (Groq + parâmetros) ----
 
 // ConfigApp é o estado não-sensível das configurações (a chave nunca volta).
 type ConfigApp struct {
-	GroqModelo    string `json:"groqModelo"`
-	GroqTemChave  bool   `json:"groqTemChave"`
+	GroqModelo        string `json:"groqModelo"`
+	GroqTemChave      bool   `json:"groqTemChave"`
+	Provedor          string `json:"provedor"`          // "groq" (padrão) ou "deepinfra"
+	DeepInfraTemChave bool   `json:"deepInfraTemChave"`
+	Autor360      string `json:"autor360"`
 	RotaConectado bool   `json:"rotaConectado"`
 	RotaOrigem    string `json:"rotaOrigem"`
 	RotaMensagem  string `json:"rotaMensagem"`
@@ -371,10 +682,68 @@ type ConfigApp struct {
 // GetConfig devolve as configurações atuais.
 func (a *App) GetConfig() ConfigApp {
 	return ConfigApp{
-		GroqModelo:    a.groqModeloAtual(),
-		GroqTemChave:  a.configGet(a.ctx, cfgGroqChave) != "",
-		RotaConectado: a.rotaAtual() != nil,
+		GroqModelo:        a.groqModeloAtual(),
+		GroqTemChave:      a.configGet(a.ctx, cfgGroqChave) != "",
+		Provedor:          a.provedorIA(),
+		DeepInfraTemChave: a.configGet(a.ctx, cfgDeepInfraChave) != "",
+		Autor360:          a.configGet(a.ctx, cfgAutor360),
+		RotaConectado:     a.rotaAtual() != nil,
 	}
+}
+
+// provedorIA devolve o provedor ativo ("groq" é o default).
+func (a *App) provedorIA() string {
+	if p := a.configGet(a.ctx, cfgIaProvedor); p == service.ProvedorDeepInfra {
+		return p
+	}
+	return service.ProvedorGroq
+}
+
+// SetProvedorIA escolhe entre Groq e DeepInfra.
+func (a *App) SetProvedorIA(provedor string) error {
+	if a.config == nil {
+		return fmt.Errorf("configuração indisponível")
+	}
+	if provedor != service.ProvedorGroq && provedor != service.ProvedorDeepInfra {
+		return fmt.Errorf("provedor inválido: %s", provedor)
+	}
+	return a.config.Set(a.ctx, cfgIaProvedor, provedor)
+}
+
+// SetDeepInfraConfig grava a chave e o modelo da DeepInfra. Chave vazia não
+// apaga (para limpar, use LimparDeepInfraChave).
+func (a *App) SetDeepInfraConfig(chave, modelo string) error {
+	if a.config == nil {
+		return fmt.Errorf("configuração indisponível")
+	}
+	if chave = strings.TrimSpace(chave); chave != "" {
+		if err := a.config.Set(a.ctx, cfgDeepInfraChave, chave); err != nil {
+			return friendly("SetDeepInfraConfig", err)
+		}
+	}
+	if modelo = strings.TrimSpace(modelo); modelo != "" {
+		if err := a.config.Set(a.ctx, cfgDeepInfraModelo, modelo); err != nil {
+			return friendly("SetDeepInfraConfig", err)
+		}
+	}
+	return nil
+}
+
+// LimparDeepInfraChave apaga a chave guardada.
+func (a *App) LimparDeepInfraChave() error {
+	if a.config == nil {
+		return nil
+	}
+	return a.config.Set(a.ctx, cfgDeepInfraChave, "")
+}
+
+// SetAutor360 grava o nome do usuário logado no 360 — é quem o resumo do
+// ticket trata como "autor da sessão" ao escolher a última interação.
+func (a *App) SetAutor360(nome string) error {
+	if a.config == nil {
+		return fmt.Errorf("configuração indisponível")
+	}
+	return a.config.Set(a.ctx, cfgAutor360, strings.TrimSpace(nome))
 }
 
 func (a *App) groqModeloAtual() string {

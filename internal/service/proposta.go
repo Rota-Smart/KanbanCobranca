@@ -37,10 +37,12 @@ var tplProposta = template.Must(template.New("proposta").Funcs(template.FuncMap{
 Para adiantar o assunto do áudio que enviei, já deixo a proposta aqui para você avaliar:
 
 Referente ao total em aberto, contando com o mês de {{.Mes}} (R$ {{brl .TotalAberto}}):
-{{if .TemEntrada}}• Entrada: R$ {{brl .Entrada}}
-{{end}}• Parcelamento: {{.Vezes}}x de R$ {{brl .Parcelado}}
+{{if .QuitaTotal}}• Pagamento à vista: R$ {{brl .Entrada}}
 
-Nesses meses, a parcela ficará em R$ {{brl .Final}} (parcela + renegociação), retornando aos R$ {{brl .ParcelaBase}} normais depois.{{if .TemResto}} A última parcela do acordo fica em R$ {{brl .UltimaFinal}}.{{end}}
+Com isso o acordo fica quitado e a mensalidade volta ao normal de R$ {{brl .ParcelaBase}}.{{else}}{{if .TemEntrada}}• Entrada: R$ {{brl .Entrada}}
+{{end}}• Parcelamento: *{{.Vezes}}*x de R$ {{brl .Parcelado}}
+
+Nesses meses, a parcela ficará em R$ {{brl .Final}} (parcela + renegociação), retornando aos R$ {{brl .ParcelaBase}} normais depois.{{if .TemResto}} A última parcela do acordo fica em R$ {{brl .UltimaFinal}}.{{end}}{{end}}
 
 Posso formalizar para você?
 `))
@@ -51,6 +53,7 @@ type propostaData struct {
 	Parcelado, Ultima               int64
 	ParcelaBase, Final, UltimaFinal int64
 	TemEntrada, TemResto            bool
+	QuitaTotal                      bool // entrada cobre o total: oferta à vista
 	Vezes                           int
 }
 
@@ -81,6 +84,7 @@ func (p *PropostaService) Gerar(nomeCliente string, in ReparcelamentoInput, res 
 		UltimaFinal:  res.UltimaFinalCents,
 		TemEntrada:   in.EntradaCents > 0,
 		TemResto:     res.RestoCents > 0,
+		QuitaTotal:   res.SaldoCents == 0,
 		Vezes:        in.NumeroVezes,
 	})
 	if err != nil {

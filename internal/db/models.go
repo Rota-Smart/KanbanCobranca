@@ -51,6 +51,7 @@ type Cliente360 struct {
 	FaturasJSON   string `json:"faturasJson"`
 	ScoreJSON     string `json:"scoreJson"`
 	HistoricoJSON string `json:"historicoJson"`
+	ContratosJSON string `json:"contratosJson"`
 	SyncedAt      string `json:"syncedAt"`
 }
 

@@ -11,13 +11,15 @@ export type ReparcelamentoResult = service.ReparcelamentoResult;
 // ---- Integração Rota 360: aliases dos tipos gerados pelo Wails ----
 
 export type ResumoCliente360 = rota360.ResumoCliente;
+export type Ticket360 = rota360.Ticket360;
 export type Financeiro360 = rota360.Financeiro360;
+export type Fatura360 = rota360.Fatura360;
 export type Avaliacao = service.Avaliacao;
 export type ResultadoCobranca = main.ResultadoCobranca;
+export type RenegociacaoPronta = main.RenegociacaoPronta;
 export type ParametroNegociacao = db.ParametroNegociacao;
 export type ConfigApp = main.ConfigApp;
 export type Rota360Status = main.Rota360Status;
-export type VozStatus = main.VozStatus;
 export type UsoGroq = main.UsoGroq;
 export type AcaoDoAgente = service.AcaoDoAgente;
 export type ChatResultado = service.ChatResultado;

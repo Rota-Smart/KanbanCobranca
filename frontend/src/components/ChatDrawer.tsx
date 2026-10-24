@@ -81,22 +81,17 @@ export default function ChatDrawer(props: {
     fimRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgs, enviando]);
 
-  // Alternar o microfone: enquanto grava, o que é falado aparece como
-  // parcial (cinza) e cada frase finalizada entra no campo de mensagem.
+  // Alternar o microfone: ao clicar de novo (ou no teto de 60s), a gravação
+  // vira WAV, vai ao Whisper local e o texto entra no campo de mensagem.
   async function alternarVoz() {
     if (pararVoz.current) {
-      pararVoz.current();
+      const parar = pararVoz.current;
       pararVoz.current = null;
       setGravando(false);
-      setParcial('');
+      parar();
       return;
     }
     try {
-      const st = await App.ModeloVozStatus();
-      if (!st.configurado) {
-        props.onToast(`⚠ ${st.mensagem}`);
-        return;
-      }
       pararVoz.current = await iniciarVoz({
         parcial: setParcial,
         final: (t) => {
@@ -104,6 +99,7 @@ export default function ChatDrawer(props: {
           setTexto((atual) => (atual ? atual + ' ' : '') + t);
         },
         erro: (e) => props.onToast(`⚠ Voz: ${String(e)}`),
+        etapa: (s) => props.onToast(`🎤 ${s}`),
       });
       setGravando(true);
     } catch (e) {

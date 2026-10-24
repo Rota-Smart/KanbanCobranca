@@ -21,6 +21,14 @@ type Captura struct {
 	Clipboard string `json:"clipboard"`
 }
 
+// CapturaTexto é o retrato da janela em foco COM o texto visível lido via
+// UI Automation (nomes e valores dos campos da tela).
+type CapturaTexto struct {
+	Processo string `json:"processo"`
+	Titulo   string `json:"titulo"`
+	Texto    string `json:"texto"`
+}
+
 var (
 	user32                 = windows.NewLazySystemDLL("user32.dll")
 	kernel32               = windows.NewLazySystemDLL("kernel32.dll")
@@ -171,10 +179,125 @@ const (
 	vtI4             = 3
 	vtBSTR           = 8
 	propControlType  = 30003
+	propNome         = 30005 // UIA_NamePropertyId
 	propValue        = 30045 // UIA_ValueValuePropertyId (30012 é ClassName!)
 	ctrlEdit         = 50004
 	scopeDescendants = 4
 )
+
+// Limites da leitura de texto da tela (Shift+F5): cada rune vai junto na
+// mensagem do chat, então o teto protege o TPM da Groq.
+const (
+	maxItensTela      = 300
+	maxRunasTelaTexto = 2500
+)
+
+// CapturaTextoDaTela devolve o processo, o título e o texto visível da
+// janela em foco (UIA: propriedades Name e Value de todos os elementos).
+func CapturaTextoDaTela() CapturaTexto {
+	hwnd, _, _ := procGetForegroundWin.Call()
+	return CapturaTexto{
+		Processo: processoDaJanela(hwnd),
+		Titulo:   tituloDaJanela(hwnd),
+		Texto:    textoDaJanela(hwnd),
+	}
+}
+
+// textoDaJanela lê via UIA o texto da janela: Name de cada elemento (rótulos,
+// células, botões) e Value dos campos editáveis. Deduplica e limita — falha
+// de UIA devolve vazio, não erro (o chamador avisa o usuário).
+func textoDaJanela(hwnd uintptr) string {
+	if hwnd == 0 {
+		return ""
+	}
+	hr, _, _ := procCoInitializeEx.Call(0, 2) // COINIT_APARTMENTTHREADED
+	mudouModo := hr == 0x80010106             // RPC_E_CHANGED_MODE: segue mesmo assim
+	if hr != 0 && !mudouModo {
+		return ""
+	}
+	defer func() {
+		if !mudouModo {
+			procCoUninitialize.Call()
+		}
+	}()
+
+	var uiAutomation uintptr
+	hr, _, _ = procCoCreateInstance.Call(
+		uintptr(unsafe.Pointer(&guidUIAClass)), 0, 1, /*INPROC_SERVER*/
+		uintptr(unsafe.Pointer(&guidUIAIID)), uintptr(unsafe.Pointer(&uiAutomation)))
+	if hr != 0 || uiAutomation == 0 {
+		return ""
+	}
+	defer vcall(uiAutomation, 2) // Release
+
+	// ElementFromHandle(hwnd, &elem) — vtable idx 6.
+	var elem uintptr
+	if vcall(uiAutomation, 6, hwnd, uintptr(unsafe.Pointer(&elem))) != 0 || elem == 0 {
+		return ""
+	}
+	defer vcall(elem, 2)
+
+	// CreateTrueCondition(&cond) — idx 23 (chamada de 1 argumento; a versão
+	// da barra de URL passa um variant extra que o COM ignora).
+	var condição uintptr
+	if vcall(uiAutomation, 23, uintptr(unsafe.Pointer(&condição))) != 0 || condição == 0 {
+		return ""
+	}
+	defer vcall(condição, 2)
+
+	// FindAll(TreeScope_Descendants, cond, &achados) — idx 6.
+	var achados uintptr
+	if vcall(elem, 6, scopeDescendants, condição, uintptr(unsafe.Pointer(&achados))) != 0 || achados == 0 {
+		return ""
+	}
+	defer vcall(achados, 2)
+
+	var n int32
+	if vcall(achados, 3, uintptr(unsafe.Pointer(&n))) != 0 {
+		return ""
+	}
+
+	vistos := map[string]bool{}
+	var linhas []string
+	total := 0
+	for i := 0; i < int(n) && i < maxItensTela; i++ {
+		var item uintptr
+		if vcall(achados, 4, uintptr(i), uintptr(unsafe.Pointer(&item))) != 0 || item == 0 {
+			continue
+		}
+		nome := propriedadeTexto(item, propNome)
+		valor := propriedadeTexto(item, propValue)
+		vcall(item, 2) // Release
+		for _, s := range []string{nome, valor} {
+			s = strings.TrimSpace(s)
+			if s == "" || len(s) > 300 || vistos[s] {
+				continue
+			}
+			vistos[s] = true
+			linhas = append(linhas, s)
+			total += len([]rune(s))
+			if total >= maxRunasTelaTexto {
+				i = maxItensTela // sai dos dois loops
+				break
+			}
+		}
+	}
+	return strings.Join(linhas, "\n")
+}
+
+// propriedadeTexto lê uma propriedade string do elemento (Name, Value);
+// propriedade ausente ou não-string devolve vazio.
+func propriedadeTexto(elem uintptr, propId uint32) string {
+	var v variant
+	if vcall(elem, 10, uintptr(propId), uintptr(unsafe.Pointer(&v))) != 0 {
+		return ""
+	}
+	defer procVariantClear.Call(uintptr(unsafe.Pointer(&v)))
+	if v.vt != vtBSTR {
+		return ""
+	}
+	return bstrParaString(v.val)
+}
 
 // vcall chama a entrada idx da vtable do objeto COM e devolve o HRESULT.
 func vcall(obj uintptr, idx int, args ...uintptr) uintptr {

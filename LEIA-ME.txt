@@ -5,8 +5,9 @@ COMO INSTALAR (outro computador):
 1. Copie rotasuite.exe para qualquer pasta e execute com dois cliques — não
    precisa instalar nada (apenas WebView2, já incluso no Windows 10/11).
 2. Dados ficam em %APPDATA%\RotaSmart (banco, backups diários, logs).
-3. O exe é maior desde a v1.3.0 (~79 MB): traz o modelo de voz em português
-   embutido (veja abaixo).
+3. O exe ficou pequeno de novo (~20 MB): a voz agora usa o whisper.cpp, que
+   é baixado/configurado na primeira vez que você usa o 🎤 (fica fora do exe,
+   em %APPDATA%\RotaSmart\whisper).
 4. MODO PORTÁTIL (novo na v1.4.0): se a pasta "RotaSmart-dados" estiver ao
    lado do exe, TODO o dados local (banco com configurações, colunas,
    parâmetros) é lido dela — o zip já vem com a pasta, então o app abre
@@ -57,6 +58,15 @@ COMO INSTALAR (outro computador):
    no navegador). O assistente também vincula/desvincula pelo chat
    ("vincule o ticket 12345 ao card do cliente X").
 
+13. ATALHOS GLOBAIS NOVOS (v1.9.0): além do Shift+F2 (ticket da tela → chat),
+   Shift+F3 (busca de clientes) e Shift+F4 (PESQUISA DE TICKETS: abre uma
+   janela para achar tickets abertos do 360 por número, código service ou
+   nome do cliente, com botão 🌐 para abrir no navegador). O Shift+F5 lê a
+   TELA DO ACCESS em foco (a OS do Service) e manda o texto para o chat do
+   assistente — deixe a janela da OS visível antes de apertar.
+   O assistente também pesquisa tickets pelo chat: "pesquise os tickets do
+   cliente 24755" ou "ache o ticket 12345".
+
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
    guia do Chrome; faça login lá UMA vez e o app captura e salva o cookie
@@ -80,8 +90,8 @@ o app captura o cookie da guia e salva — e reutiliza nas próximas aberturas.
 FALE COM O ASSISTENTE (novo na v1.3.0)
 -----------------------------------------------
 No chat do assistente há um botão 🎤: clique, fale e a fala vira texto na hora —
-transcrição 100% local (Vosk, modelo já embutido no app, sem internet e sem
-configurar nada). O que aparece em cinza é a transcrição parcial enquanto você
+transcrição 100% local (whisper.cpp; na primeira vez o app baixa o modelo,
+~190 MB). O que aparece em cinza é a transcrição parcial enquanto você
 fala; a frase final entra no campo de mensagem. Clique de novo para parar.
 
 O assistente também atua em tickets do helpdesk do 360: ler o detalhe com as

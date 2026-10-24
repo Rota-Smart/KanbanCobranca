@@ -118,18 +118,32 @@ func TestConversarLimiteDeRodadas(t *testing.T) {
 
 func TestAgentToolsSchema(t *testing.T) {
 	tools := AgentTools()
-	if len(tools) != 20 {
-		t.Fatalf("esperava 20 ferramentas, veio %d", len(tools))
+	if len(tools) != 23 {
+		t.Fatalf("esperava 23 ferramentas, veio %d", len(tools))
 	}
 	nomes := map[string]bool{}
 	for _, tl := range tools {
 		fn := tl["function"].(map[string]any)
 		nomes[fn["name"].(string)] = true
 	}
-	for _, esperada := range []string{"buscar_cliente_360", "importar_cliente", "criar_coluna", "mover_card", "gerar_proposta", "vincular_ticket"} {
+	for _, esperada := range []string{"buscar_cliente_360", "importar_cliente", "criar_coluna", "mover_card", "gerar_proposta", "vincular_ticket", "financeiro_cliente", "equipamentos_cliente", "atendimentos_cliente"} {
 		if !nomes[esperada] {
 			t.Errorf("ferramenta ausente: %s (%v)", esperada, nomes)
 		}
+	}
+}
+
+// TestAgentToolsEnxutas trava a economia de TPM: os schemas são reenviados
+// em toda rodada do loop, então descrição comprida aqui custa caro. Era 5506
+// bytes antes do enxugamento (e subiu ~430 com as 2 tools novas de dados
+// fatiados); o boilerplate dos schemas (type/properties/required) é o piso.
+func TestAgentToolsEnxutas(t *testing.T) {
+	b, err := json.Marshal(AgentTools())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) > 5700 {
+		t.Errorf("tools com %d bytes (teto 5700) — enxugue as descrições", len(b))
 	}
 }
 

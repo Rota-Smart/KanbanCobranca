@@ -22,6 +22,10 @@ import (
 const (
 	evAtalhoTela  = "atalho:tela"
 	evAtalhoBusca = "atalho:busca"
+	// Shift+F4: abre a pesquisa de tickets do helpdesk.
+	evAtalhoBuscaTickets = "atalho:busca-tickets"
+	// Shift+F5: lê a tela do Access (OS) e abre o chat com o texto.
+	evAtalhoAcesso = "atalho:acesso"
 )
 
 // TicketDaTela é o resultado da identificação do que estava na tela
@@ -40,7 +44,7 @@ type TicketDaTela struct {
 // a thread do hotkey precisa viver com o loop de mensagens até o fim.
 func (a *App) iniciarAtalhos() {
 	go func() {
-		if err := hotkey.Registrar(a.onAtalhoTicketTela, a.onAtalhoBusca); err != nil {
+		if err := hotkey.Registrar(a.onAtalhoTicketTela, a.onAtalhoBusca, a.onAtalhoBuscaTickets, a.onAtalhoAcesso); err != nil {
 			slog.Warn("atalhos globais indisponíveis", "err", err)
 		}
 	}()
@@ -58,6 +62,52 @@ func (a *App) mostrarJanela() {
 func (a *App) onAtalhoBusca() {
 	a.mostrarJanela()
 	runtime.EventsEmit(a.ctx, evAtalhoBusca)
+}
+
+// onAtalhoBuscaTickets (Shift+F4): abre o app na pesquisa de tickets do 360.
+func (a *App) onAtalhoBuscaTickets() {
+	a.mostrarJanela()
+	runtime.EventsEmit(a.ctx, evAtalhoBuscaTickets)
+}
+
+// LeituraAcesso é o resultado do Shift+F5: o texto lido da janela em foco
+// (normalmente o Access, com a OS) e o briefing pronto para o chat.
+type LeituraAcesso struct {
+	Achou    bool   `json:"achou"` // texto legível na janela
+	Processo string `json:"processo"`
+	Titulo   string `json:"titulo"`
+	Mensagem string `json:"mensagem"` // briefing completo para o agente (vazio se falhou)
+}
+
+// onAtalhoAcesso (Shift+F5): lê o texto da janela em foco via UIA (a OS do
+// Service no Access), traz o app para frente e abre o chat com o briefing.
+func (a *App) onAtalhoAcesso() {
+	cap := tela.CapturaTextoDaTela()
+	res := a.lerAcesso(cap)
+	slog.Info("atalho shift+f5", "processo", cap.Processo, "achou", res.Achou,
+		"runas", len([]rune(cap.Texto)))
+	a.mostrarJanela()
+	runtime.EventsEmit(a.ctx, evAtalhoAcesso, res)
+}
+
+// lerAcesso monta o briefing do chat a partir do texto lido da tela. Só
+// captura com o Access em foco: outra janela vira aviso, sem leitura.
+func (a *App) lerAcesso(cap tela.CapturaTexto) LeituraAcesso {
+	res := LeituraAcesso{Processo: cap.Processo, Titulo: cap.Titulo}
+	if !strings.EqualFold(cap.Processo, "msaccess.exe") {
+		res.Mensagem = fmt.Sprintf("A janela em foco é %q, não o Access. Abra a tela da OS no Service (Access) e aperte Shift+F5 de novo.", cap.Titulo)
+		return res
+	}
+	texto := strings.TrimSpace(cap.Texto)
+	if texto == "" {
+		res.Mensagem = "Não consegui ler texto da tela do Access. Confira se a janela da OS está visível (não minimizada) e aperte Shift+F5 de novo."
+		return res
+	}
+	res.Achou = true
+	res.Mensagem = fmt.Sprintf(
+		"Li a tela da OS no Access (Service), janela %q. O texto bruto da tela está abaixo. Extraia o que interessa — número da OS, cliente, código service, equipamento, defeito relatado — resuma o caso e sugira os próximos passos. Se precisar de dados do cliente no 360, use as ferramentas com o código service que aparecer (não invente se não estiver no texto).\n\n[texto da tela]\n%s",
+		cap.Titulo, texto)
+	return res
 }
 
 // onAtalhoTicketTela (Shift+F2): identifica o ticket/cliente na janela em
@@ -95,7 +145,11 @@ func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 			res.CodService = det.CodService
 			res.NomeCliente = det.Solicitante
 			res.Titulo = "#" + det.Numero + " " + det.Titulo
-			res.Mensagem = mensagemTicketDetalhe(det)
+			autor := a.autorSessao360()
+			if autor == "" {
+				autor = det.ResponsavelNome // sem config, quem responde o ticket serve de aproximação
+			}
+			res.Mensagem = mensagemTicketDetalhe(det, autor)
 			if t, err := a.tickets.GetPorCodService(a.ctx, det.CodService); err == nil && t != nil {
 				res.Achou = true
 				res.TicketID = t.ID
@@ -122,7 +176,7 @@ func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 			}
 			if res.Mensagem == "" {
 				res.Mensagem = fmt.Sprintf(
-					"Estou no ticket do cliente de código %s no 360. Consulte os dados dele (cadastro, financeiro, OS ativas, produtos/equipamentos, atendimentos recentes), aponte pendências relevantes e sugira os próximos passos.",
+					"Estou no ticket do cliente de código %s no 360. Decida quais dados dele faltam e consulte SÓ isso com as ferramentas (financeiro, equipamentos, atendimentos), aponte pendências relevantes e sugira os próximos passos.",
 					cod)
 			}
 			return res
@@ -163,11 +217,11 @@ func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 	if res.Mensagem == "" {
 		if res.Achou && res.TicketID > 0 {
 			res.Mensagem = fmt.Sprintf(
-				"Continue o atendimento do card #%d — %s (código service %s). Consulte os dados do cliente no 360 (financeiro, OS ativas, produtos/equipamentos cadastrados, atendimentos recentes), revise acordos e avaliação, e sugira os próximos passos.",
+				"Continue o atendimento do card #%d — %s (código service %s). Decida quais dados do cliente faltam e consulte SÓ isso no 360 com as ferramentas (financeiro, equipamentos, atendimentos), revise acordos e avaliação, e sugira os próximos passos.",
 				res.TicketID, res.NomeCliente, res.CodService)
 		} else {
 			res.Mensagem = fmt.Sprintf(
-				"Estou com o cliente de código %s na tela do 360. Consulte os dados dele (cadastro, financeiro, OS ativas, produtos/equipamentos, atendimentos recentes), aponte pendências relevantes e sugira os próximos passos.",
+				"Estou com o cliente de código %s na tela do 360. Decida quais dados dele faltam e consulte SÓ isso com as ferramentas (financeiro, equipamentos, atendimentos), aponte pendências relevantes e sugira os próximos passos.",
 				res.CodService)
 		}
 	}
@@ -191,24 +245,104 @@ func (a *App) detalheDoTicket(uuid string) *rota360.TicketDetalhe360 {
 	return t
 }
 
-// mensagemTicketDetalhe monta o briefing inicial do chat: o que o ticket
-// pede, o que já foi tratado nele e o que o agente deve buscar no 360.
-func mensagemTicketDetalhe(det *rota360.TicketDetalhe360) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Analise o ticket #%s (%s) do cliente %s (código service %s).\n\n",
-		det.Numero, det.Titulo, det.Solicitante, det.CodService)
-	for _, m := range det.Mensagens {
+// Limites do resumo de ticket enviado à IA: o Go lê o ticket inteiro no 360,
+// mas a IA recebe só o que serve para formular a resposta, dentro de um teto
+// — cada rune daqui é reenviado em toda rodada do agente (TPM 8K).
+const (
+	maxRunasDescricaoTicket  = 700
+	maxRunasInteracaoTicket  = 700
+	maxRunasResumoTicket     = 2500
+)
+
+// resumoMensagensTicket formata o resumo do ticket para a IA: a descrição
+// (primeira mensagem, o pedido original) e a última interação que NÃO é do
+// autor da sessão — o último recado do outro lado, que é o que a resposta
+// precisa endereçar. Interações intermediárias ficam de fora; a nota diz
+// quantas existem no 360. autorSessao vazio desativa o filtro (pega a última).
+func resumoMensagensTicket(mensagens []rota360.MensagemTicket360, autorSessao string) string {
+	indiceDesc := -1
+	for i, m := range mensagens {
+		if m.Tipo == "descricao" && strings.TrimSpace(m.Corpo) != "" {
+			indiceDesc = i
+			break
+		}
+	}
+	indiceUltima := -1
+	for i := len(mensagens) - 1; i >= 0; i-- {
+		m := mensagens[i]
 		if m.Tipo == "sistema" || strings.TrimSpace(m.Corpo) == "" {
 			continue
 		}
+		if autorSessao != "" && strings.EqualFold(strings.TrimSpace(m.Autor), autorSessao) {
+			continue // mensagem da própria sessão: não é o "último recado"
+		}
+		indiceUltima = i
+		break
+	}
+	if indiceDesc < 0 && indiceUltima < 0 {
+		return ""
+	}
+
+	var validas int
+	for _, m := range mensagens {
+		if m.Tipo != "sistema" && strings.TrimSpace(m.Corpo) != "" {
+			validas++
+		}
+	}
+
+	var sb strings.Builder
+	if indiceDesc >= 0 {
+		fmt.Fprintf(&sb, "[descrição] %s: %s\n\n",
+			mensagens[indiceDesc].Autor, limitarTexto(mensagens[indiceDesc].Corpo, maxRunasDescricaoTicket))
+	}
+	if indiceUltima >= 0 && indiceUltima != indiceDesc {
+		m := mensagens[indiceUltima]
 		titulo := m.Tipo
 		if titulo == "descricao" {
 			titulo = "descrição"
 		}
-		fmt.Fprintf(&sb, "[%s] %s: %s\n\n", titulo, m.Autor, limitarTexto(m.Corpo, 700))
+		fmt.Fprintf(&sb, "[última interação] %s: %s\n\n",
+			m.Autor, limitarTexto(m.Corpo, maxRunasInteracaoTicket))
 	}
-	sb.WriteString("Resuma: o que o ticket pede, o que já foi feito com o cliente e o que os atendimentos anteriores dizem. ")
-	sb.WriteString("Use as ferramentas para puxar os dados do cliente no 360 (financeiro, OS ativas, produtos/equipamentos cadastrados, atendimentos recentes) e diga os próximos passos.")
+	resumo := sb.String()
+	if r := []rune(resumo); len(r) > maxRunasResumoTicket {
+		resumo = string(r[:maxRunasResumoTicket]) + "…\n"
+	}
+	incluidas := 1
+	if indiceUltima >= 0 && indiceUltima != indiceDesc {
+		incluidas = 2
+	}
+	if validas > incluidas {
+		resumo += fmt.Sprintf("(+%d interação(ões) anteriores no ticket no 360)\n", validas-incluidas)
+	}
+	return resumo
+}
+
+// autorSessao360 é o nome do usuário logado no 360, configurado uma vez em
+// ⚙ Configurações; sem ele, o resumo usa o responsável do ticket como
+// aproximação de "quem responde pelo app".
+func (a *App) autorSessao360() string {
+	if n := strings.TrimSpace(a.configGet(a.ctx, cfgAutor360)); n != "" {
+		return n
+	}
+	return ""
+}
+
+// mensagemTicketDetalhe monta o briefing inicial do chat: identificação do
+// ticket, o que ele pede, o último recado do cliente e a instrução de puxar
+// do 360 só os dados que faltarem para formular a resposta.
+func mensagemTicketDetalhe(det *rota360.TicketDetalhe360, autorSessao string) string {
+	var sb strings.Builder
+	assunto := det.AssuntoNome
+	if assunto == "" {
+		assunto = det.CategoriaNome
+	}
+	fmt.Fprintf(&sb, "Analise o ticket #%s (%s) do cliente %s (código service %s), assunto %s.\n\n",
+		det.Numero, det.Titulo, det.Solicitante, det.CodService, assunto)
+	sb.WriteString(resumoMensagensTicket(det.Mensagens, autorSessao))
+	sb.WriteString("A partir do que o ticket pede, decida quais dados do cliente faltam para formular a resposta ")
+	sb.WriteString("e consulte SÓ isso com as ferramentas (financeiro, equipamentos, atendimentos — cada uma é separada). ")
+	sb.WriteString("Depois resuma o caso e diga os próximos passos.")
 	return sb.String()
 }
 

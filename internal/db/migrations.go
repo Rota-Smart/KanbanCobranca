@@ -16,6 +16,7 @@ var migrations = []string{
 	migration006,
 	migration007,
 	migration008,
+	migration009,
 }
 
 // migration007: padrão permanente "proposta de renegociação" — o formato
@@ -66,6 +67,13 @@ CONDIÇÕES VIGENTES (Política de Reversão de Cancelamento e Bonificações v7
 • Troca de serviço sem custos rescisórios exige renovação de 24 ou 36 meses.
 • Todo acordo deve ser formalizado no ticket; qualquer alteração contratual depende de contrato assinado pelo cliente.'
 WHERE nome = 'proposta de renegociação';
+`
+
+// migration009: cache dos contratos do cliente (Consulta Clientes → aba
+// Contratos no 360) — fonte da mensalidade exata, dia de vencimento e
+// vigência usados na proposta de renegociação.
+const migration009 = `
+ALTER TABLE clientes_360 ADD COLUMN contratos_json TEXT NOT NULL DEFAULT '';
 `
 
 // migration006: vínculo do card do Kanban com um ticket do helpdesk 360 —

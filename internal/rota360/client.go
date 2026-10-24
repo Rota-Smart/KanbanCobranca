@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -253,12 +254,60 @@ func (c *Cliente) TicketsDaFila(ctx context.Context, view string, page, limit in
 	return out.Itens, out.Total, nil
 }
 
+// maxResultadosPesquisaTickets limita a busca para não estourar o tool result.
+const maxResultadosPesquisaTickets = 20
+
+// PesquisarTickets procura na fila do helpdesk (leitura) tickets que casem
+// com o termo: número do ticket, código service do cliente ou nome do
+// solicitante — o app busca em todas as views em aberto e filtra localmente,
+// sem depender de endpoint de busca do portal.
+func (c *Cliente) PesquisarTickets(ctx context.Context, q string) ([]Ticket360, error) {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return []Ticket360{}, nil
+	}
+	vistos := map[string]bool{}
+	var out []Ticket360
+	for _, view := range []string{"em_aberto", "meus_em_aberto", "pendentes"} {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		itens, _, err := c.TicketsDaFila(ctx, view, 1, 100)
+		if err != nil {
+			continue // uma view falha (ex.: sem permissão) — segue com as outras
+		}
+		for _, t := range itens {
+			if vistos[t.ID] {
+				continue
+			}
+			if strings.Contains(strings.ToLower(t.Numero), q) ||
+				strings.Contains(strings.ToLower(t.CodigoService), q) ||
+				strings.Contains(strings.ToLower(t.Solicitante), q) ||
+				strings.Contains(strings.ToLower(t.Titulo), q) {
+				vistos[t.ID] = true
+				out = append(out, t)
+				if len(out) >= maxResultadosPesquisaTickets {
+					return out, nil
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
 // ServicoContratado360 é um serviço do cadastro (ex.: "MONITORAMENTO DE
 // ALARME", "CÂMERA WIFI EXTERNA - GRÁTIS").
 type ServicoContratado360 struct {
 	Descricao  string  `json:"descricaoServico"`
 	Valor      float64 `json:"valor"`
 	Quantidade int     `json:"quantidade"`
+}
+
+// FaturamentoCadastro360 é o bloco de faturamento do cadastro — a fonte
+// oficial da mensalidade e do dia de vencimento.
+type FaturamentoCadastro360 struct {
+	ValorNF       float64 `json:"valorNF"`
+	DiaVencimento int     `json:"diaVencimento"`
 }
 
 // DadosCliente360 é o cadastro completo do cliente (Consulta Clientes →
@@ -270,6 +319,8 @@ type DadosCliente360 struct {
 	Observacoes  string                 `json:"observacoes"`
 	AvisosAtivos any                    `json:"avisosAtivos"`
 	Servicos     []ServicoContratado360 `json:"servicos"`
+	Faturamento  FaturamentoCadastro360 `json:"faturamento"`
+	AtivoDesde   time.Time              `json:"ativoDesde"`
 }
 
 // DadosCliente busca o cadastro completo do cliente por código service.
@@ -282,6 +333,32 @@ func (c *Cliente) DadosCliente(ctx context.Context, codService string) (*DadosCl
 		return nil, err
 	}
 	return &d, nil
+}
+
+// Contrato360 é um contrato do cliente (Consulta Clientes → aba Contratos) —
+// fonte da mensalidade exata, do dia de vencimento e da vigência.
+type Contrato360 struct {
+	Nome            string    `json:"Nome"`
+	DataAssinatura  time.Time `json:"DataAssinatura"`
+	TerminoContrato time.Time `json:"TérminoContrato"`
+	DiaVcto         int       `json:"DiaVcto"`
+	Prazo           int       `json:"Prazo"` // meses de vigência
+	Situacao        string    `json:"Situacao"`
+	ValorME         float64   `json:"ValorME"` // mensalidade
+	ValorNF         float64   `json:"ValorNF"`
+	Internet        bool      `json:"Internet"`
+}
+
+// ContratosCliente lista os contratos do cliente por código service.
+func (c *Cliente) ContratosCliente(ctx context.Context, codService string) ([]Contrato360, error) {
+	if _, err := strconv.ParseInt(codService, 10, 64); err != nil {
+		return nil, fmt.Errorf("código service inválido: %s", codService)
+	}
+	var out []Contrato360
+	if err := c.get(ctx, "/api/cliente/"+codService+"/contratos", &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ---- Detalhe do ticket (GET /api/helpdesk/tickets/<uuid>) ----

@@ -18,8 +18,8 @@ const MaxIteracoesAgente = 4
 
 // System prompt enxuto: cada token daqui é reenviado em TODA rodada do loop
 // (e em toda mensagem do usuário), então economia aqui multiplica.
-const systemAgente = `Você é o assistente do app Kanban de Cobrança da Rota Smart (desktop local) e age via ferramentas: buscar/importar clientes do 360, cards e colunas do Kanban, financeiro, orçamentos e tickets do helpdesk (ler, abrir, responder, mudar status). ` +
-	`Regras: execute a ação pedida em vez de só descrever; ao adicionar cliente use a coluna indicada (padrão "Fazer contato"); nunca invente códigos, nomes ou valores — consulte as ferramentas; para melhorar texto de ticket, reescreva com redação profissional mantendo todos os dados técnicos, códigos e valores, e só envie com responder_ticket_360 se pedido explicitamente; para status, use o nome exato do detalhe_ticket_360. ` +
+const systemAgente = `Você é o assistente do app Kanban de Cobrança da Rota Smart (desktop local) e age via ferramentas: buscar/importar clientes do 360, cards e colunas do Kanban, financeiro, orçamentos e tickets do helpdesk (pesquisar, ler, abrir, responder, mudar status). ` +
+	`Regras: execute a ação pedida em vez de só descrever; ao adicionar cliente use a coluna indicada (padrão "Fazer contato"); nunca invente códigos, nomes ou valores — consulte as ferramentas, e consulte só os dados que faltarem para a tarefa; para melhorar texto de ticket, reescreva com redação profissional mantendo todos os dados técnicos, códigos e valores, e só envie com responder_ticket_360 se pedido explicitamente; para status, use o nome exato do detalhe_ticket_360. ` +
 	`Padrões: quando o usuário pedir para você manter um padrão daqui pra frente (ex.: "mantenha esse estilo nos próximos tickets", "sempre assine assim", "guarde essa regra"), destile o padrão em poucas frases e salve com salvar_padrao (nome curto, ex.: "estilo de tickets"); confirme o que salvou em uma linha. Se ele pedir para mudar um padrão existente, salve por cima com o mesmo nome; se pedir para esquecer, use apagar_padrao. ` +
 	`Responda em português do Brasil, curto e direto, confirmando o que fez com os dados obtidos.`
 
@@ -41,7 +41,7 @@ func AgentTools() []map[string]any {
 	}
 	return []map[string]any{
 		tool("buscar_cliente_360",
-			"Busca clientes no 360 por código, nome ou CPF/CNPJ. Devolve códigos e nomes.",
+			"Busca clientes no 360 por código, nome ou CPF/CNPJ.",
 			map[string]any{"query": map[string]any{"type": "string"}}, []string{"query"}),
 		tool("importar_cliente",
 			"Cria card no Kanban com os dados oficiais do 360.",
@@ -56,25 +56,34 @@ func AgentTools() []map[string]any {
 			"Cria coluna nova no Kanban.",
 			map[string]any{"nome": map[string]any{"type": "string"}}, []string{"nome"}),
 		tool("reordenar_colunas",
-			"Muda a ordem das colunas do Kanban. 'ordem' deve ser a lista COMPLETA de todas as colunas existentes na ordem desejada — liste antes com listar_colunas.",
+			"Muda a ordem; 'ordem' = lista COMPLETA (liste antes com listar_colunas).",
 			map[string]any{"ordem": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, []string{"ordem"}),
 		tool("financeiro_cliente",
-			"Consulta o cliente no 360: saldo devedor, faturas atrasadas, OS ativas, equipamentos e atendimentos.",
+			"Saldo devedor e faturas atrasadas do cliente no 360.",
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
+		tool("equipamentos_cliente",
+			"Equipamentos do cliente no 360: alarme, câmera (modelo), sensores e produtos cadastrados.",
+			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
+		tool("atendimentos_cliente",
+			"OS ativas e atendimentos recentes (Octadesk) do cliente no 360.",
+			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
+		tool("pesquisar_tickets",
+			"Pesquisa tickets ABERTOS do 360 pelo número do ticket, código service do cliente ou nome do solicitante. Use para achar o número antes de detalhe/abrir/responder.",
+			map[string]any{"query": map[string]any{"type": "string"}}, []string{"query"}),
 		tool("detalhe_ticket_360",
-			"Devolve o ticket do helpdesk 360: título, status, cliente, descrição e interações.",
+			"Ticket do 360: título, status, cliente, descrição e interações.",
 			map[string]any{"numero": map[string]any{"type": "string"}}, []string{"numero"}),
 		tool("abrir_ticket_360",
-			"Abre o ticket no navegador (aba do 360 que o usuário já tem aberta).",
+			"Abre o ticket no navegador.",
 			map[string]any{"numero": map[string]any{"type": "string"}}, []string{"numero"}),
 		tool("responder_ticket_360",
-			"Publica a resposta no ticket. Só chame se o usuário pedir para enviar explicitamente.",
+			"Publica resposta no ticket. Só com pedido explícito do usuário.",
 			map[string]any{
 				"numero": map[string]any{"type": "string"},
 				"texto":  map[string]any{"type": "string"},
 			}, []string{"numero", "texto"}),
 		tool("alterar_status_ticket_360",
-			"Altera o status do ticket (nome exato como detalhe_ticket_360 mostra).",
+			"Muda o status do ticket (nome exato do detalhe_ticket_360).",
 			map[string]any{
 				"numero": map[string]any{"type": "string"},
 				"status": map[string]any{"type": "string"},
@@ -83,44 +92,44 @@ func AgentTools() []map[string]any {
 			"Lista os cards do Kanban.",
 			map[string]any{"coluna": map[string]any{"type": "string"}}, nil),
 		tool("mover_card",
-			"Move o card para outra coluna; mover para 'Cobrança' dispara o fluxo automático.",
+			"Move o card; 'Cobrança' dispara o fluxo automático.",
 			map[string]any{
 				"ticketId": map[string]any{"type": "number"},
 				"coluna":   map[string]any{"type": "string"},
 			}, []string{"ticketId", "coluna"}),
 		tool("vincular_ticket",
-			"Vincula um ticket do helpdesk 360 a um card do Kanban (aceita o número do ticket, com ou sem #, o uuid ou a URL do ticket). Com numero vazio, desvincula. Antes, descubra o número com detalhe_ticket_360 ou peça ao usuário; para achar o card use listar_tickets.",
+			"Vincula/desvincula ticket do 360 a um card (número, uuid ou URL).",
 			map[string]any{
 				"ticketId": map[string]any{"type": "number"},
-				"numero":   map[string]any{"type": "string", "description": "número, uuid ou URL do ticket no 360; vazio para desvincular"},
+				"numero":   map[string]any{"type": "string", "description": "número, uuid ou URL; vazio desvincula"},
 			}, []string{"ticketId"}),
 		tool("avaliar_cliente",
-			"Avalia o cliente do card: renegociação anterior, fidelidade, cortesia.",
+			"Avalia o cliente do card (renegociação, fidelidade, cortesia).",
 			map[string]any{"ticketId": map[string]any{"type": "number"}}, []string{"ticketId"}),
 		tool("gerar_proposta",
 			"Gera a proposta de renegociação do card.",
 			map[string]any{"ticketId": map[string]any{"type": "number"}}, []string{"ticketId"}),
 		tool("listar_tabela_orcamento",
-			"Lista a planilha comercial: tipos de sistema, itens e preços. Use antes de gerar_orcamento.",
+			"Tipos de sistema, itens e preços da planilha. Use antes de gerar_orcamento.",
 			map[string]any{}, nil),
 		tool("gerar_orcamento",
-			"Gera o orçamento comercial: tipo de sistema + quantidades dos itens.",
+			"Gera orçamento: tipo de sistema + quantidades.",
 			map[string]any{
 				"tipoSistema": map[string]any{"type": "string"},
 				"itens":       map[string]any{"type": "object"},
 				"ticketId":    map[string]any{"type": "number"},
 			}, []string{"tipoSistema", "itens"}),
 		tool("salvar_padrao",
-			"Salva (ou atualiza) um padrão permanente definido pelo usuário — ex.: estilo de escrita de tickets, saudação, regra de negócio. Passe por dentro o padrão destilado em poucas frases.",
+			"Salva padrão permanente do usuário (estilo, saudação, regra), destilado em poucas frases.",
 			map[string]any{
-				"nome":     map[string]any{"type": "string", "description": "nome curto do padrão, ex.: 'estilo de tickets'"},
-				"conteudo": map[string]any{"type": "string", "description": "o padrão em si, para você seguir em TODAS as conversas futuras"},
+				"nome":     map[string]any{"type": "string", "description": "nome curto, ex.: 'estilo de tickets'"},
+				"conteudo": map[string]any{"type": "string", "description": "o padrão, para TODAS as conversas futuras"},
 			}, []string{"nome", "conteudo"}),
 		tool("listar_padroes",
-			"Lista os padrões permanentes salvos pelo usuário.",
+			"Lista os padrões permanentes salvos.",
 			map[string]any{}, nil),
 		tool("apagar_padrao",
-			"Apaga um padrão permanente pelo nome (o usuário pediu para esquecer).",
+			"Apaga um padrão permanente pelo nome.",
 			map[string]any{"nome": map[string]any{"type": "string"}}, []string{"nome"}),
 	}
 }
@@ -166,6 +175,10 @@ const (
 	MaxMensagensHistorico = 6
 	MaxRunasMensagem      = 400
 	MaxRunasToolResult    = 1500
+	// A tabela de orçamento é a matéria-prima do gerar_orcamento: cortar no
+	// meio (cap global) esconde itens que o modelo precisa nomear. Cap próprio,
+	// maior — só ela o usa, e só quando o usuário pede orçamento.
+	MaxRunasTabelaOrcamento = 2500
 )
 
 // AcaoDoAgente registra uma ferramenta executada, para exibir ao usuário.
@@ -202,8 +215,7 @@ func (g *GroqCliente) Conversar(ctx context.Context, historico []MensagemDeChat,
 	}
 	sistema := SystemComPadroes(padroes)
 	// Fast-path: mensagem que não precisa de ação sai em 1 requisição, sem
-	// os schemas das tools nem o loop (a troca mais comum do dia custa ~15%
-	// do que custaria com o loop completo).
+	// os schemas das tools nem o loop.
 	compacto := historicoCompacto(historico)
 	if MensagemSemFerramentas(mensagem) {
 		msgs := []groqMensagem{{Role: "system", Content: sistema}}
@@ -248,10 +260,14 @@ func (g *GroqCliente) Conversar(ctx context.Context, historico []MensagemDeChat,
 			if len(argsLimitados) > 200 {
 				argsLimitados = argsLimitados[:200]
 			}
+			capResultado := MaxRunasToolResult
+			if tc.Function.Name == "listar_tabela_orcamento" {
+				capResultado = MaxRunasTabelaOrcamento
+			}
 			msgs = append(msgs, groqMensagem{
 				Role:       "tool",
 				ToolCallID: tc.ID,
-				Content:    fmt.Sprintf("%s(%s) => %s", tc.Function.Name, argsLimitados, limitarRunas(resultado, MaxRunasToolResult)),
+				Content:    fmt.Sprintf("%s(%s) => %s", tc.Function.Name, argsLimitados, limitarRunas(resultado, capResultado)),
 			})
 		}
 	}

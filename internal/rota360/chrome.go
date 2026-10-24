@@ -200,10 +200,13 @@ func DetectaCookieChrome() (*Cookie, error) {
 	return nil, fmt.Errorf("nenhum cookie de sessão do %s encontrado nos perfis do Chrome — faça login no site pelo Chrome e tente de novo", CookieDomain)
 }
 
-// Cookie é o par nome=valor da sessão do 360.
+// Cookie é o par nome=valor da sessão do 360. Usuario (opcional) é o nome
+// exibido no cabeçalho do portal — quem está logado — lido via CDP quando a
+// aba do 360 está aberta; alimenta o filtro de "autor da sessão" do chat.
 type Cookie struct {
-	Nome  string
-	Valor string
+	Nome    string
+	Valor   string
+	Usuario string
 }
 
 func cookieDoPerfil(userdata, perfil string) (*Cookie, error) {
