@@ -49,6 +49,10 @@ type App struct {
 
 	muModeloVoz sync.Mutex
 	gzModeloVoz []byte // .tar.gz do modelo montado p/ o vosk-browser (cache)
+
+	muVoz        sync.Mutex
+	vozPumpAtivo bool          // gravação via Chrome em andamento
+	vozParar     chan struct{} // sinaliza o fim da gravação via Chrome
 }
 
 // WireIntegracao injeta as dependências da integração (chamado pelo main).

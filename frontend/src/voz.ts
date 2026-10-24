@@ -15,6 +15,17 @@ interface OuvintesVoz {
   etapa?: (s: string) => void;
 }
 
+import { EventsOn } from '../wailsjs/runtime/runtime';
+
+// ponteVoz tipa a fatia da bridge do Wails usada pela voz.
+const ponteVoz = (window as unknown as {
+  go: { main: { App: {
+    TranscreverVoz: (b: string) => Promise<string>;
+    IniciarVozChrome: () => Promise<void>;
+    PararVozChrome: () => Promise<void>;
+  } } };
+}).go.main.App;
+
 // esperar aguarda ms e resolve.
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -121,10 +132,7 @@ async function transcrever(wav: Uint8Array): Promise<string> {
   for (let i = 0; i < wav.length; i += BLOCO) {
     b64 += String.fromCharCode(...wav.subarray(i, i + BLOCO));
   }
-  const ponte = (window as unknown as {
-    go: { main: { App: { TranscreverVoz: (b: string) => Promise<string> } } };
-  }).go.main.App;
-  return ponte.TranscreverVoz(btoa(b64));
+  return ponteVoz.TranscreverVoz(btoa(b64));
 }
 
 const TAXA = 16000;
@@ -140,7 +148,61 @@ const MAXIMO_GRAVACAO_MS = 10 * 60_000;
 // iniciarVoz abre o microfone e começa a transcrever em lotes. Devolve a
 // função de parada, que transcreve o trecho restante e entrega tudo no
 // ouvinte final.
+//
+// Primeiro tenta a WebView do app; se o microfone falhar lá (NotReadableError
+// em máquinas com o runtime WebView2 problemático), repete a captura na aba
+// do Chrome que o app já controla via CDP — mesmo Whisper, texto igual.
 export async function iniciarVoz(ouvintes: OuvintesVoz): Promise<() => void> {
+  try {
+    return await iniciarVozWebView(ouvintes);
+  } catch (e) {
+    ouvintes.etapa?.('usando o microfone do Chrome…');
+    try {
+      return await iniciarVozChrome(ouvintes);
+    } catch (eChrome) {
+      throw new Error(`${String(e)} — e o fallback pelo Chrome também falhou: ${String(eChrome)}`);
+    }
+  }
+}
+
+// iniciarVozChrome injeta o gravador na aba do Chrome do 360 (perfil CDP do
+// app) e recebe o texto pelos eventos voz:lote / voz:fim / voz:erro.
+async function iniciarVozChrome(ouvintes: OuvintesVoz): Promise<() => void> {
+  const textos: string[] = [];
+  let encerrado = false;
+  const limpar = () => {
+    offLote();
+    offFim();
+    offErro();
+  };
+  const offLote = EventsOn('voz:lote', (t: string) => {
+    textos.push(t);
+    ouvintes.parcial(textos.join(' '));
+  });
+  const offFim = EventsOn('voz:fim', (t: string) => {
+    encerrado = true;
+    limpar();
+    ouvintes.final(t);
+  });
+  const offErro = EventsOn('voz:erro', (e: string) => {
+    encerrado = true;
+    limpar();
+    ouvintes.erro(new Error(e));
+  });
+  try {
+    await ponteVoz.IniciarVozChrome();
+  } catch (e) {
+    limpar();
+    throw e;
+  }
+  return () => {
+    if (encerrado) return;
+    void ponteVoz.PararVozChrome();
+  };
+}
+
+// iniciarVozWebView é a captura original dentro da WebView do app.
+async function iniciarVozWebView(ouvintes: OuvintesVoz): Promise<() => void> {
   let stream: MediaStream;
   try {
     stream = await abrirMicrofone();

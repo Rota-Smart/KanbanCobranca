@@ -48,14 +48,9 @@ func whisperInstalado() bool {
 	return err == nil
 }
 
-// TranscreverVoz recebe o WAV 16 kHz mono gravado no frontend (em base64 —
-// a ponte do Wails não carrega Uint8Array), roda o whisper-cli e devolve o
-// texto reconhecido em português.
-func (a *App) TranscreverVoz(wavB64 string) (string, error) {
-	wav, err := base64.StdEncoding.DecodeString(wavB64)
-	if err != nil {
-		return "", fmt.Errorf("áudio inválido")
-	}
+// transcreverWAV roda o whisper-cli num WAV 16 kHz mono e devolve o texto.
+// Usada pela TranscreverVoz (bridge do Wails) e pela voz via Chrome.
+func (a *App) transcreverWAV(wav []byte) (string, error) {
 	base := caminhoWhisper()
 	exe := filepath.Join(base, "Release", "whisper-cli.exe")
 	modelo := filepath.Join(base, modeloWhisperNome)
@@ -105,4 +100,15 @@ func (a *App) TranscreverVoz(wavB64 string) (string, error) {
 		return "", fmt.Errorf("não entendi o que você falou — tente de novo, mais perto do microfone")
 	}
 	return texto, nil
+}
+
+// TranscreverVoz recebe o WAV 16 kHz mono gravado no frontend (em base64 —
+// a ponte do Wails não carrega Uint8Array) e devolve o texto reconhecido
+// em português.
+func (a *App) TranscreverVoz(wavB64 string) (string, error) {
+	wav, err := base64.StdEncoding.DecodeString(wavB64)
+	if err != nil {
+		return "", fmt.Errorf("áudio inválido")
+	}
+	return a.transcreverWAV(wav)
 }
