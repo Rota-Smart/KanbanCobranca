@@ -71,6 +71,12 @@ COMO INSTALAR (outro computador):
    cru possível e captura na taxa nativa do dispositivo (48 kHz), sem
    forçar reconfiguração do driver — corrige o erro "NotReadableError" em
    notebooks onde o microfone trava na abertura pelo app.
+15. OBSERVAÇÕES INTERNAS + VÁRIOS TICKETS (v1.11.0): o card agora tem a aba
+   🗒️ Observações — anotações internas (não vão para o cliente) que também
+   podem ser gravadas pelo assistente ("anote no card que retorno sexta").
+   Na aba 👤 Cliente, um card pode ter VÁRIOS tickets do 360 vinculados,
+   cada um com o assunto: clique no 🌐 para abrir no navegador, ✕ remove o
+   vínculo, e "+ Vincular ticket" adiciona outro pelo número/URL.
 
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
