@@ -113,6 +113,9 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           {ticket.ticket360Numero && (
             <span className="text-[11px] shrink-0" title={`Ticket 360 #${ticket.ticket360Numero}`}>🎫</span>
           )}
+          {ticket.observacoes?.trim() && (
+            <span className="text-[11px] shrink-0" title="Tem observações internas">🗒️</span>
+          )}
           {qtdAcordos > 0 && (
             <span className="text-[11px] px-1.5 rounded-full font-medium bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200 shrink-0">
               ✓{qtdAcordos}
@@ -191,6 +194,14 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
               {qtdAcordos > 0 && (
                 <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200">
                   ✓ {qtdAcordos} acordo{qtdAcordos > 1 ? 's' : ''}
+                </span>
+              )}
+              {ticket.observacoes?.trim() && (
+                <span
+                  className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-slate-200/80 text-slate-700 dark:bg-slate-500/25 dark:text-slate-200"
+                  title={ticket.observacoes}
+                >
+                  🗒️ obs
                 </span>
               )}
             </div>

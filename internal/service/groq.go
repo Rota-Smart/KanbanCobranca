@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,17 +24,28 @@ const (
 	// Groq — o mesmo GroqCliente atende os dois provedores.
 	DeepInfraEndpoint     = "https://api.deepinfra.com/v1/openai/chat/completions"
 	DeepInfraModeloPadrao = "meta-llama/Llama-3.3-70B-Instruct"
-	groqTimeout           = 12 * time.Second
-	groqMaxResposta       = 64 << 10
-	groqMaxTokens         = 400
+	// Timeout por requisição: a Groq responde em ~2s; o fallback DeepInfra
+	// (Llama 70B, 400-800 tokens) pode levar ~15s — o ctx do chamador é quem
+	// limita de verdade (15-90s nos fluxos do app).
+	groqTimeout     = 30 * time.Second
+	groqMaxResposta = 64 << 10
+	groqMaxTokens   = 400
 	// maxTentativasGroq cobre a janela de TPM do plano free (8K/min): 429 vem
 	// com Retry-After dizendo quando a janela reseta, e esperar vale mais que
 	// falhar. Erros de rede/5xx continuam com 1 retry apenas.
 	maxTentativasGroq = 4
 
-	// ProvedorGroq / ProvedorDeepInfra: valores gravados no config ia_provedor.
+	// ProvedorGroq / ProvedorDeepInfra / ProvedorAuto: valores gravados no
+	// config ia_provedor. No modo auto a Groq atende; ao bater o teto (429)
+	// espera até esperaCurtaAuto pela janela de TPM e, sem liberação, manda a
+	// chamada pro DeepInfra — onde fica por cooldownFallback (a janela da
+	// Groq reabre nesse tempo) antes de voltar a ser o principal.
 	ProvedorGroq      = "groq"
 	ProvedorDeepInfra = "deepinfra"
+	ProvedorAuto      = "auto"
+
+	esperaCurtaAuto  = 15 * time.Second
+	cooldownFallback = 30 * time.Second
 )
 
 // ErrGroqSemChave sinaliza ausência de chave — não é erro para o usuário.
@@ -47,12 +59,21 @@ type GroqCliente struct {
 	HTTP            *http.Client
 	ChaveInjetavel  func() string
 	ModeloInjetavel func() string
-	// ProvedorInjetavel devolve "groq" (padrão) ou "deepinfra" — decide o
-	// endpoint e o modelo default; consultado a cada chamada.
+	// ProvedorInjetavel devolve "groq" (padrão), "deepinfra" ou "auto" —
+	// decide o destino; consultado a cada chamada.
 	ProvedorInjetavel func() string
 	OnUsage           func(promptTokens, completionTokens int)
+	// Fallback do modo auto: chave e modelo da DeepInfra, consultados só
+	// quando o fallback dispara. EndpointFallback existe para os testes.
+	DeepInfraChaveInjetavel  func() string
+	DeepInfraModeloInjetavel func() string
+	EndpointFallback         string
 	// Endpoint sobrescrevível nos testes (padrão: depende do provedor).
 	Endpoint string
+
+	// muFallback protege fallbackAte, o cooldown pós-429 do modo auto.
+	muFallback  sync.Mutex
+	fallbackAte time.Time
 }
 
 // provedor diz o provedor ativo nesta chamada.
@@ -104,6 +125,89 @@ func (g *GroqCliente) modelo() string {
 
 // Chave expõe se há chave configurada (para HasAI sem vazar o segredo).
 func (g *GroqCliente) Chave() string { return g.chave() }
+
+// TemChave diz se o provedor ativo tem como atender: no modo auto a chave da
+// Groq pode faltar desde que a da DeepInfra exista (o fallback vira principal).
+func (g *GroqCliente) TemChave() bool {
+	if g == nil {
+		return false
+	}
+	if g.emAuto() && g.chave() == "" {
+		return g.alvoDeepInfra().chave != ""
+	}
+	return g.chave() != ""
+}
+
+// respostaRodada é a mensagem bruta do modelo numa rodada de chat.
+type respostaRodada struct {
+	Content   string
+	ToolCalls []groqToolCall
+}
+
+// alvoChamada é o destino de uma tentativa: provedor + endpoint/chave/modelo
+// resolvidos (no modo auto podem trocar no meio do retry).
+type alvoChamada struct {
+	provedor string
+	endpoint string
+	chave    string
+	modelo   string
+}
+
+func (g *GroqCliente) emAuto() bool { return g.provedor() == ProvedorAuto }
+
+// alvoDeepInfra resolve o destino do fallback. Modelo vazio nas configurações
+// cai no default; a chave vazia sinaliza fallback indisponível.
+func (g *GroqCliente) alvoDeepInfra() alvoChamada {
+	chave := ""
+	if g != nil && g.DeepInfraChaveInjetavel != nil {
+		chave = strings.TrimSpace(g.DeepInfraChaveInjetavel())
+	}
+	modelo := ""
+	if g != nil && g.DeepInfraModeloInjetavel != nil {
+		modelo = strings.TrimSpace(g.DeepInfraModeloInjetavel())
+	}
+	if modelo == "" {
+		modelo = DeepInfraModeloPadrao
+	}
+	endpoint := DeepInfraEndpoint
+	if g != nil && g.EndpointFallback != "" {
+		endpoint = g.EndpointFallback
+	}
+	return alvoChamada{provedor: ProvedorDeepInfra, endpoint: endpoint, chave: chave, modelo: modelo}
+}
+
+// alvoAtual diz para onde a chamada vai agora: no modo auto, cooldown ativo
+// (ou Groq sem chave) manda direto pro DeepInfra; fora disso, o destino é a
+// Groq (o principal do auto) ou o provedor escolhido nas Configurações.
+func (g *GroqCliente) alvoAtual() alvoChamada {
+	if g.emAuto() {
+		if fb := g.alvoDeepInfra(); fb.chave != "" && (g.emCooldown() || g.chave() == "") {
+			return fb
+		}
+		return alvoChamada{provedor: ProvedorGroq, endpoint: g.endpoint(), chave: g.chave(), modelo: g.modelo()}
+	}
+	return alvoChamada{provedor: g.provedor(), endpoint: g.endpoint(), chave: g.chave(), modelo: g.modelo()}
+}
+
+// emCooldown diz se o fallback está no comando (dentro dos cooldownFallback
+// posteriores a um 429 da Groq).
+func (g *GroqCliente) emCooldown() bool {
+	if g == nil {
+		return false
+	}
+	g.muFallback.Lock()
+	defer g.muFallback.Unlock()
+	return time.Now().Before(g.fallbackAte)
+}
+
+// armarCooldown liga o período na DeepInfra: após um failover, as chamadas
+// seguintes evitam a Groq até a janela de TPM reabrir — sem isso, cada
+// mensagem pagaria o roundtrip do 429 antes de cair no fallback.
+func (g *GroqCliente) armarCooldown() {
+	g.muFallback.Lock()
+	g.fallbackAte = time.Now().Add(cooldownFallback)
+	g.muFallback.Unlock()
+}
 
 type groqMensagem struct {
 	Role       string         `json:"role"`
@@ -190,42 +294,56 @@ func cabeNoCtx(ctx context.Context, d time.Duration) bool {
 	return time.Until(dl) > d+8*time.Second
 }
 
-// Completar envia as mensagens com retry: em 429 honra o Retry-After da
-// janela de TPM (até maxTentativasGroq); em rede/5xx repete 1 vez. Para
-// 400/401/403 não repete (erro permanente).
-func (g *GroqCliente) Completar(ctx context.Context, system, user string) (string, error) {
-	chave := g.chave()
-	if chave == "" {
-		return "", ErrGroqSemChave
+// chamadaComRetry executa uma rodada de chat com a política de retry: em 429
+// honra o Retry-After da janela de TPM (até maxTentativasGroq); em rede/5xx
+// repete 1 vez; 400/401/403/404 não repetem (erro permanente). No modo auto,
+// a espera na Groq é curta (esperaCurtaAuto): estourou o orçamento, a mesma
+// chamada vai pro DeepInfra na hora e arma o cooldown. montar é chamada de
+// novo quando o failover troca o modelo.
+func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo string) groqRequest) (respostaRodada, error) {
+	alvo := g.alvoAtual()
+	if alvo.chave == "" {
+		return respostaRodada{}, ErrGroqSemChave
 	}
-	body, err := json.Marshal(groqRequest{
-		Model:           g.modelo(),
-		Mensagens:       []groqMensagem{{Role: "system", Content: system}, {Role: "user", Content: user}},
-		Temperature:     0.2,
-		MaxTokens:       groqMaxTokens,
-		ReasoningEffort: effortPara(g.modelo()),
-	})
-	if err != nil {
-		return "", err
-	}
+	esperado := time.Duration(0) // soma das esperas por 429 nesta chamada
 	var ultimoErr error
 	espera := 2 * time.Second
 	for tentativa := 0; tentativa < maxTentativasGroq; tentativa++ {
 		if tentativa > 0 {
+			// Teto da Groq no modo auto com o orçamento de 15s estourado:
+			// failover imediato, sem esperar a janela inteira.
+			if g.emAuto() && alvo.provedor == ProvedorGroq && esperado+espera > esperaCurtaAuto {
+				if fb := g.alvoDeepInfra(); fb.chave != "" {
+					alvo = fb
+					g.armarCooldown()
+					// A espera era da janela da Groq: na DeepInfra ela não
+					// se aplica — e dormir ela inteira faria o cooldown
+					// (30s) expirar antes da chamada voltar.
+					espera = 2 * time.Second
+					continue
+				}
+			}
 			if !cabeNoCtx(ctx, espera) {
-				return "", fmt.Errorf("groq: HTTP 429 — sem tempo de esperar a janela de TPM; tente de novo em ~%s", espera.Truncate(time.Second))
+				return respostaRodada{}, fmt.Errorf("%s: HTTP 429 — sem tempo de esperar a janela de TPM; tente de novo em ~%s", alvo.provedor, espera.Truncate(time.Second))
 			}
 			select {
 			case <-ctx.Done():
-				return "", ctx.Err()
+				return respostaRodada{}, ctx.Err()
 			case <-time.After(espera):
 			}
+			if alvo.provedor == ProvedorGroq {
+				esperado += espera
+			}
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.endpoint(), bytes.NewReader(body))
+		body, err := json.Marshal(montar(alvo.modelo))
 		if err != nil {
-			return "", err
+			return respostaRodada{}, err
 		}
-		req.Header.Set("Authorization", "Bearer "+chave)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, alvo.endpoint, bytes.NewReader(body))
+		if err != nil {
+			return respostaRodada{}, err
+		}
+		req.Header.Set("Authorization", "Bearer "+alvo.chave)
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := g.HTTP.Do(req)
 		if err != nil {
@@ -240,11 +358,11 @@ func (g *GroqCliente) Completar(ctx context.Context, system, user string) (strin
 		resp.Body.Close()
 		switch {
 		case resp.StatusCode == http.StatusTooManyRequests:
-			ultimoErr = fmt.Errorf("groq: HTTP 429 — limite de tokens por minuto atingido")
+			ultimoErr = fmt.Errorf("%s: HTTP 429 — limite de tokens por minuto atingido", alvo.provedor)
 			espera = esperaDeRetry(resp, tentativa)
 			continue
 		case resp.StatusCode >= 500:
-			ultimoErr = fmt.Errorf("groq: HTTP %d", resp.StatusCode)
+			ultimoErr = fmt.Errorf("%s: HTTP %d", alvo.provedor, resp.StatusCode)
 			if tentativa >= 1 {
 				break
 			}
@@ -252,109 +370,12 @@ func (g *GroqCliente) Completar(ctx context.Context, system, user string) (strin
 			continue
 		case resp.StatusCode != http.StatusOK:
 			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusBadRequest {
-				return "", fmt.Errorf("groq: HTTP %d — verifique a chave e o modelo nas configurações", resp.StatusCode)
-			}
-			ultimoErr = fmt.Errorf("groq: HTTP %d", resp.StatusCode)
-			if tentativa >= 1 {
-				break
-			}
-			espera = esperaDeRetry(nil, tentativa)
-			continue
-		}
-		if err != nil {
-			ultimoErr = err
-			continue
-		}
-		var out groqResponse
-		if err := json.Unmarshal(raw, &out); err != nil {
-			return "", fmt.Errorf("groq: resposta inválida: %w", err)
-		}
-		if out.Error != nil && out.Error.Message != "" {
-			return "", fmt.Errorf("groq: %s", out.Error.Message)
-		}
-		if len(out.Choices) == 0 {
-			return "", fmt.Errorf("groq: resposta vazia")
-		}
-		msg := out.Choices[0].Message
-		content, _ := msg.Content.(string)
-		g.reportarUsage(&out)
-		return strings.TrimSpace(content), nil
-	}
-	return "", ultimoErr
-}
-
-// chatUmaRodada faz uma chamada e devolve a mensagem bruta do modelo
-// (com tool_calls, se houver).
-func (g *GroqCliente) chatUmaRodada(ctx context.Context, mensagens []groqMensagem, tools []map[string]any) (struct {
-	Content   string
-	ToolCalls []groqToolCall
-}, error) {
-	type saida = struct {
-		Content   string
-		ToolCalls []groqToolCall
-	}
-	body, err := json.Marshal(groqRequest{
-		Model:           g.modelo(),
-		Mensagens:       mensagens,
-		Temperature:     0.2,
-		MaxTokens:       800,
-		Tools:           tools,
-		ToolChoice:      mapParaString(tools),
-		ReasoningEffort: effortPara(g.modelo()),
-	})
-	if err != nil {
-		return saida{}, err
-	}
-	var ultimoErr error
-	espera := 2 * time.Second
-	for tentativa := 0; tentativa < maxTentativasGroq; tentativa++ {
-		if tentativa > 0 {
-			if !cabeNoCtx(ctx, espera) {
-				return saida{}, fmt.Errorf("groq: HTTP 429 — sem tempo de esperar a janela de TPM; tente de novo em ~%s", espera.Truncate(time.Second))
-			}
-			select {
-			case <-ctx.Done():
-				return saida{}, ctx.Err()
-			case <-time.After(espera):
-			}
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.endpoint(), bytes.NewReader(body))
-		if err != nil {
-			return saida{}, err
-		}
-		req.Header.Set("Authorization", "Bearer "+g.chave())
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := g.HTTP.Do(req)
-		if err != nil {
-			ultimoErr = err
-			if tentativa >= 1 {
-				break
-			}
-			espera = esperaDeRetry(nil, tentativa)
-			continue
-		}
-		raw, err := io.ReadAll(io.LimitReader(resp.Body, groqMaxResposta))
-		resp.Body.Close()
-		switch {
-		case resp.StatusCode == http.StatusTooManyRequests:
-			ultimoErr = fmt.Errorf("groq: HTTP 429 — limite de tokens por minuto atingido")
-			espera = esperaDeRetry(resp, tentativa)
-			continue
-		case resp.StatusCode >= 500:
-			ultimoErr = fmt.Errorf("groq: HTTP %d", resp.StatusCode)
-			if tentativa >= 1 {
-				break
-			}
-			espera = esperaDeRetry(nil, tentativa)
-			continue
-		case resp.StatusCode != http.StatusOK:
-			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusBadRequest {
-				return saida{}, fmt.Errorf("groq: HTTP %d — verifique a chave e o modelo nas configurações", resp.StatusCode)
+				return respostaRodada{}, fmt.Errorf("%s: HTTP %d — verifique a chave e o modelo nas configurações", alvo.provedor, resp.StatusCode)
 			}
 			if resp.StatusCode == http.StatusNotFound {
-				return saida{}, fmt.Errorf("groq: HTTP 404 — o modelo %q não existe mais no provedor; escolha outro em ⚙ Configurações", g.modelo())
+				return respostaRodada{}, fmt.Errorf("%s: HTTP 404 — o modelo %q não existe mais no provedor; escolha outro em ⚙ Configurações", alvo.provedor, alvo.modelo)
 			}
-			ultimoErr = fmt.Errorf("groq: HTTP %d", resp.StatusCode)
+			ultimoErr = fmt.Errorf("%s: HTTP %d", alvo.provedor, resp.StatusCode)
 			if tentativa >= 1 {
 				break
 			}
@@ -367,20 +388,54 @@ func (g *GroqCliente) chatUmaRodada(ctx context.Context, mensagens []groqMensage
 		}
 		var out groqResponse
 		if err := json.Unmarshal(raw, &out); err != nil {
-			return saida{}, fmt.Errorf("groq: resposta inválida: %w", err)
+			return respostaRodada{}, fmt.Errorf("%s: resposta inválida: %w", alvo.provedor, err)
 		}
 		if out.Error != nil && out.Error.Message != "" {
-			return saida{}, fmt.Errorf("groq: %s", out.Error.Message)
+			return respostaRodada{}, fmt.Errorf("%s: %s", alvo.provedor, out.Error.Message)
 		}
 		if len(out.Choices) == 0 {
-			return saida{}, fmt.Errorf("groq: resposta vazia")
+			return respostaRodada{}, fmt.Errorf("%s: resposta vazia", alvo.provedor)
 		}
 		msg := out.Choices[0].Message
 		content, _ := msg.Content.(string)
-		g.reportarUsage(&out)
-		return saida{Content: strings.TrimSpace(content), ToolCalls: msg.ToolCalls}, nil
+		// O contador alimenta os limites do plano free da Groq — respostas
+		// do fallback DeepInfra não entram nele.
+		if alvo.provedor == ProvedorGroq {
+			g.reportarUsage(&out)
+		}
+		return respostaRodada{Content: strings.TrimSpace(content), ToolCalls: msg.ToolCalls}, nil
 	}
-	return saida{}, ultimoErr
+	return respostaRodada{}, ultimoErr
+}
+
+// Completar envia system+user sem ferramentas (usado no polimento).
+func (g *GroqCliente) Completar(ctx context.Context, system, user string) (string, error) {
+	out, err := g.chamadaComRetry(ctx, func(modelo string) groqRequest {
+		return groqRequest{
+			Model:           modelo,
+			Mensagens:       []groqMensagem{{Role: "system", Content: system}, {Role: "user", Content: user}},
+			Temperature:     0.2,
+			MaxTokens:       groqMaxTokens,
+			ReasoningEffort: effortPara(modelo),
+		}
+	})
+	return out.Content, err
+}
+
+// chatUmaRodada faz uma chamada (com tools, se houver) e devolve a mensagem
+// bruta do modelo.
+func (g *GroqCliente) chatUmaRodada(ctx context.Context, mensagens []groqMensagem, tools []map[string]any) (respostaRodada, error) {
+	return g.chamadaComRetry(ctx, func(modelo string) groqRequest {
+		return groqRequest{
+			Model:           modelo,
+			Mensagens:       mensagens,
+			Temperature:     0.2,
+			MaxTokens:       800,
+			Tools:           tools,
+			ToolChoice:      mapParaString(tools),
+			ReasoningEffort: effortPara(modelo),
+		}
+	})
 }
 
 func mapParaString(tools []map[string]any) string {

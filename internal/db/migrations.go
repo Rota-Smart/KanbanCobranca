@@ -17,7 +17,26 @@ var migrations = []string{
 	migration007,
 	migration008,
 	migration009,
+	migration010,
 }
+
+// migration010: observações internas do card (não vão para o cliente) e
+// vínculos múltiplos de tickets do 360 — um card pode ter vários tickets,
+// cada um com o assunto para exibir na aba Cliente. Importa os vínculos
+// únicos que já existiam nas colunas legadas do tickets.
+const migration010 = `
+ALTER TABLE tickets ADD COLUMN observacoes TEXT NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS tickets_vinculos (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id        INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    ticket360_id     TEXT    NOT NULL UNIQUE,
+    ticket360_numero TEXT    NOT NULL DEFAULT '',
+    assunto          TEXT    NOT NULL DEFAULT '',
+    criado_em        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+INSERT OR IGNORE INTO tickets_vinculos (ticket_id, ticket360_id, ticket360_numero, assunto)
+    SELECT id, ticket360_id, ticket360_numero, '' FROM tickets WHERE ticket360_id != '';
+`
 
 // migration007: padrão permanente "proposta de renegociação" — o formato
 // obrigatório das propostas de valores em atraso (pedido do usuário). INSERT

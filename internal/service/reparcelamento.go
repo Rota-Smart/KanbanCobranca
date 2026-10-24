@@ -7,9 +7,42 @@ const (
 	MaxCents    = 99_999_999_99 // R$ 99.999.999,99
 	MaxParcelas = 120
 
-	valorMinimoTotalCents int64 = 1 // total em aberto tem de ser positivo
-	minCentavosPorParcela int64 = 1 // cada parcela precisa valer ao menos 1 centavo
+	valorMinimoTotalCents int64 = 1  // total em aberto tem de ser positivo
+	minCentavosPorParcela int64 = 1  // cada parcela precisa valer ao menos 1 centavo
+	realEmCents           int64 = 100
+	passoEntrada50        int64 = 5000 // entrada cai num múltiplo de R$ 50
 )
+
+// EntradaMinima devolve a entrada da Política v7: 20% do total na primeira
+// renegociação, 40% quando o cliente já tem renegociação anterior — sempre
+// arredondada pra cima pro múltiplo de R$ 50 mais próximo, sem passar do total.
+func EntradaMinima(totalCents int64, jaRenegociou bool) int64 {
+	pct := int64(20)
+	if jaRenegociou {
+		pct = 40
+	}
+	e := Arredondar50Cima(totalCents * pct / 100)
+	if e > totalCents {
+		e = totalCents
+	}
+	return e
+}
+
+// Arredondar50Cima arredonda pra cima pro múltiplo de R$ 50 mais próximo.
+func Arredondar50Cima(cents int64) int64 {
+	if cents <= 0 {
+		return 0
+	}
+	return ((cents + passoEntrada50 - 1) / passoEntrada50) * passoEntrada50
+}
+
+// ArredondarRealCima arredonda pra cima pro inteiro de real mais próximo.
+func ArredondarRealCima(cents int64) int64 {
+	if cents <= 0 {
+		return 0
+	}
+	return ((cents + realEmCents - 1) / realEmCents) * realEmCents
+}
 
 var (
 	ErrTotalInvalido        = errors.New("valor total em aberto deve ser maior que zero")
@@ -59,9 +92,21 @@ func CalculateReparcelamento(in ReparcelamentoInput) (ReparcelamentoResult, erro
 		return ReparcelamentoResult{}, ErrParcelaZerada
 	}
 
-	parcelado := saldo / n
-	resto := saldo % n
-	ultima := parcelado + resto
+	// Parcela cai num real inteiro, arredondada pra cima; a última absorve a
+	// diferença (fica menor). Sem casas de centavo pra cliente pagar.
+	parcelado := ArredondarRealCima((saldo + n - 1) / n)
+	if n == 1 {
+		parcelado = saldo // 1x quita o saldo exato, sem arredondar
+	}
+	ultima := saldo - parcelado*(n-1)
+	resto := ultima - parcelado
+	if ultima < minCentavosPorParcela || resto > 0 {
+		// Saldo pequeno demais pra distribuir em reais cheios: volta pra
+		// divisão exata em centavos (última leva o resto).
+		parcelado = saldo / n
+		resto = saldo % n
+		ultima = parcelado + resto
+	}
 
 	return ReparcelamentoResult{
 		SaldoCents:         saldo,

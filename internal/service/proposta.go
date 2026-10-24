@@ -83,7 +83,7 @@ func (p *PropostaService) Gerar(nomeCliente string, in ReparcelamentoInput, res 
 		Final:        res.FinalCents,
 		UltimaFinal:  res.UltimaFinalCents,
 		TemEntrada:   in.EntradaCents > 0,
-		TemResto:     res.RestoCents > 0,
+		TemResto:     res.UltimaParcelaCents != res.ParceladoCents,
 		QuitaTotal:   res.SaldoCents == 0,
 		Vezes:        in.NumeroVezes,
 	})

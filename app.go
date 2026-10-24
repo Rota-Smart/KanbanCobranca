@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +25,7 @@ type App struct {
 	db        *sql.DB
 	dbPath    string // caminho do arquivo do banco; vazio em testes antigos
 	tickets   *db.TicketRepo
+	vinculos  *db.VinculoRepo
 	cobrancas *db.CobrancaRepo
 	colunas   *db.ColumnRepo
 	propostas *service.PropostaService
@@ -77,6 +80,7 @@ func NewApp(database *sql.DB, propostas *service.PropostaService) *App {
 		ctx:       context.Background(),
 		db:        database,
 		tickets:   db.NewTicketRepo(database),
+		vinculos:  db.NewVinculoRepo(database),
 		cobrancas: db.NewCobrancaRepo(database),
 		colunas:   db.NewColumnRepo(database),
 		chats:     db.NewChatRepo(database),
@@ -278,6 +282,67 @@ func (a *App) GetHistoricoCobrancas(ticketID int64) ([]db.Cobranca, error) {
 	return list, nil
 }
 
+// ValorAtualCliente reconsulta o 360 e devolve o total em aberto de agora
+// (com encargos), em centavos — o "depois do giro dos juros".
+func (a *App) ValorAtualCliente(ticketID int64) (int64, error) {
+	t, err := a.tickets.Get(a.ctx, ticketID)
+	if err != nil {
+		return 0, friendly("ValorAtualCliente", err)
+	}
+	c := a.rotaAtual()
+	if c == nil {
+		return 0, rota360.ErrSemSessao
+	}
+	if strings.TrimSpace(t.CodService) == "" {
+		return 0, fmt.Errorf("card sem código service — importe o cliente do 360")
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 25*time.Second)
+	defer cancel()
+	_, fin, err := a.sincronizarCliente(ctx, c, t.CodService)
+	if err != nil {
+		if cli, _ := a.clientes.Get(ctx, t.CodService); cli != nil && cli.SaldoCents > 0 {
+			return cli.SaldoCents, nil
+		}
+		return 0, friendly("ValorAtualCliente", err)
+	}
+	if fin == nil {
+		if cli, _ := a.clientes.Get(ctx, t.CodService); cli != nil {
+			return cli.SaldoCents, nil
+		}
+		return 0, fmt.Errorf("360 não devolveu financeiro para %s", t.CodService)
+	}
+	return floatParaCents(fin.Sources.InsideService.Data.Financeiro.TotalDevendoComEncargos), nil
+}
+
+// AtualizarTotalCobranca substitui o total em aberto do acordo ativo (a
+// confirmação é do frontend) e devolve o acordo recalculado.
+func (a *App) AtualizarTotalCobranca(ticketID int64, totalCents int64) (db.Cobranca, error) {
+	cob, err := a.cobrancas.GetAtiva(a.ctx, ticketID)
+	if err != nil {
+		return db.Cobranca{}, friendly("AtualizarTotalCobranca", err)
+	}
+	if cob == nil {
+		return db.Cobranca{}, fmt.Errorf("sem acordo ativo para atualizar")
+	}
+	res, err := service.CalculateReparcelamento(service.ReparcelamentoInput{
+		TotalAbertoCents: totalCents,
+		EntradaCents:     cob.EntradaCents,
+		NumeroVezes:      cob.NumeroVezes,
+		ParcelaBaseCents: cob.ParcelaBaseCents,
+	})
+	if err != nil {
+		return db.Cobranca{}, err
+	}
+	if err := a.cobrancas.UpdateTotal(a.ctx, cob.ID, totalCents, res.ParceladoCents, res.UltimaParcelaCents, res.FinalCents); err != nil {
+		return db.Cobranca{}, friendly("AtualizarTotalCobranca", err)
+	}
+	salva, err := a.cobrancas.GetAtiva(a.ctx, ticketID)
+	if err != nil || salva == nil {
+		return db.Cobranca{}, friendly("AtualizarTotalCobranca", err)
+	}
+	return *salva, nil
+}
+
 // UpdateStatusCobranca altera o status do acordo.
 func (a *App) UpdateStatusCobranca(id int64, status string) error {
 	if !service.StatusCobrancaValido(status) {
@@ -304,7 +369,7 @@ func (a *App) GenerateProposal(ticketID int64, in service.ReparcelamentoInput, p
 	if err != nil {
 		return service.Proposta{}, friendly("GenerateProposal", err)
 	}
-	if !polirComIA || a.groq == nil || a.groq.Chave() == "" {
+	if !polirComIA || a.groq == nil || !a.groq.TemChave() {
 		return prop, nil
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
@@ -328,7 +393,7 @@ func (a *App) GenerateProposal(ticketID int64, in service.ReparcelamentoInput, p
 
 // HasAI diz ao frontend se o botão "Polir com IA" deve aparecer.
 func (a *App) HasAI() bool {
-	return a.groq != nil && a.groq.Chave() != ""
+	return a.groq != nil && a.groq.TemChave()
 }
 
 // ExportBackup abre o diálogo de salvar e grava uma cópia consistente

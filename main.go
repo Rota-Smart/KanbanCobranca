@@ -102,6 +102,18 @@ func main() {
 		},
 	)
 	groq.ProvedorInjetavel = provedorIA
+	// Fallback do modo auto (Groq → DeepInfra no teto do free).
+	groq.DeepInfraChaveInjetavel = func() string {
+		ctx := context.Background()
+		if v, _ := config.Get(ctx, "deepinfra_chave"); v != "" {
+			return v
+		}
+		return os.Getenv("DEEPINFRA_API_KEY")
+	}
+	groq.DeepInfraModeloInjetavel = func() string {
+		v, _ := config.Get(context.Background(), "deepinfra_modelo")
+		return v
+	}
 	// Contador diário de uso (limites do plano free da Groq), exibido nas
 	// Configurações. ctx em background: roda também durante o boot.
 	groq.OnUsage = func(prompt, completion int) {

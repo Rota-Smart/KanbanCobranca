@@ -134,7 +134,13 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   async function escolherProvedor(p: string) {
     try {
       await App.SetProvedorIA(p);
-      props.onToast(p === 'deepinfra' ? 'Provedor: DeepInfra.' : 'Provedor: Groq.');
+      props.onToast(
+        p === 'deepinfra'
+          ? 'Provedor: DeepInfra.'
+          : p === 'auto'
+            ? 'Provedor: Automático (Groq → DeepInfra no teto).'
+            : 'Provedor: Groq.',
+      );
       recarregar();
     } catch (e) {
       props.onToast(String(e));
@@ -337,6 +343,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
             {[
               ['groq', 'Groq'],
               ['deepinfra', 'DeepInfra'],
+              ['auto', 'Auto'],
             ].map(([valor, rotulo]) => (
               <button
                 key={valor}
@@ -352,6 +359,13 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               </button>
             ))}
           </div>
+          {cfg?.provedor === 'auto' && (
+            <p className="text-xs text-slate-500 mt-2">
+              <strong>Automático:</strong> a Groq (free) atende normalmente; ao bater o teto, o app
+              espera até 15 s pela janela de limites e, sem liberação, manda pra DeepInfra — onde
+              fica por 30 s antes de voltar pra Groq. Configure as duas chaves abaixo.
+            </p>
+          )}
           {usoGroq && cfg?.provedor !== 'deepinfra' && (
             <p className="text-xs text-slate-500 mt-1">
               Uso hoje: <strong>{usoGroq.requisicoes}</strong> requisições ·{' '}
@@ -359,7 +373,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               <span className="text-slate-400">(limites do plano free: 1.000 req/dia, 200k tokens/dia)</span>
             </p>
           )}
-          {cfg?.provedor === 'deepinfra' ? (
+          {cfg?.provedor !== 'groq' && (
             <>
               <p className="text-xs text-slate-500 mt-2">
                 Chave em deepinfra.com/dashboard/api-tokens. Modelo sugerido:{' '}
@@ -405,7 +419,8 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
                 </div>
               </div>
             </>
-          ) : (
+          )}
+          {cfg?.provedor !== 'deepinfra' && (
             <>
               <p className="text-xs text-slate-500 mt-2">
                 Chave gratuita em console.groq.com. Modelo sugerido:{' '}

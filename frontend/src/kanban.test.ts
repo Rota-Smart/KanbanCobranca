@@ -13,6 +13,7 @@ function t(id: number, coluna: string, posicao: number): Ticket {
     telefone: '',
     ticket360Id: '',
     ticket360Numero: '',
+    observacoes: '',
     colunaAtual: coluna,
     posicao,
     createdAt: '',

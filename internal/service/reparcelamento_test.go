@@ -18,9 +18,13 @@ func TestCalculateReparcelamento(t *testing.T) {
 		{"Divisão exata", ReparcelamentoInput{12000, 0, 4, 0},
 			ReparcelamentoResult{SaldoCents: 12000, ParceladoCents: 3000, RestoCents: 0, UltimaParcelaCents: 3000, FinalCents: 3000, UltimaFinalCents: 3000}, nil},
 		{"Resto de 1 centavo", ReparcelamentoInput{10000, 0, 3, 0},
-			ReparcelamentoResult{SaldoCents: 10000, ParceladoCents: 3333, RestoCents: 1, UltimaParcelaCents: 3334, FinalCents: 3333, UltimaFinalCents: 3334}, nil},
+			ReparcelamentoResult{SaldoCents: 10000, ParceladoCents: 3400, RestoCents: -200, UltimaParcelaCents: 3200, FinalCents: 3400, UltimaFinalCents: 3200}, nil},
 		{"Resto de 4 centavos", ReparcelamentoInput{10000, 0, 7, 0},
-			ReparcelamentoResult{SaldoCents: 10000, ParceladoCents: 1428, RestoCents: 4, UltimaParcelaCents: 1432, FinalCents: 1428, UltimaFinalCents: 1432}, nil},
+			ReparcelamentoResult{SaldoCents: 10000, ParceladoCents: 1500, RestoCents: -500, UltimaParcelaCents: 1000, FinalCents: 1500, UltimaFinalCents: 1000}, nil},
+		{"Parcela cai pro real cheio", ReparcelamentoInput{100000, 0, 3, 0},
+			ReparcelamentoResult{SaldoCents: 100000, ParceladoCents: 33400, RestoCents: -200, UltimaParcelaCents: 33200, FinalCents: 33400, UltimaFinalCents: 33200}, nil},
+		{"Saldo ímpar numa vez", ReparcelamentoInput{10001, 0, 1, 5000},
+			ReparcelamentoResult{SaldoCents: 10001, ParceladoCents: 10001, RestoCents: 0, UltimaParcelaCents: 10001, FinalCents: 15001, UltimaFinalCents: 15001}, nil},
 		{"Uma parcela só", ReparcelamentoInput{10000, 2000, 1, 5000},
 			ReparcelamentoResult{SaldoCents: 8000, ParceladoCents: 8000, RestoCents: 0, UltimaParcelaCents: 8000, FinalCents: 13000, UltimaFinalCents: 13000}, nil},
 		{"Entrada = total", ReparcelamentoInput{10000, 10000, 1, 5000},
@@ -48,6 +52,32 @@ func TestCalculateReparcelamento(t *testing.T) {
 				t.Fatalf("resultado = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestEntradaMinima cobre a Política v7: 20% na primeira renegociação, 40%
+// quando já renegociou, sempre num múltiplo de R$ 50 pra cima.
+func TestEntradaMinima(t *testing.T) {
+	if got := EntradaMinima(58400, false); got != 15000 { // 20% = 116,80 → 150
+		t.Fatalf("EntradaMinima(58400, false) = %d, want 15000", got)
+	}
+	if got := EntradaMinima(58400, true); got != 25000 { // 40% = 233,60 → 250
+		t.Fatalf("EntradaMinima(58400, true) = %d, want 25000", got)
+	}
+	if got := EntradaMinima(50000, false); got != 10000 {
+		t.Fatalf("múltiplo exato mudou: %d", got)
+	}
+	if got := EntradaMinima(0, true); got != 0 {
+		t.Fatalf("total zero: %d", got)
+	}
+	if got := Arredondar50Cima(1); got != 5000 {
+		t.Fatalf("Arredondar50Cima(1) = %d", got)
+	}
+	if got := ArredondarRealCima(3333); got != 3400 {
+		t.Fatalf("ArredondarRealCima(3333) = %d", got)
+	}
+	if got := ArredondarRealCima(-5); got != 0 {
+		t.Fatalf("ArredondarRealCima negativo = %d", got)
 	}
 }
 

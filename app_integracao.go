@@ -635,6 +635,11 @@ func (a *App) GerarRenegociacao(ticketID int64) (RenegociacaoPronta, error) {
 		}
 	}
 
+	// Política v7: entrada mínima de 20% (primeira renegociação) ou 40%
+	// (cliente já renegociou), num múltiplo de R$ 50 pra cima.
+	jaRenegociou := res.Avaliacao != nil && res.Avaliacao.Renegociou
+	res.EntradaCents = service.EntradaMinima(res.TotalAbertoCents, jaRenegociou)
+
 	in := service.ReparcelamentoInput{
 		TotalAbertoCents: res.TotalAbertoCents,
 		EntradaCents:     res.EntradaCents,
@@ -671,7 +676,7 @@ func faturasDoCache(cli *db.Cliente360) []rota360.Fatura360 {
 type ConfigApp struct {
 	GroqModelo        string `json:"groqModelo"`
 	GroqTemChave      bool   `json:"groqTemChave"`
-	Provedor          string `json:"provedor"`          // "groq" (padrão) ou "deepinfra"
+	Provedor          string `json:"provedor"`          // "groq" (padrão), "deepinfra" ou "auto"
 	DeepInfraTemChave bool   `json:"deepInfraTemChave"`
 	Autor360      string `json:"autor360"`
 	RotaConectado bool   `json:"rotaConectado"`
@@ -691,20 +696,24 @@ func (a *App) GetConfig() ConfigApp {
 	}
 }
 
-// provedorIA devolve o provedor ativo ("groq" é o default).
+// provedorIA devolve o provedor ativo ("groq" é o default; "auto" usa a Groq
+// e manda pro DeepInfra no teto do free).
 func (a *App) provedorIA() string {
-	if p := a.configGet(a.ctx, cfgIaProvedor); p == service.ProvedorDeepInfra {
+	switch p := a.configGet(a.ctx, cfgIaProvedor); p {
+	case service.ProvedorDeepInfra, service.ProvedorAuto:
 		return p
 	}
 	return service.ProvedorGroq
 }
 
-// SetProvedorIA escolhe entre Groq e DeepInfra.
+// SetProvedorIA escolhe entre Groq, DeepInfra e auto (Groq → DeepInfra).
 func (a *App) SetProvedorIA(provedor string) error {
 	if a.config == nil {
 		return fmt.Errorf("configuração indisponível")
 	}
-	if provedor != service.ProvedorGroq && provedor != service.ProvedorDeepInfra {
+	switch provedor {
+	case service.ProvedorGroq, service.ProvedorDeepInfra, service.ProvedorAuto:
+	default:
 		return fmt.Errorf("provedor inválido: %s", provedor)
 	}
 	return a.config.Set(a.ctx, cfgIaProvedor, provedor)

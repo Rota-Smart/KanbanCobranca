@@ -103,3 +103,20 @@ func (r *CobrancaRepo) UpdateStatus(ctx context.Context, id int64, status string
 	}
 	return nil
 }
+
+// UpdateTotal substitui o total em aberto da cobrança ativa e as parcelas
+// derivadas já recalculadas (botão "atualizar valor salvo" após os juros
+// rodarem no 360).
+func (r *CobrancaRepo) UpdateTotal(ctx context.Context, id, totalCents, parcelado, ultima, final int64) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE cobrancas SET total_aberto_cents = ?, parcelado_cents = ?, ultima_parcela_cents = ?, final_cents = ?,
+		 updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`,
+		totalCents, parcelado, ultima, final, id)
+	if err != nil {
+		return fmt.Errorf("atualizar total da cobrança %d: %w", id, err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return ErrCobrancaNaoEncontrada
+	}
+	return nil
+}

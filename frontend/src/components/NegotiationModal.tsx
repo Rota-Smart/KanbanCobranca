@@ -11,6 +11,7 @@ import type {
   RenegociacaoPronta,
   ResultadoCobranca,
   Ticket,
+  Vinculo360,
 } from '../wails-types';
 import { formatCents, parseCents } from '../money';
 import OrcamentoModal from './OrcamentoModal';
@@ -30,12 +31,13 @@ interface Props {
 }
 
 // Seções do card completo: o nav troca o conteúdo, estilo coluna do Kanban.
-type Aba = 'acordo' | 'proposta' | 'cliente' | 'financeiro' | 'historico';
+type Aba = 'acordo' | 'proposta' | 'cliente' | 'observacoes' | 'financeiro' | 'historico';
 
 const abas: { id: Aba; icone: string; rotulo: string }[] = [
   { id: 'acordo', icone: '📝', rotulo: 'Acordo' },
   { id: 'proposta', icone: '✉️', rotulo: 'Proposta' },
   { id: 'cliente', icone: '👤', rotulo: 'Cliente' },
+  { id: 'observacoes', icone: '🗒️', rotulo: 'Observações' },
   { id: 'financeiro', icone: '💰', rotulo: 'Financeiro' },
   { id: 'historico', icone: '🕘', rotulo: 'Histórico' },
 ];
@@ -75,6 +77,13 @@ function LinhaDado(props: { rotulo: string; valor: React.ReactNode }) {
 const brlReais = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+// Valor à vista: faturas vencidas + 50% dos juros (encargos), arredondado
+// pra cima pro real inteiro.
+const valorAVista = (r: RenegociacaoPronta) => {
+  const encargos = Math.max(0, r.totalVencidoEncargosCents - r.totalVencidoCents);
+  return r.totalVencidoCents + Math.ceil(encargos / 200) * 100;
+};
+
 const dataBR = (iso: string) => {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -105,8 +114,18 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
   const [gerando, setGerando] = useState(false);
   const [gerarErro, setGerarErro] = useState('');
   const [reneg, setReneg] = useState<RenegociacaoPronta | null>(null);
+  const [cobAtiva, setCobAtiva] = useState<Cobranca | null>(null);
+  const [valorAtual, setValorAtual] = useState<number | null>(null);
+  const [consultando, setConsultando] = useState(false);
+  const [valorAtualErro, setValorAtualErro] = useState('');
   const [cortesiaQtd, setCortesiaQtd] = useState(1);
   const [cortesiaMeses, setCortesiaMeses] = useState(3);
+  const [obsDraft, setObsDraft] = useState(ticket.observacoes ?? '');
+  const [obsEstado, setObsEstado] = useState<'pronto' | 'salvando' | 'salvo' | 'erro'>('pronto');
+  const [vinculos, setVinculos] = useState<Vinculo360[]>([]);
+  const [entradaVinculo, setEntradaVinculo] = useState('');
+  const [vinculoErro, setVinculoErro] = useState('');
+  const [vinculando, setVinculando] = useState(false);
   const reqId = useRef(0);
   const debounce = useRef<ReturnType<typeof setTimeout>>();
 
@@ -127,11 +146,13 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
       setAvaliacao(preCobranca.avaliacao ?? null);
       setFin(preCobranca.financeiro ?? null);
       setFaturas(preCobranca.faturas ?? []);
+      setCobAtiva(preCobranca.cobranca);
       if (preCobranca.aviso) setCalcErro(preCobranca.aviso);
       return;
     }
     App.GetCobrancaAtiva(ticket.id).then((c) => {
       if (!c) return;
+      setCobAtiva(c);
       setStatus(c.status);
       setTotal(formatCents(c.totalAbertoCents));
       setEntrada(formatCents(c.entradaCents));
@@ -140,6 +161,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
     }).catch(() => {});
     App.GetHistoricoCobrancas(ticket.id).then(setHistorico).catch(() => {});
     App.GetAvaliacaoCliente(ticket.id).then(setAvaliacao).catch(() => {});
+    App.VinculosDoCard(ticket.id).then((vs) => setVinculos(vs ?? [])).catch(() => {});
   }, [ticket.id, preCobranca]);
 
   useEffect(() => {
@@ -192,6 +214,61 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
     }
   };
 
+  // Avisa o App que o card mudou (mesmo canal do TicketCard), para o board e
+  // o modal refletirem observações/vínculos sem recarregar.
+  function notificarCardAtualizado(t: Ticket) {
+    window.dispatchEvent(new CustomEvent('ticket-atualizado', { detail: t }));
+  }
+
+  async function salvarObs() {
+    setObsEstado('salvando');
+    try {
+      const t = await App.SalvarObservacoesTicket(ticket.id, obsDraft);
+      notificarCardAtualizado(t);
+      setObsEstado('salvo');
+      setTimeout(() => setObsEstado('pronto'), 2000);
+    } catch {
+      setObsEstado('erro');
+    }
+  }
+
+  async function vincularTicket(entrada: string) {
+    setVinculoErro('');
+    try {
+      const t = await App.VincularTicket360(ticket.id, entrada);
+      notificarCardAtualizado(t);
+      setEntradaVinculo('');
+      setVinculando(false);
+      const vs = await App.VinculosDoCard(ticket.id);
+      setVinculos(vs ?? []);
+    } catch (e) {
+      setVinculoErro(String(e));
+    }
+  }
+
+  async function removerVinculo(id: number) {
+    setVinculoErro('');
+    try {
+      const vs = await App.RemoverVinculo360(id);
+      setVinculos(vs ?? []);
+      // O principal pode ter mudado: puxa o card atualizado para o board.
+      const ts = await App.GetTickets();
+      const t = (ts as Ticket[]).find((x) => x.id === ticket.id);
+      if (t) notificarCardAtualizado(t);
+    } catch (e) {
+      setVinculoErro(String(e));
+    }
+  }
+
+  async function abrirVinculo(uuid: string) {
+    setVinculoErro('');
+    try {
+      await App.AbrirTicket360DoCard(uuid);
+    } catch (e) {
+      setVinculoErro(String(e));
+    }
+  }
+
   // gerarRenegociacao puxa os valores em aberto do 360 (Política v7 + padrão
   // da proposta ficam no backend) e preenche o acordo; o texto sai na aba Proposta.
   async function gerarRenegociacao() {
@@ -218,13 +295,15 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
     }
   }
 
-  // pagamentoAVista preenche o acordo como entrada única só dos valores já
-  // vencidos (o mês corrente segue na mensalidade normal).
+  // pagamentoAVista preenche o acordo como entrada única dos valores já
+  // vencidos com 50% de desconto nos juros (encargos) — o mês corrente segue
+  // na mensalidade normal.
   async function pagamentoAVista() {
     if (!reneg || reneg.totalVencidoCents <= 0) return;
+    const valor = valorAVista(reneg);
     const input: ReparcelamentoInput = {
-      totalAbertoCents: reneg.totalVencidoCents,
-      entradaCents: reneg.totalVencidoCents,
+      totalAbertoCents: valor,
+      entradaCents: valor,
       numeroVezes: 1,
       parcelaBaseCents: parseCents(base) ?? reneg.parcelaBaseCents,
     };
@@ -311,6 +390,39 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
     }
   }
 
+  // verValorAtual reconsulta o 360 — mostra quanto o débito cresceu com os
+  // juros desde que o card entrou na coluna.
+  async function verValorAtual() {
+    setConsultando(true);
+    setValorAtualErro('');
+    try {
+      setValorAtual(await App.ValorAtualCliente(ticket.id));
+    } catch (e) {
+      setValorAtualErro(String(e));
+    } finally {
+      setConsultando(false);
+    }
+  }
+
+  // salvarValorAtual substitui o total salvo do acordo pelo valor de agora
+  // (com confirmação); a data de entrada na coluna é preservada.
+  async function salvarValorAtual() {
+    if (valorAtual === null || !cobAtiva) return;
+    if (!window.confirm(
+      `Substituir o valor salvo (${formatCents(cobAtiva.totalAbertoCents)}) pelo valor atual de agora (${formatCents(valorAtual)})?`,
+    )) return;
+    setValorAtualErro('');
+    try {
+      const c = await App.AtualizarTotalCobranca(ticket.id, valorAtual);
+      setCobAtiva(c);
+      setTotal(formatCents(c.totalAbertoCents));
+      setValorAtual(null);
+      setSuja(false);
+    } catch (e) {
+      setValorAtualErro(String(e));
+    }
+  }
+
   function tentarFechar() {
     if (suja && !window.confirm('Há alterações não salvas. Fechar mesmo assim?')) return;
     onFechar();
@@ -384,10 +496,10 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
               <div className="flex flex-wrap gap-1.5 items-center">
                 <button
                   className="px-2.5 py-1.5 rounded-lg text-[13px] font-medium text-white bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 disabled:opacity-60"
-                  title={`Entrada única quitando só as faturas vencidas (${formatCents(reneg.totalVencidoCents)}); a mensalidade do mês segue normal`}
+                  title={`Entrada única quitando as faturas vencidas com 50% de desconto nos juros; a mensalidade do mês segue normal`}
                   onClick={pagamentoAVista}
                 >
-                  💵 À vista (só vencidas: {formatCents(reneg.totalVencidoCents)})
+                  💵 À vista (vencidas + 50% dos juros: {formatCents(valorAVista(reneg))})
                 </button>
                 {[3, 6, 12].map((n) => (
                   <button
@@ -454,7 +566,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
                 <span className="text-right">{formatCents(calc.parceladoCents)}</span>
                 <span className="text-slate-500">Nova parcela mensal</span>
                 <span className="text-right font-medium">{formatCents(calc.finalCents)}</span>
-                {calc.restoCents > 0 && (
+                {calc.ultimaParcelaCents !== calc.parceladoCents && (
                   <>
                     <span className="text-slate-500">Última parcela</span>
                     <span className="text-right">{formatCents(calc.ultimaFinalCents)}</span>
@@ -510,6 +622,41 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
                     </p>
                   </>
                 )}
+              </div>
+            )}
+
+            {cobAtiva && (
+              <div className="rounded-lg p-3 text-sm bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600">
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">📊 Valor devido</h3>
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                  Quando entrou na coluna ({cobAtiva.dataContrato ? new Date(`${cobAtiva.dataContrato}T12:00:00`).toLocaleDateString('pt-BR') : '—'}):{' '}
+                  <b>{formatCents(cobAtiva.totalAbertoCents)}</b>
+                </p>
+                {valorAtual !== null && (
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    Agora, com os juros corridos: <b className={valorAtual > cobAtiva.totalAbertoCents ? 'text-red-600' : ''}>{formatCents(valorAtual)}</b>
+                  </p>
+                )}
+                <div className="mt-2 flex gap-1.5 flex-wrap">
+                  <button
+                    className="px-2.5 py-1.5 rounded-lg text-[13px] font-medium border text-slate-600 hover:bg-slate-500/10 dark:text-slate-300 disabled:opacity-60"
+                    disabled={consultando}
+                    title="Reconsulta o 360 e mostra o total em aberto de agora"
+                    onClick={verValorAtual}
+                  >
+                    {consultando ? '🔄 Consultando…' : '🔍 Ver valor atual'}
+                  </button>
+                  {valorAtual !== null && valorAtual !== cobAtiva.totalAbertoCents && (
+                    <button
+                      className="px-2.5 py-1.5 rounded-lg text-[13px] font-medium text-white bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500"
+                      title="Salva o valor atual como o total em aberto do acordo"
+                      onClick={salvarValorAtual}
+                    >
+                      💾 Atualizar valor salvo
+                    </button>
+                  )}
+                </div>
+                {valorAtualErro && <p className="mt-1 text-xs text-red-600 break-words">{valorAtualErro}</p>}
               </div>
             )}
 
@@ -583,10 +730,71 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
               <LinhaDado rotulo="Ticket" valor={ticket.numeroTicket} />
               <LinhaDado rotulo="Telefone" valor={ticket.telefone} />
               <LinhaDado rotulo="Endereço" valor={ticket.endereco} />
-              <LinhaDado
-                rotulo="Ticket 360"
-                valor={ticket.ticket360Numero && `#${ticket.ticket360Numero}`}
-              />
+            </div>
+
+            <div className="flex flex-col gap-1.5 bg-white/40 dark:bg-white/5 rounded-lg p-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">🎫 Tickets do 360</h3>
+                <button
+                  className="text-xs px-2 py-1 rounded-lg bg-indigo-100/80 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200 hover:bg-indigo-200/80"
+                  onClick={() => setVinculando((v) => !v)}
+                >
+                  {vinculando ? 'Cancelar' : '+ Vincular ticket'}
+                </button>
+              </div>
+              {vinculando && (
+                <form
+                  className="flex gap-1"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    vincularTicket(entradaVinculo.trim());
+                  }}
+                >
+                  <input
+                    autoFocus
+                    className="flex-1 border rounded px-2 py-1 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100"
+                    placeholder="nº, #nº, uuid ou URL do ticket"
+                    value={entradaVinculo}
+                    onChange={(e) => setEntradaVinculo(e.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    className="text-xs px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500"
+                  >
+                    Vincular
+                  </button>
+                </form>
+              )}
+              {vinculos.length === 0 ? (
+                <p className="text-xs text-slate-500">Nenhum ticket do 360 vinculado a este card.</p>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {vinculos.map((v) => (
+                    <li key={v.id} className="flex items-center gap-2 text-xs">
+                      <button
+                        title={`Abrir ticket #${v.ticket360Numero} no navegador`}
+                        className="px-2 py-0.5 rounded-full font-medium bg-indigo-100/80 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200 hover:bg-indigo-200/80 shrink-0"
+                        onClick={() => abrirVinculo(v.ticket360Id)}
+                      >
+                        🌐 #{v.ticket360Numero || v.ticket360Id.slice(0, 8)}
+                      </button>
+                      <span className="text-slate-700 dark:text-slate-200 truncate flex-1 min-w-0" title={v.assunto}>
+                        {v.assunto || 'Sem assunto'}
+                      </span>
+                      <button
+                        title="Remover vínculo deste card"
+                        className="text-slate-400 hover:text-red-500 shrink-0"
+                        onClick={() => removerVinculo(v.id)}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {vinculoErro && (
+                <p className="text-[10px] text-red-600 dark:text-red-400 break-words">{vinculoErro}</p>
+              )}
             </div>
 
             {reneg && (reneg.valorMensalidadeCents > 0 || reneg.contratoAssinatura) && (
@@ -631,6 +839,34 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {aba === 'observacoes' && (
+          <div className="mt-3 flex flex-col gap-2">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Observações internas do card — visíveis só aqui e para o assistente; não vão para o cliente nem para o ticket.
+            </p>
+            <textarea
+              className="w-full min-h-40 border rounded-lg p-2 text-sm bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100"
+              placeholder="Ex.: cliente pediu para ligar só depois das 18h; prometi retornar sexta."
+              value={obsDraft}
+              onChange={(e) => {
+                setObsDraft(e.target.value);
+                setObsEstado('pronto');
+              }}
+            />
+            <div className="flex items-center gap-2">
+              <button
+                className="text-sm px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+                disabled={obsEstado === 'salvando' || obsDraft === (ticket.observacoes ?? '')}
+                onClick={salvarObs}
+              >
+                {obsEstado === 'salvando' ? 'Salvando…' : 'Salvar observações'}
+              </button>
+              {obsEstado === 'salvo' && <span className="text-xs text-emerald-600">Salvo ✓</span>}
+              {obsEstado === 'erro' && <span className="text-xs text-red-600">Erro ao salvar.</span>}
+            </div>
           </div>
         )}
 

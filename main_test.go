@@ -178,13 +178,13 @@ func TestCalculateDebtECasosDoPlano(t *testing.T) {
 		t.Fatalf("caso 584/140/12x: %+v", res)
 	}
 
-	// 100,00 em 3x -> 33,33 + 33,33 + 33,34
+	// 100,00 em 3x -> 34 + 34 + 32 (parcela em real inteiro, última menor)
 	res, err = a.CalculateDebt(service.ReparcelamentoInput{TotalAbertoCents: 10000, NumeroVezes: 3})
 	if err != nil {
 		t.Fatalf("CalculateDebt 3x: %v", err)
 	}
 	soma := res.ParceladoCents*2 + res.UltimaParcelaCents
-	if res.ParceladoCents != 3333 || res.UltimaParcelaCents != 3334 || soma != 10000 {
+	if res.ParceladoCents != 3400 || res.UltimaParcelaCents != 3200 || soma != 10000 {
 		t.Fatalf("caso 100/3x: %+v", res)
 	}
 

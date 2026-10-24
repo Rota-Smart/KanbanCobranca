@@ -109,6 +109,174 @@ func jsonResposta(w http.ResponseWriter, conteudo string) {
 	w.Write([]byte(`{"choices":[{"message":{"content":"` + conteudo + `"}}]}`))
 }
 
+// clienteAuto monta um GroqCliente no modo auto com a Groq e a DeepInfra em
+// servidores de teste.
+func clienteAuto(t *testing.T, srvGroq, srvDI *httptest.Server, chaveGroq string) *GroqCliente {
+	t.Helper()
+	return &GroqCliente{
+		HTTP:                    srvGroq.Client(),
+		Endpoint:                srvGroq.URL,
+		EndpointFallback:        srvDI.URL,
+		ChaveInjetavel:          func() string { return chaveGroq },
+		DeepInfraChaveInjetavel: func() string { return "chave-di" },
+		ProvedorInjetavel:       func() string { return ProvedorAuto },
+	}
+}
+
+func TestAutoEsperaCurtaContinuaNaGroq(t *testing.T) {
+	var chamadasGroq, chamadasDI int
+	srvGroq := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chamadasGroq++
+		if chamadasGroq == 1 {
+			w.Header().Set("Retry-After", "0.2") // janela curta: cabe no orçamento de 15s
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		jsonResposta(w, "da groq")
+	}))
+	t.Cleanup(srvGroq.Close)
+	srvDI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chamadasDI++
+		jsonResposta(w, "da deepinfra")
+	}))
+	t.Cleanup(srvDI.Close)
+	g := clienteAuto(t, srvGroq, srvDI, "gsk")
+
+	res, err := g.Completar(context.Background(), "s", "u")
+	if err != nil {
+		t.Fatalf("deveria esperar a janela curta na Groq: %v", err)
+	}
+	if res != "da groq" {
+		t.Errorf("resposta: %q", res)
+	}
+	if chamadasDI != 0 {
+		t.Errorf("janela curta não deveria acionar o fallback; DeepInfra recebeu %d chamada(s)", chamadasDI)
+	}
+	if chamadasGroq != 2 {
+		t.Errorf("esperava 2 chamadas na Groq, houve %d", chamadasGroq)
+	}
+}
+
+func TestAutoFalhaProDeepInfraQuandoJanelaPassaDe15s(t *testing.T) {
+	var chamadasGroq, chamadasDI int
+	var modeloDI, authDI string
+	srvGroq := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chamadasGroq++
+		w.Header().Set("Retry-After", "45") // janela maior que o orçamento de 15s
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	t.Cleanup(srvGroq.Close)
+	srvDI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chamadasDI++
+		var req struct {
+			Model string `json:"model"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		modeloDI, authDI = req.Model, r.Header.Get("Authorization")
+		jsonResposta(w, "da deepinfra")
+	}))
+	t.Cleanup(srvDI.Close)
+	g := clienteAuto(t, srvGroq, srvDI, "gsk")
+
+	res, err := g.Completar(context.Background(), "s", "u")
+	if err != nil {
+		t.Fatalf("deveria falhar pro DeepInfra sem esperar os 45s: %v", err)
+	}
+	if res != "da deepinfra" {
+		t.Errorf("resposta: %q", res)
+	}
+	if chamadasGroq != 1 || chamadasDI != 1 {
+		t.Errorf("esperava 1 chamada na Groq + 1 na DeepInfra, houve %d e %d", chamadasGroq, chamadasDI)
+	}
+	if modeloDI != DeepInfraModeloPadrao {
+		t.Errorf("fallback deveria trocar o modelo; veio %q", modeloDI)
+	}
+	if authDI != "Bearer chave-di" {
+		t.Errorf("fallback deveria usar a chave da DeepInfra; veio %q", authDI)
+	}
+	if !g.emCooldown() {
+		t.Error("cooldown deveria estar armado após o failover")
+	}
+
+	// Segunda chamada dentro do cooldown: vai direto pro DeepInfra, sem
+	// pagar o roundtrip do 429 na Groq.
+	res, err = g.Completar(context.Background(), "s", "u")
+	if err != nil {
+		t.Fatalf("segunda chamada: %v", err)
+	}
+	if res != "da deepinfra" {
+		t.Errorf("segunda resposta: %q", res)
+	}
+	if chamadasGroq != 1 {
+		t.Errorf("cooldown deveria pular a Groq; ela recebeu %d chamadas", chamadasGroq)
+	}
+	if chamadasDI != 2 {
+		t.Errorf("esperava 2 chamadas na DeepInfra, houve %d", chamadasDI)
+	}
+}
+
+func TestAutoSemChaveGroqVaiDiretoProDeepInfra(t *testing.T) {
+	var chamadasGroq int
+	srvGroq := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chamadasGroq++
+		jsonResposta(w, "da groq")
+	}))
+	t.Cleanup(srvGroq.Close)
+	srvDI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jsonResposta(w, "da deepinfra")
+	}))
+	t.Cleanup(srvDI.Close)
+	g := clienteAuto(t, srvGroq, srvDI, "")
+
+	if !g.TemChave() {
+		t.Error("auto com chave só da DeepInfra deveria contar como chave presente")
+	}
+	res, err := g.Completar(context.Background(), "s", "u")
+	if err != nil {
+		t.Fatalf("deveria atender pelo fallback: %v", err)
+	}
+	if res != "da deepinfra" {
+		t.Errorf("resposta: %q", res)
+	}
+	if chamadasGroq != 0 {
+		t.Errorf("Groq sem chave não deveria ser chamada; recebeu %d", chamadasGroq)
+	}
+}
+
+// TestAutoSemDeepInfraDegenera garante que o modo auto sem chave de fallback
+// continua se comportando como hoje: espera a janela curta da Groq e atende.
+func TestAutoSemDeepInfraDegenera(t *testing.T) {
+	var chamadasGroq int
+	srvGroq := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chamadasGroq++
+		if chamadasGroq == 1 {
+			w.Header().Set("Retry-After", "0.2")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		jsonResposta(w, "da groq")
+	}))
+	t.Cleanup(srvGroq.Close)
+	srvDI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("DeepInfra não deveria ser chamada sem chave de fallback")
+		jsonResposta(w, "da deepinfra")
+	}))
+	t.Cleanup(srvDI.Close)
+	g := clienteAuto(t, srvGroq, srvDI, "gsk")
+	g.DeepInfraChaveInjetavel = func() string { return "" } // fallback indisponível
+
+	res, err := g.Completar(context.Background(), "s", "u")
+	if err != nil {
+		t.Fatalf("auto sem fallback deveria esperar a Groq: %v", err)
+	}
+	if res != "da groq" {
+		t.Errorf("resposta: %q", res)
+	}
+	if chamadasGroq != 2 {
+		t.Errorf("esperava 2 chamadas na Groq, houve %d", chamadasGroq)
+	}
+}
+
 func TestProvedorDeepInfra(t *testing.T) {
 	var modeloRecebido, authRecebido string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

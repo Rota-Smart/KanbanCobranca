@@ -3,6 +3,7 @@
 import type { db, service, main, rota360, atualizacao } from '../wailsjs/go/models';
 
 export type Ticket = db.Ticket;
+export type Vinculo360 = db.Vinculo360;
 export type Cobranca = db.Cobranca;
 export type Proposta = service.Proposta;
 export type ReparcelamentoInput = service.ReparcelamentoInput;

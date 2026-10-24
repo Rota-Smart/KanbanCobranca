@@ -285,6 +285,9 @@ export default function App() {
     function aoAtualizar(e: Event) {
       const t = (e as CustomEvent).detail as Ticket;
       if (!t?.id) return;
+      // Card aberto no modal: atualiza o snapshot também, senão a aba
+      // Cliente continua mostrando o vínculo antigo.
+      setAberto((a) => (a && a.id === t.id ? t : a));
       setBoard((b) => {
         const novo: Board = {};
         for (const [c, ts] of Object.entries(b)) {
@@ -382,6 +385,7 @@ export default function App() {
         telefone: '',
         ticket360Id: '',
         ticket360Numero: '',
+        observacoes: '',
         colunaAtual: coluna,
         posicao: fim,
         createdAt: '',

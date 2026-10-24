@@ -16,6 +16,18 @@ type Ticket struct {
 	UpdatedAt       string `json:"updatedAt"`
 	Ticket360ID     string `json:"ticket360Id"`     // uuid do ticket no helpdesk 360 (vazio = sem vínculo)
 	Ticket360Numero string `json:"ticket360Numero"` // número exibido no 360 (ex.: "12345")
+	Observacoes     string `json:"observacoes"`     // observações internas do card
+}
+
+// Vinculo360 é um ticket do helpdesk 360 ligado a um card — um card pode ter
+// vários. O assunto alimenta a aba Cliente; o uuid abre o ticket no navegador.
+type Vinculo360 struct {
+	ID              int64  `json:"id"`
+	TicketID        int64  `json:"ticketId"`
+	Ticket360ID     string `json:"ticket360Id"`
+	Ticket360Numero string `json:"ticket360Numero"`
+	Assunto         string `json:"assunto"`
+	CriadoEm        string `json:"criadoEm"`
 }
 
 // Cobranca é um acordo de reparcelamento; valores em int64 centavos.

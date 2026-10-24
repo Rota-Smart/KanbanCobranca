@@ -150,15 +150,29 @@ func (a *App) MensagensDoChat(id int64) ([]MensagemDoChat, error) {
 // O agente pode executar ferramentas: buscar clientes no 360, adicionar
 // cards, criar colunas, mover cards, consultar financeiro etc.
 func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, error) {
-	if a.groq == nil || a.groq.Chave() == "" {
-		return service.ChatResultado{}, fmt.Errorf("configure a chave da Groq em ⚙ Configurações para usar o assistente")
-	}
 	if a.chats == nil {
 		return service.ChatResultado{}, fmt.Errorf("conversas indisponíveis")
 	}
 	mensagem = strings.TrimSpace(mensagem)
 	if mensagem == "" {
 		return service.ChatResultado{}, fmt.Errorf("mensagem vazia")
+	}
+
+	// Comando rígido de card ("apague o card do João", "mova o card 123 para
+	// Cobrança"): reconhecido e executado localmente, sem chamar a API —
+	// funciona até sem chave de IA configurada.
+	if res, ok := a.executarIntencaoLocal(mensagem); ok {
+		if err := a.chats.AddMensagem(a.ctx, chatID, "user", mensagem, ""); err != nil {
+			return service.ChatResultado{}, friendly("EnviarChat", err)
+		}
+		if err := a.gravarResposta(chatID, res); err != nil {
+			return service.ChatResultado{}, err
+		}
+		return *res, nil
+	}
+
+	if a.groq == nil || !a.groq.TemChave() {
+		return service.ChatResultado{}, fmt.Errorf("configure a chave da IA em ⚙ Configurações para usar o assistente")
 	}
 
 	historico, err := a.historicoRecente(chatID)
@@ -410,6 +424,21 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		return fmt.Sprintf("Card %d movido para %s%s.", id, coluna, extra),
 			fmt.Sprintf("moveu o card %d para %s", id, coluna), nil
 
+	case "apagar_card":
+		id := argInt("ticketId")
+		if id <= 0 {
+			return "", "", fmt.Errorf("ticketId inválido")
+		}
+		t, err := a.tickets.Get(ctx, id)
+		if err != nil {
+			return "", "", err
+		}
+		if err := a.DeleteTicket(id); err != nil {
+			return "", "", err
+		}
+		return fmt.Sprintf("Card %d (%s) apagado, junto com os acordos.", id, t.NomeCliente),
+			fmt.Sprintf("apagou o card %d (%s)", id, t.NomeCliente), nil
+
 	case "vincular_ticket":
 		id := argInt("ticketId")
 		if id <= 0 {
@@ -429,6 +458,31 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		}
 		return resp,
 			fmt.Sprintf("vinculou o ticket #%s ao card %d (%s)", t.Ticket360Numero, t.ID, t.NomeCliente), nil
+
+	case "observacao_card":
+		id := argInt("ticketId")
+		obs := argStr("observacoes")
+		if id <= 0 {
+			return "", "", fmt.Errorf("ticketId inválido")
+		}
+		if argStr("modo") == "acrescentar" && obs != "" {
+			t, err := a.tickets.Get(ctx, id)
+			if err != nil {
+				return "", "", err
+			}
+			if atual := strings.TrimSpace(t.Observacoes); atual != "" {
+				obs = atual + "\n" + obs
+			}
+		}
+		if err := a.tickets.SetObservacoes(ctx, id, obs); err != nil {
+			return "", "", err
+		}
+		rotulo := "observações atualizadas"
+		if obs == "" {
+			rotulo = "observações apagadas"
+		}
+		return fmt.Sprintf("Card %d: %s.\nObservações agora:\n%s", id, rotulo, strings.TrimSpace(obs)),
+			fmt.Sprintf("salvou as observações internas do card %d", id), nil
 
 	case "avaliar_cliente":
 		id := argInt("ticketId")
@@ -873,7 +927,16 @@ func (a *App) vincularTicket360(ticketID int64, entrada string) (db.Ticket, stri
 
 	uuid, numero := dividirEntradaTicket(entrada)
 	if uuid == "" && numero == "" {
-		// desvincular
+		// desvincular: limpa o principal e tira da lista o ticket que era ele
+		if t.Ticket360ID != "" && a.vinculos != nil {
+			if vs, err := a.vinculos.List(a.ctx, t.ID); err == nil {
+				for _, v := range vs {
+					if v.Ticket360ID == t.Ticket360ID {
+						_, _ = a.vinculos.Remove(a.ctx, v.ID)
+					}
+				}
+			}
+		}
 		if err := a.tickets.VincularTicket360(a.ctx, t.ID, "", "", ""); err != nil {
 			return db.Ticket{}, "", friendly("VincularTicket360", err)
 		}
@@ -928,6 +991,17 @@ func (a *App) vincularTicket360(ticketID int64, entrada string) (db.Ticket, stri
 	if err := a.tickets.VincularTicket360(a.ctx, t.ID, uuid, numero, cod); err != nil {
 		return db.Ticket{}, "", friendly("VincularTicket360", err)
 	}
+	// Vínculos múltiplos: registra também na lista (com o título do 360 como
+	// assunto) para a aba Cliente exibir e abrir cada ticket.
+	if a.vinculos != nil {
+		assunto := ""
+		if det != nil {
+			assunto = det.Titulo
+		}
+		if err := a.vinculos.Upsert(a.ctx, t.ID, uuid, numero, assunto); err != nil {
+			return db.Ticket{}, "", friendly("VincularTicket360", err)
+		}
+	}
 	t, err = a.tickets.Get(a.ctx, t.ID)
 	if err != nil {
 		return db.Ticket{}, "", friendly("VincularTicket360", err)
@@ -945,6 +1019,55 @@ func (a *App) AbrirTicket360DoCard(uuid string) error {
 		return abrirNoNavegador(url)
 	}
 	return nil
+}
+
+// SalvarObservacoesTicket grava as observações internas do card e devolve o
+// card atualizado.
+func (a *App) SalvarObservacoesTicket(ticketID int64, observacoes string) (db.Ticket, error) {
+	if err := a.tickets.SetObservacoes(a.ctx, ticketID, strings.TrimSpace(observacoes)); err != nil {
+		return db.Ticket{}, friendly("SalvarObservacoesTicket", err)
+	}
+	t, err := a.tickets.Get(a.ctx, ticketID)
+	if err != nil {
+		return db.Ticket{}, friendly("SalvarObservacoesTicket", err)
+	}
+	return *t, nil
+}
+
+// VinculosDoCard lista os tickets do 360 vinculados ao card (pode haver vários).
+func (a *App) VinculosDoCard(ticketID int64) ([]db.Vinculo360, error) {
+	if a.vinculos == nil {
+		return nil, fmt.Errorf("vínculos indisponíveis")
+	}
+	vs, err := a.vinculos.List(a.ctx, ticketID)
+	if err != nil {
+		return nil, friendly("VinculosDoCard", err)
+	}
+	return vs, nil
+}
+
+// RemoverVinculo360 tira um ticket da lista de vínculos do card. Se era o
+// principal (campos legados do card), promove o mais recente restante — ou
+// limpa os campos se não sobrar nenhum.
+func (a *App) RemoverVinculo360(vinculoID int64) ([]db.Vinculo360, error) {
+	if a.vinculos == nil {
+		return nil, fmt.Errorf("vínculos indisponíveis")
+	}
+	v, err := a.vinculos.Remove(a.ctx, vinculoID)
+	if err != nil {
+		return nil, friendly("RemoverVinculo360", err)
+	}
+	if t, err := a.tickets.Get(a.ctx, v.TicketID); err == nil && t.Ticket360ID == v.Ticket360ID {
+		restantes, _ := a.vinculos.List(a.ctx, v.TicketID)
+		novo := db.Vinculo360{}
+		if len(restantes) > 0 {
+			novo = restantes[0]
+		}
+		if err := a.tickets.VincularTicket360(a.ctx, v.TicketID, novo.Ticket360ID, novo.Ticket360Numero, ""); err != nil {
+			return nil, friendly("RemoverVinculo360", err)
+		}
+	}
+	return a.VinculosDoCard(v.TicketID)
 }
 
 // agentPesquisarTickets lista os tickets abertos do 360 que casam com o
@@ -1011,7 +1134,14 @@ func (a *App) agentListarTickets(ctx context.Context, coluna string) (string, st
 		}
 		n++
 		if escritas < maxCardsNoResultado {
-			fmt.Fprintf(&sb, "id=%d | %s | coluna=%s | cod_service=%s\n", t.ID, t.NomeCliente, t.ColunaAtual, t.CodService)
+			fmt.Fprintf(&sb, "id=%d | %s | coluna=%s | cod_service=%s", t.ID, t.NomeCliente, t.ColunaAtual, t.CodService)
+			if obs := strings.TrimSpace(t.Observacoes); obs != "" {
+				if r := []rune(obs); len(r) > 120 {
+					obs = string(r[:120]) + "…"
+				}
+				fmt.Fprintf(&sb, " | obs: %s", obs)
+			}
+			sb.WriteString("\n")
 			escritas++
 		}
 	}
@@ -1147,4 +1277,59 @@ func (a *App) agentAlterarStatusTicket(ctx context.Context, numero, status strin
 	}
 	resumo := fmt.Sprintf("alterou o status do ticket #%s para %q", item.Numero, status)
 	return fmt.Sprintf("Status do ticket #%s alterado para %s.", item.Numero, status), resumo, nil
+}
+
+// executarIntencaoLocal reconhece comandos rígidos de card no texto e os
+// executa direto (reconhecimento local de intenção, sem API). ok=false
+// devolve a mensagem ao fluxo normal do agente.
+func (a *App) executarIntencaoLocal(mensagem string) (*service.ChatResultado, bool) {
+	in, ok := service.ParseIntencaoCard(mensagem)
+	if !ok {
+		return nil, false
+	}
+	ts, err := a.tickets.List(a.ctx)
+	if err != nil {
+		return &service.ChatResultado{Resposta: "Não consegui listar os cards: " + err.Error()}, true
+	}
+	cards := make([]service.CardResumo, 0, len(ts))
+	for _, t := range ts {
+		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService})
+	}
+	card, err := service.ResolverCard(in.Alvo, cards)
+	if err != nil {
+		return &service.ChatResultado{Resposta: err.Error()}, true
+	}
+	switch {
+	case in.Apagar:
+		if err := a.DeleteTicket(card.ID); err != nil {
+			return &service.ChatResultado{Resposta: "Falhou ao apagar: " + err.Error()}, true
+		}
+		return &service.ChatResultado{
+			Resposta: fmt.Sprintf("Card %d (%s) apagado, junto com os acordos dele.", card.ID, card.NomeCliente),
+			Acoes:    []service.AcaoDoAgente{{Ferramenta: "apagar_card", Resumo: fmt.Sprintf("apagou o card %d (%s) via comando local", card.ID, card.NomeCliente)}},
+		}, true
+	default:
+		colunas, err := a.colunas.List(a.ctx)
+		if err != nil {
+			return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error()}, true
+		}
+		valida := false
+		for _, c := range colunas {
+			if strings.EqualFold(c, in.Coluna) {
+				in.Coluna = c
+				valida = true
+				break
+			}
+		}
+		if !valida {
+			return &service.ChatResultado{Resposta: fmt.Sprintf("Coluna %q não existe. Colunas: %s.", in.Coluna, strings.Join(colunas, ", "))}, true
+		}
+		if err := a.MoveTicket(card.ID, in.Coluna, a.contagemColuna(in.Coluna)); err != nil {
+			return &service.ChatResultado{Resposta: "Falhou ao mover: " + err.Error()}, true
+		}
+		return &service.ChatResultado{
+			Resposta: fmt.Sprintf("Card %d (%s) movido para %s.", card.ID, card.NomeCliente, in.Coluna),
+			Acoes:    []service.AcaoDoAgente{{Ferramenta: "mover_card", Resumo: fmt.Sprintf("moveu o card %d (%s) para %s via comando local", card.ID, card.NomeCliente, in.Coluna)}},
+		}, true
+	}
 }
