@@ -78,6 +78,14 @@ COMO INSTALAR (outro computador):
    cada um com o assunto: clique no 🌐 para abrir no navegador, ✕ remove o
    vínculo, e "+ Vincular ticket" adiciona outro pelo número/URL.
 
+16. MICROFONE PELO CHROME (v1.11.1): se o 🎤 do chat falhar dentro do app
+   (erro "NotReadableError" em máquinas com o runtime WebView2 problemático),
+   o app automaticamente captura o microfone na ABA do Chrome que já está
+   aberta no Rota 360 — sem abrir guia ou janela nova. O texto sai igual,
+   pela transcrição local (Whisper). Requisito: estar conectado ao 360
+   (a guia do Chrome do 360 aberta); na primeira vez o Chrome pode pedir
+   permissão de microfone nessa aba — clique em "Permitir".
+
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
    guia do Chrome; faça login lá UMA vez e o app captura e salva o cookie
