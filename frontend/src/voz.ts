@@ -18,15 +18,16 @@ interface OuvintesVoz {
 // esperar aguarda ms e resolve.
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// abrirMicrofone tenta abrir o dispositivo com restrições progressivas
-// (ocupado por outro programa é o caso comum; insistir costuma resolver).
+// abrirMicrofone tenta abrir o dispositivo pedindo o áudio MAIS CRU primeiro
+// (sem constraints: o navegador negocia a taxa nativa do dispositivo, sem
+// forçar o driver a renegociar — em máquinas com microfone fixo em 48 kHz
+// isso era o ponto de recusa do NotReadableError) e só depois insiste com
+// restrições (ocupado por outro programa é o caso comum; insistir resolve).
 async function abrirMicrofone(): Promise<MediaStream> {
-  const cheias: MediaStreamConstraints = {
-    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-  };
   const tentativas: MediaStreamConstraints[] = [
-    cheias,
     { audio: true },
+    { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } },
+    { audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false } },
   ];
   let ultimoErro: unknown;
   for (let rodada = 0; rodada < tentativas.length; rodada++) {
@@ -96,6 +97,23 @@ function wav16kHz(amostras: Float32Array, taxa: number): Uint8Array {
   return saida;
 }
 
+// para16k reamostra as amostras (capturadas na taxa NATIVA do dispositivo,
+// tipicamente 48 kHz) para 16 kHz por interpolação linear — o Whisper quer
+// 16 kHz, mas forçar o AudioContext a essa taxa fazia o WebView exigir
+// reconfiguração do driver (48 kHz/16 bits) e o microfone recusava abrir.
+function para16k(amostras: Float32Array, taxa: number): Float32Array {
+  if (taxa === TAXA) return amostras;
+  const alvo = Math.round((amostras.length * TAXA) / taxa);
+  const saida = new Float32Array(alvo);
+  for (let i = 0; i < alvo; i++) {
+    const pos = (i * (amostras.length - 1)) / (alvo - 1 || 1);
+    const j = Math.floor(pos);
+    const frac = pos - j;
+    saida[i] = amostras[j] * (1 - frac) + (amostras[j + 1] ?? amostras[j]) * frac;
+  }
+  return saida;
+}
+
 // bridge transcreve via Wails (base64: a ponte não carrega Uint8Array).
 async function transcrever(wav: Uint8Array): Promise<string> {
   let b64 = '';
@@ -130,7 +148,11 @@ export async function iniciarVoz(ouvintes: OuvintesVoz): Promise<() => void> {
     throw new Error(mensagemDeErro(e));
   }
 
-  const audioCtx = new AudioContext({ sampleRate: TAXA });
+  // Taxa NATIVA do dispositivo (48 kHz na maioria dos notebooks modernos):
+  // não forçamos 16 kHz aqui, que era o que fazia o driver recusar a abertura
+  // em máquinas com microfone fixo em 48 kHz/16 bits.
+  const audioCtx = new AudioContext();
+  const taxa = audioCtx.sampleRate;
   const fonte = audioCtx.createMediaStreamSource(stream);
   const fatiador = audioCtx.createScriptProcessor(QUADRO, 1, 1);
   fonte.connect(fatiador);
@@ -162,7 +184,7 @@ export async function iniciarVoz(ouvintes: OuvintesVoz): Promise<() => void> {
         off += p.length;
       }
       ouvintes.etapa?.('transcrevendo…');
-      const texto = (await transcrever(wav16kHz(tudo, TAXA))).trim();
+      const texto = (await transcrever(wav16kHz(para16k(tudo, taxa), TAXA))).trim();
       if (texto) {
         textos.push(texto);
         parciais();
@@ -195,13 +217,13 @@ export async function iniciarVoz(ouvintes: OuvintesVoz): Promise<() => void> {
     if (limpo) return;
     const amostra = new Float32Array(e.inputBuffer.getChannelData(0));
     buffer.push(amostra);
-    totalMs += (QUADRO / TAXA) * 1000;
+    totalMs += (QUADRO / taxa) * 1000;
     // RMS do quadro
     let soma = 0;
     for (let i = 0; i < amostra.length; i++) soma += amostra[i] * amostra[i];
     const rms = Math.sqrt(soma / amostra.length);
     if (rms > LIMIAR_RMS) {
-      falaMs += (QUADRO / TAXA) * 1000;
+      falaMs += (QUADRO / taxa) * 1000;
       silencioMs = 0;
     } else if (falaMs > 0) {
       silencioMs += (QUADRO / TAXA) * 1000;
