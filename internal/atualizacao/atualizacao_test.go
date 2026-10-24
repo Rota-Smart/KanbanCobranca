@@ -58,7 +58,7 @@ func TestBaixarEInstalar(t *testing.T) {
 	defer srv.Close()
 	dir := t.TempDir()
 	destino := filepath.Join(dir, "novo.exe")
-	if err := NovoCliente(srv.URL).Baixar(context.Background(), destino); err != nil {
+	if err := NovoCliente(srv.URL).Baixar(context.Background(), destino, ""); err != nil {
 		t.Fatal(err)
 	}
 

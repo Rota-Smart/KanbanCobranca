@@ -117,7 +117,7 @@ func (a *App) baixarEInstalar(info atualizacao.Info) {
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Minute)
 	defer cancel()
 	ultimo := time.Time{}
-	err = cliente.BaixarProgresso(ctx, novo, func(baixados, total int64) {
+	err = cliente.BaixarProgresso(ctx, novo, info.VersaoNova, func(baixados, total int64) {
 		// emite no máximo ~2x por segundo para não inundar a WebView —
 		// inclusive quando total=0 (sem Content-Length), senão a tela fica
 		// parada sem resposta nenhuma

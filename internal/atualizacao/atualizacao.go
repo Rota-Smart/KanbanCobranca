@@ -19,7 +19,7 @@ import (
 )
 
 // VersaoApp é a versão deste binário; bump a cada release.
-const VersaoApp = "1.10.0"
+const VersaoApp = "1.10.1"
 
 // BasePadrao é a fonte de atualização padrão (branch release do repo).
 const BasePadrao = "https://raw.githubusercontent.com/Rota-Smart/KanbanCobranca/release"
@@ -75,9 +75,13 @@ func (c *Cliente) Verificar(ctx context.Context) (Info, error) {
 	return info, nil
 }
 
-// Baixar grava o exe novo em destino (caminho completo do arquivo).
-func (c *Cliente) Baixar(ctx context.Context, destino string) error {
-	return c.BaixarProgresso(ctx, destino, nil)
+// Baixar grava o exe novo em destino (caminho completo do arquivo). A versão
+// (ex.: "1.10.0") é usada para montar o nome do arquivo com versão na URL —
+// o raw.githubusercontent.com faz cache por URL e já serviu exe ATRASADO no
+// cache (versao.txt fresco + rotasuite.exe velho = atualização instalando
+// versão antiga); nome com versão é URL nova a cada release, nunca stale.
+func (c *Cliente) Baixar(ctx context.Context, destino, versao string) error {
+	return c.BaixarProgresso(ctx, destino, versao, nil)
 }
 
 // BaixarProgresso baixa o exe novo em streaming (sem carregar os ~79 MB na
@@ -87,7 +91,7 @@ func (c *Cliente) Baixar(ctx context.Context, destino string) error {
 //
 // Conexões com o raw.githubusercontent.com podem cair no meio dos ~79 MB;
 // tenta até 3 vezes (recomeçando do zero) antes de desistir.
-func (c *Cliente) BaixarProgresso(ctx context.Context, destino string, fn func(baixados, total int64)) error {
+func (c *Cliente) BaixarProgresso(ctx context.Context, destino, versao string, fn func(baixados, total int64)) error {
 	var ultimoErr error
 	for tentativa := 1; tentativa <= 3; tentativa++ {
 		if tentativa > 1 {
@@ -97,7 +101,7 @@ func (c *Cliente) BaixarProgresso(ctx context.Context, destino string, fn func(b
 			case <-time.After(2 * time.Second):
 			}
 		}
-		err := c.baixarUmaVez(ctx, destino, fn)
+		err := c.baixarUmaVez(ctx, destino, versao, fn)
 		if err == nil {
 			return nil
 		}
@@ -109,7 +113,8 @@ func (c *Cliente) BaixarProgresso(ctx context.Context, destino string, fn func(b
 	return ultimoErr
 }
 
-func (c *Cliente) baixarUmaVez(ctx context.Context, destino string, fn func(baixados, total int64)) error {
+func (c *Cliente) baixarUmaVez(ctx context.Context, destino, versao string, fn func(baixados, total int64)) error {
+	// baixar abre o corpo de um arquivo da fonte (404 vira erro).
 	baixar := func(arquivo string) (io.ReadCloser, int64, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Base+"/"+arquivo, nil)
 		if err != nil {
@@ -126,13 +131,30 @@ func (c *Cliente) baixarUmaVez(ctx context.Context, destino string, fn func(baix
 		return resp.Body, resp.ContentLength, nil
 	}
 
-	body, total, err := baixar("rotasuite.exe")
-	if err != nil {
-		// Compatibilidade: releases antigas publicavam só o nome antigo.
-		body, total, err = baixar("rota-smart.exe")
-		if err != nil {
-			return err
+	// Nomes candidatos, do mais específico ao mais antigo: o com versão na
+	// URL (imune a cache stale do CDN) e os legados, pra releases antigas.
+	candidatos := []string{"rotasuite.exe", "rota-smart.exe"}
+	if v := strings.Map(func(r rune) rune {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '.', r == '-', r == '_':
+			return r
 		}
+		return -1
+	}, strings.TrimSpace(versao)); v != "" {
+		candidatos = append([]string{"rotasuite-" + v + ".exe"}, candidatos...)
+	}
+
+	var body io.ReadCloser
+	var total int64
+	var err error
+	for _, arquivo := range candidatos {
+		body, total, err = baixar(arquivo)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return err
 	}
 	defer body.Close()
 
