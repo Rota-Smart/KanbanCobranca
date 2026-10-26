@@ -97,6 +97,12 @@ COMO INSTALAR (outro computador):
    tickets (Shift+F4 e o assistente) agora é pelo NÚMERO do ticket (com ou
    sem #) ou pelo TÍTULO dele — não mais pelo código do cliente.
 
+18. MOVER TICKET PARA COLUNA SEM O ASSISTENTE (v1.13.0): aperte Shift+F6 (ou
+   o botão 📥 Mover ticket no topo) e informe o Nº do ticket e a coluna —
+   o app busca o ticket e o cliente no 360 e coloca o card na coluna na
+   hora, SEM passar pela IA. Cliente sem card → cria o card novo já na
+   coluna; cliente com card → move o card existente e vincula o ticket.
+
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
    guia do Chrome; faça login lá UMA vez e o app captura e salva o cookie
