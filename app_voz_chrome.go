@@ -178,7 +178,14 @@ func (a *App) IniciarVozChrome() error {
 	}
 	porta, ok := rota360.PortaCDPViva()
 	if !ok {
-		return fmt.Errorf("o Chrome do Rota 360 não está aberto — conecte ao Rota 360 (ou abra um ticket) antes de usar a voz pelo Chrome")
+		// O fluxo de conexão mata o Chrome do perfil depois de ler o cookie;
+		// sem aba viva não há onde injetar o gravador — relança o perfil
+		// (já logado) e deixa ele rodando para as próximas gravações.
+		var errRelanca error
+		porta, errRelanca = rota360.AbreChromeVoz()
+		if errRelanca != nil {
+			return fmt.Errorf("não consegui abrir o Chrome do Rota 360 para a voz: %w", errRelanca)
+		}
 	}
 	rota360.LiberaMicrofone(porta)
 	ws, err := rota360.AbaVoz(porta)

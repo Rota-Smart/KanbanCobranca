@@ -11,12 +11,54 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+// AbreChromeVoz relança o Chrome do perfil dedicado do app (já logado no
+// 360 — o cookie vive no perfil) com porta de depuração, e o DEIXA rodando:
+// a voz precisa de uma aba viva para injetar o gravador, e o fluxo de
+// conexão normal mata o Chrome assim que lê o cookie. Reuso nas gravações
+// seguintes e nas navegações de ticket (aba do 360 fica aberta).
+func AbreChromeVoz() (int, error) {
+	chrome, err := chromeExecutavel()
+	if err != nil {
+		return 0, err
+	}
+	perfil, err := pastaPerfilCDP()
+	if err != nil {
+		return 0, err
+	}
+	_ = os.MkdirAll(perfil, 0o700)
+	_ = os.WriteFile(filepath.Join(perfil, "First Run"), nil, 0o600)
+	porta, err := portaLivre()
+	if err != nil {
+		return 0, err
+	}
+	cmd := exec.Command(chrome,
+		"--user-data-dir="+perfil,
+		fmt.Sprintf("--remote-debugging-port=%d", porta),
+		"--no-first-run", "--no-default-browser-check",
+		"--window-size=1100,800",
+		urlLogin360,
+	)
+	if err := cmd.Start(); err != nil {
+		return 0, fmt.Errorf("abrir o Chrome para a voz: %w", err)
+	}
+	if !aguardarPorta(porta, cmd, cdpTimeoutBoot) {
+		mataArvore(cmd)
+		return 0, fmt.Errorf("o Chrome abriu mas a porta de depuração não respondeu")
+	}
+	slog.Info("voz chrome: perfil relançado para captura", "porta", porta)
+	return porta, nil
+}
 
 // PortaCDPViva devolve a porta de debug do Chrome do perfil dedicado do app,
 // se estiver rodando. Não toca no Chrome pessoal do usuário.
