@@ -103,6 +103,14 @@ COMO INSTALAR (outro computador):
    hora, SEM passar pela IA. Cliente sem card → cria o card novo já na
    coluna; cliente com card → move o card existente e vincula o ticket.
 
+19. VISITA AGENDADA (v1.14.0): arraste o card para a coluna "Visita Agendada"
+   (ou menu ⋯ do card → "📅 Agendar visita…") e marque dia, turno
+   (Manhã/Tarde/Noite) e horário. O endereço já vem preenchido com o do
+   cadastro do cliente no 360 — pode trocar se a visita for em outro lugar —
+   e o app gera o link do Google Maps (botão "Abrir no Google Maps"). O card
+   mostra o selo 📅 com o resumo; clicar nele reabre o agendamento. Há também
+   a barra de filtro no topo (cliente, nº ou assunto do ticket).
+
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
    guia do Chrome; faça login lá UMA vez e o app captura e salva o cookie
