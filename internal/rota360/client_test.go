@@ -128,24 +128,30 @@ func TestPesquisarTickets(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"total": len(itens), "itens": itens})
 	})
-	res, err := c.PesquisarTickets(context.Background(), "24755")
-	if err != nil {
-		t.Fatal(err)
+	// código service de cliente NÃO casa mais: a pesquisa é de ticket
+	// (número ou título), não de cliente.
+	if res, _ := c.PesquisarTickets(context.Background(), "24755"); len(res) != 0 {
+		t.Fatalf("código service não deveria casar, veio %+v", res)
 	}
-	if views < 2 {
+	if views < 3 {
 		t.Errorf("esperava varrer várias views, rodou %d", views)
 	}
-	// 2 matches × 3 views, dedup por ID ⇒ 2 resultados.
-	if len(res) != 2 {
-		t.Fatalf("esperava 2 resultados dedup, veio %d: %+v", len(res), res)
-	}
 
-	res, err = c.PesquisarTickets(context.Background(), "resolute")
+	res, err := c.PesquisarTickets(context.Background(), "câmera")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res) != 2 {
-		t.Fatalf("busca insensível a caixa falhou: %+v", res)
+	if len(res) != 1 || res[0].ID != "u1" {
+		t.Fatalf("busca por título falhou: %+v", res)
+	}
+
+	// "#" na frente do número é ignorado.
+	res, err = c.PesquisarTickets(context.Background(), "#1002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].ID != "u2" {
+		t.Fatalf("busca por número com # falhou: %+v", res)
 	}
 
 	res, err = c.PesquisarTickets(context.Background(), "1002")

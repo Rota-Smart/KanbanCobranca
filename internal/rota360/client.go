@@ -258,11 +258,12 @@ func (c *Cliente) TicketsDaFila(ctx context.Context, view string, page, limit in
 const maxResultadosPesquisaTickets = 20
 
 // PesquisarTickets procura na fila do helpdesk (leitura) tickets que casem
-// com o termo: número do ticket, código service do cliente ou nome do
-// solicitante — o app busca em todas as views em aberto e filtra localmente,
-// sem depender de endpoint de busca do portal.
+// com o termo: número do ticket (aceita com ou sem "#") ou título (nome do
+// ticket) — o app busca em todas as views em aberto e filtra localmente,
+// sem depender de endpoint de busca do portal. Código service de cliente NÃO
+// entra no casamento: a pesquisa é de ticket, não de cliente.
 func (c *Cliente) PesquisarTickets(ctx context.Context, q string) ([]Ticket360, error) {
-	q = strings.ToLower(strings.TrimSpace(q))
+	q = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(q), "#")))
 	if q == "" {
 		return []Ticket360{}, nil
 	}
@@ -281,8 +282,6 @@ func (c *Cliente) PesquisarTickets(ctx context.Context, q string) ([]Ticket360, 
 				continue
 			}
 			if strings.Contains(strings.ToLower(t.Numero), q) ||
-				strings.Contains(strings.ToLower(t.CodigoService), q) ||
-				strings.Contains(strings.ToLower(t.Solicitante), q) ||
 				strings.Contains(strings.ToLower(t.Titulo), q) {
 				vistos[t.ID] = true
 				out = append(out, t)

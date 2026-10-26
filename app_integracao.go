@@ -259,6 +259,7 @@ func (a *App) ImportarCliente360(codService, coluna string) (db.Ticket, error) {
 	if err != nil {
 		return db.Ticket{}, friendly("ImportarCliente360", err)
 	}
+	a.vinculoAutomaticoTela(salvo.ID, salvo.CodService, salvo.NomeCliente)
 	_ = fin
 	return *salvo, nil
 }

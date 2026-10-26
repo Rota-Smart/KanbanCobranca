@@ -11,6 +11,7 @@ import type {
   RenegociacaoPronta,
   ResultadoCobranca,
   Ticket,
+  TicketDetalhe360,
   Vinculo360,
 } from '../wails-types';
 import { formatCents, parseCents } from '../money';
@@ -31,12 +32,13 @@ interface Props {
 }
 
 // Seções do card completo: o nav troca o conteúdo, estilo coluna do Kanban.
-type Aba = 'acordo' | 'proposta' | 'cliente' | 'observacoes' | 'financeiro' | 'historico';
+type Aba = 'acordo' | 'proposta' | 'cliente' | 'ticket' | 'observacoes' | 'financeiro' | 'historico';
 
 const abas: { id: Aba; icone: string; rotulo: string }[] = [
   { id: 'acordo', icone: '📝', rotulo: 'Acordo' },
   { id: 'proposta', icone: '✉️', rotulo: 'Proposta' },
   { id: 'cliente', icone: '👤', rotulo: 'Cliente' },
+  { id: 'ticket', icone: '🎫', rotulo: 'Ticket' },
   { id: 'observacoes', icone: '🗒️', rotulo: 'Observações' },
   { id: 'financeiro', icone: '💰', rotulo: 'Financeiro' },
   { id: 'historico', icone: '🕘', rotulo: 'Histórico' },
@@ -126,7 +128,12 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
   const [entradaVinculo, setEntradaVinculo] = useState('');
   const [vinculoErro, setVinculoErro] = useState('');
   const [vinculando, setVinculando] = useState(false);
+  const [vinculoAtivo, setVinculoAtivo] = useState<Vinculo360 | null>(null);
+  const [det, setDet] = useState<TicketDetalhe360 | null>(null);
+  const [detErro, setDetErro] = useState('');
+  const [detCarregando, setDetCarregando] = useState(false);
   const reqId = useRef(0);
+  const detReqId = useRef(0);
   const debounce = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
@@ -163,6 +170,45 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
     App.GetAvaliacaoCliente(ticket.id).then(setAvaliacao).catch(() => {});
     App.VinculosDoCard(ticket.id).then((vs) => setVinculos(vs ?? [])).catch(() => {});
   }, [ticket.id, preCobranca]);
+
+  // Seleciona o vínculo exibido na aba Ticket: o principal por padrão; se a
+  // lista mudar (vínculo removido), cai para o primeiro restante.
+  useEffect(() => {
+    if (vinculos.length === 0) {
+      setVinculoAtivo(null);
+      return;
+    }
+    if (!vinculoAtivo || !vinculos.some((v) => v.id === vinculoAtivo.id)) {
+      setVinculoAtivo(vinculos[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vinculos]);
+
+  // Puxa o ticket do 360 (status, interações…) do vínculo selecionado.
+  useEffect(() => {
+    if (!vinculoAtivo?.ticket360Id) {
+      setDet(null);
+      setDetErro('');
+      return;
+    }
+    const id = ++detReqId.current;
+    setDetCarregando(true);
+    setDetErro('');
+    App.DetalheVinculo360(vinculoAtivo.ticket360Id)
+      .then((d) => {
+        if (id === reqId.current) {
+          setDet(d);
+          setDetCarregando(false);
+        }
+      })
+      .catch((e) => {
+        if (id === reqId.current) {
+          setDet(null);
+          setDetErro(String(e));
+          setDetCarregando(false);
+        }
+      });
+  }, [vinculoAtivo]);
 
   useEffect(() => {
     const totalC = parseCents(total);
@@ -240,6 +286,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
       setEntradaVinculo('');
       setVinculando(false);
       const vs = await App.VinculosDoCard(ticket.id);
+      setVinculoAtivo(null);
       setVinculos(vs ?? []);
     } catch (e) {
       setVinculoErro(String(e));
@@ -733,68 +780,10 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
             </div>
 
             <div className="flex flex-col gap-1.5 bg-white/40 dark:bg-white/5 rounded-lg p-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">🎫 Tickets do 360</h3>
-                <button
-                  className="text-xs px-2 py-1 rounded-lg bg-indigo-100/80 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200 hover:bg-indigo-200/80"
-                  onClick={() => setVinculando((v) => !v)}
-                >
-                  {vinculando ? 'Cancelar' : '+ Vincular ticket'}
-                </button>
-              </div>
-              {vinculando && (
-                <form
-                  className="flex gap-1"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    vincularTicket(entradaVinculo.trim());
-                  }}
-                >
-                  <input
-                    autoFocus
-                    className="flex-1 border rounded px-2 py-1 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100"
-                    placeholder="nº, #nº, uuid ou URL do ticket"
-                    value={entradaVinculo}
-                    onChange={(e) => setEntradaVinculo(e.target.value)}
-                  />
-                  <button
-                    type="submit"
-                    className="text-xs px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500"
-                  >
-                    Vincular
-                  </button>
-                </form>
-              )}
-              {vinculos.length === 0 ? (
-                <p className="text-xs text-slate-500">Nenhum ticket do 360 vinculado a este card.</p>
-              ) : (
-                <ul className="flex flex-col gap-1">
-                  {vinculos.map((v) => (
-                    <li key={v.id} className="flex items-center gap-2 text-xs">
-                      <button
-                        title={`Abrir ticket #${v.ticket360Numero} no navegador`}
-                        className="px-2 py-0.5 rounded-full font-medium bg-indigo-100/80 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200 hover:bg-indigo-200/80 shrink-0"
-                        onClick={() => abrirVinculo(v.ticket360Id)}
-                      >
-                        🌐 #{v.ticket360Numero || v.ticket360Id.slice(0, 8)}
-                      </button>
-                      <span className="text-slate-700 dark:text-slate-200 truncate flex-1 min-w-0" title={v.assunto}>
-                        {v.assunto || 'Sem assunto'}
-                      </span>
-                      <button
-                        title="Remover vínculo deste card"
-                        className="text-slate-400 hover:text-red-500 shrink-0"
-                        onClick={() => removerVinculo(v.id)}
-                      >
-                        ✕
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {vinculoErro && (
-                <p className="text-[10px] text-red-600 dark:text-red-400 break-words">{vinculoErro}</p>
-              )}
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">🎫 Tickets do 360</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Os tickets vinculados ficam na aba 🎫 Ticket.
+              </p>
             </div>
 
             {reneg && (reneg.valorMensalidadeCents > 0 || reneg.contratoAssinatura) && (
@@ -836,6 +825,164 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
                       <li key={i}>{o}</li>
                     ))}
                   </ul>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {aba === 'ticket' && (
+          <div className="mt-3 flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5 bg-white/40 dark:bg-white/5 rounded-lg p-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">🎫 Tickets do 360</h3>
+                <button
+                  className="text-xs px-2 py-1 rounded-lg bg-indigo-100/80 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200 hover:bg-indigo-200/80"
+                  onClick={() => setVinculando((v) => !v)}
+                >
+                  {vinculando ? 'Cancelar' : '+ Vincular ticket'}
+                </button>
+              </div>
+              {vinculando && (
+                <form
+                  className="flex gap-1"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    vincularTicket(entradaVinculo.trim());
+                  }}
+                >
+                  <input
+                    autoFocus
+                    className="flex-1 border rounded px-2 py-1 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100"
+                    placeholder="nº (sem #), uuid ou URL do ticket"
+                    value={entradaVinculo}
+                    onChange={(e) => setEntradaVinculo(e.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    className="text-xs px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500"
+                  >
+                    Vincular
+                  </button>
+                </form>
+              )}
+              {vinculos.length === 0 ? (
+                <p className="text-xs text-slate-500">Nenhum ticket do 360 vinculado a este card.</p>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {vinculos.map((v) => (
+                    <li key={v.id} className="flex items-center gap-2 text-xs">
+                      <button
+                        title={
+                          vinculoAtivo?.id === v.id
+                            ? `Abrir ticket #${v.ticket360Numero} no navegador`
+                            : `Ver detalhes de #${v.ticket360Numero} (duplo clique abre no navegador)`
+                        }
+                        className={`px-2 py-0.5 rounded-full font-medium shrink-0 ${
+                          vinculoAtivo?.id === v.id
+                            ? 'bg-sky-500/25 text-sky-800 dark:text-sky-100 ring-1 ring-sky-400/60'
+                            : 'bg-indigo-100/80 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200 hover:bg-indigo-200/80'
+                        }`}
+                        onClick={() => setVinculoAtivo(v)}
+                        onDoubleClick={() => abrirVinculo(v.ticket360Id)}
+                      >
+                        #{v.ticket360Numero || v.ticket360Id.slice(0, 8)}
+                      </button>
+                      <button
+                        title="Abrir ticket no navegador"
+                        className="text-slate-400 hover:text-indigo-600 shrink-0"
+                        onClick={() => abrirVinculo(v.ticket360Id)}
+                      >
+                        🌐
+                      </button>
+                      <span className="text-slate-700 dark:text-slate-200 truncate flex-1 min-w-0" title={v.assunto}>
+                        {v.assunto || 'Sem assunto'}
+                      </span>
+                      <button
+                        title="Remover vínculo deste card"
+                        className="text-slate-400 hover:text-red-500 shrink-0"
+                        onClick={() => removerVinculo(v.id)}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {vinculoErro && (
+                <p className="text-[10px] text-red-600 dark:text-red-400 break-words">{vinculoErro}</p>
+              )}
+            </div>
+
+            {vinculoAtivo && (
+              <div className="flex flex-col gap-1.5 bg-white/40 dark:bg-white/5 rounded-lg p-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Ticket #{det?.numero || vinculoAtivo.ticket360Numero || vinculoAtivo.ticket360Id.slice(0, 8)}
+                  </h3>
+                  <button
+                    className="text-xs px-2 py-1 rounded-lg border text-slate-600 dark:text-slate-300 hover:bg-slate-500/10 disabled:opacity-60"
+                    disabled={detCarregando}
+                    title="Relê o ticket no 360"
+                    onClick={() => setVinculoAtivo((v) => (v ? { ...v } : v))}
+                  >
+                    {detCarregando ? '🔄 …' : '🔄 Atualizar'}
+                  </button>
+                </div>
+                {detErro && <p className="text-xs text-red-600 break-words">{detErro}</p>}
+                {detCarregando && !det && (
+                  <p className="text-xs text-slate-500">Carregando dados do 360…</p>
+                )}
+                {det && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-sky-100/80 text-sky-800 dark:bg-sky-500/20 dark:text-sky-100">
+                        {det.status || '—'}
+                      </span>
+                      {det.assunto_nome && (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-100/80 text-violet-800 dark:bg-violet-500/20 dark:text-violet-100">
+                          {det.assunto_nome}
+                        </span>
+                      )}
+                    </div>
+                    {det.titulo && (
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-100 break-words">{det.titulo}</p>
+                    )}
+                    <div className="flex flex-col gap-1">
+                      <LinhaDado rotulo="Solicitante" valor={det.solicitante_nome} />
+                      <LinhaDado rotulo="Responsável" valor={det.responsavel_nome} />
+                      <LinhaDado rotulo="Código service" valor={det.codigo_service && `#${det.codigo_service}`} />
+                      <LinhaDado rotulo="Criado em" valor={det.criado_em && dataBR(det.criado_em)} />
+                      <LinhaDado rotulo="Categoria" valor={det.categoria_nome} />
+                    </div>
+                    {det.mensagens?.some((m) => m.tipo === 'descricao' && m.corpo.trim()) && (
+                      <details className="border rounded-lg px-3 py-2 text-sm bg-white/50 dark:bg-white/5" open>
+                        <summary className="cursor-pointer text-slate-600 dark:text-slate-300 font-medium text-xs">
+                          📄 Descrição do pedido
+                        </summary>
+                        <p className="mt-1.5 whitespace-pre-wrap text-xs text-slate-700 dark:text-slate-200 max-h-40 overflow-y-auto">
+                          {det.mensagens.find((m) => m.tipo === 'descricao' && m.corpo.trim())?.corpo}
+                        </p>
+                      </details>
+                    )}
+                    {(() => {
+                      const ultima = [...(det.mensagens ?? [])]
+                        .reverse()
+                        .find((m) => m.tipo !== 'sistema' && m.corpo.trim() && m.tipo !== 'descricao');
+                      if (!ultima) return null;
+                      return (
+                        <details className="border rounded-lg px-3 py-2 text-sm bg-white/50 dark:bg-white/5">
+                          <summary className="cursor-pointer text-slate-600 dark:text-slate-300 font-medium text-xs">
+                            💬 Última interação — {ultima.autor_nome}
+                            {ultima.criado_em ? ` (${dataBR(ultima.criado_em)})` : ''}
+                          </summary>
+                          <p className="mt-1.5 whitespace-pre-wrap text-xs text-slate-700 dark:text-slate-200 max-h-40 overflow-y-auto">
+                            {ultima.corpo}
+                          </p>
+                        </details>
+                      );
+                    })()}
+                  </>
                 )}
               </div>
             )}

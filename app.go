@@ -53,6 +53,9 @@ type App struct {
 	muVoz        sync.Mutex
 	vozPumpAtivo bool          // gravação via Chrome em andamento
 	vozParar     chan struct{} // sinaliza o fim da gravação via Chrome
+
+	muTicketTela sync.Mutex
+	ticketTela   TicketTelaCapturado // último ticket identificado pelo Shift+F2 (vínculo automático ao criar card)
 }
 
 // WireIntegracao injeta as dependências da integração (chamado pelo main).
@@ -165,6 +168,7 @@ func (a *App) SaveTicket(t db.Ticket) (db.Ticket, error) {
 	if err := a.validaTicket(&t); err != nil {
 		return db.Ticket{}, err
 	}
+	novo := t.ID == 0
 	id, err := a.tickets.Save(a.ctx, &t)
 	if err != nil {
 		return db.Ticket{}, friendly("SaveTicket", err)
@@ -172,6 +176,11 @@ func (a *App) SaveTicket(t db.Ticket) (db.Ticket, error) {
 	salvo, err := a.tickets.Get(a.ctx, id)
 	if err != nil {
 		return db.Ticket{}, friendly("SaveTicket", err)
+	}
+	if novo {
+		if t2, err := a.vinculoAutomaticoTela(salvo.ID, salvo.CodService, salvo.NomeCliente); err == nil {
+			salvo = &t2
+		}
 	}
 	return *salvo, nil
 }

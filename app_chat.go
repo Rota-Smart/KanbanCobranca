@@ -690,6 +690,7 @@ func (a *App) agentImportarCliente(ctx context.Context, cod, coluna string) (db.
 	if err != nil {
 		return db.Ticket{}, err
 	}
+	a.vinculoAutomaticoTela(salvo.ID, salvo.CodService, salvo.NomeCliente)
 	return *salvo, nil
 }
 
@@ -1034,6 +1035,38 @@ func (a *App) SalvarObservacoesTicket(ticketID int64, observacoes string) (db.Ti
 	return *t, nil
 }
 
+// vinculoAutomaticoTela liga ao card recém-criado o último ticket capturado
+// pelo Shift+F2, quando for do mesmo cliente (código service igual; sem
+// código no card, nome igual). Best effort: falha só vira log. Devolve o card
+// atualizado (o id é sempre o mesmo).
+func (a *App) vinculoAutomaticoTela(ticketID int64, codService, nomeCliente string) (db.Ticket, error) {
+	t, err := a.tickets.Get(a.ctx, ticketID)
+	if err != nil {
+		return db.Ticket{}, err
+	}
+	cap := a.ultimoTicketTela()
+	if cap.UUID == "" && cap.Numero == "" {
+		return *t, nil // não veio de Shift+F2 em um ticket
+	}
+	igualCod := cap.CodService != "" && cap.CodService == strings.TrimSpace(codService)
+	igualNome := cap.CodService == "" && cap.NomeCliente != "" &&
+		strings.EqualFold(cap.NomeCliente, strings.TrimSpace(nomeCliente))
+	if !igualCod && !igualNome {
+		return *t, nil
+	}
+	entrada := cap.UUID
+	if entrada == "" {
+		entrada = "#" + cap.Numero
+	}
+	t2, _, err := a.vincularTicket360(ticketID, entrada)
+	if err != nil {
+		slog.Warn("vínculo automático do ticket da tela", "card", ticketID, "err", err)
+		return *t, nil
+	}
+	slog.Info("ticket da tela vinculado automaticamente ao card novo", "card", ticketID, "ticket", entrada)
+	return t2, nil
+}
+
 // VinculosDoCard lista os tickets do 360 vinculados ao card (pode haver vários).
 func (a *App) VinculosDoCard(ticketID int64) ([]db.Vinculo360, error) {
 	if a.vinculos == nil {
@@ -1044,6 +1077,26 @@ func (a *App) VinculosDoCard(ticketID int64) ([]db.Vinculo360, error) {
 		return nil, friendly("VinculosDoCard", err)
 	}
 	return vs, nil
+}
+
+// DetalheVinculo360 busca o ticket do 360 completo (status, responsável,
+// interações…) pelo uuid — alimenta a aba 🎫 Ticket do card completo.
+func (a *App) DetalheVinculo360(uuid string) (*rota360.TicketDetalhe360, error) {
+	uuid = strings.TrimSpace(uuid)
+	if uuid == "" {
+		return nil, fmt.Errorf("uuid do ticket vazio")
+	}
+	c := a.rotaAtual()
+	if c == nil {
+		return nil, rota360.ErrSemSessao
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 10*time.Second)
+	defer cancel()
+	t, err := c.DetalheTicket(ctx, uuid)
+	if err != nil {
+		return nil, friendly("DetalheVinculo360", err)
+	}
+	return t, nil
 }
 
 // RemoverVinculo360 tira um ticket da lista de vínculos do card. Se era o

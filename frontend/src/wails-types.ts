@@ -13,6 +13,8 @@ export type ReparcelamentoResult = service.ReparcelamentoResult;
 
 export type ResumoCliente360 = rota360.ResumoCliente;
 export type Ticket360 = rota360.Ticket360;
+export type TicketDetalhe360 = rota360.TicketDetalhe360;
+export type MensagemTicket360 = rota360.MensagemTicket360;
 export type Financeiro360 = rota360.Financeiro360;
 export type Fatura360 = rota360.Fatura360;
 export type Avaliacao = service.Avaliacao;

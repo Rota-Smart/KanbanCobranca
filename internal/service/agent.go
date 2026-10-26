@@ -68,7 +68,7 @@ func AgentTools() []map[string]any {
 			"OS ativas e atendimentos (Octadesk) do cliente no 360.",
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
 		tool("pesquisar_tickets",
-			"Pesquisa tickets ABERTOS do 360 por número, código service ou solicitante. Use antes de detalhe/abrir/responder.",
+			"Pesquisa tickets ABERTOS do 360 pelo número (com ou sem #) ou pelo título do ticket — NÃO pesquise pelo código service do cliente. Use antes de detalhe/abrir/responder.",
 			map[string]any{"query": map[string]any{"type": "string"}}, []string{"query"}),
 		tool("detalhe_ticket_360",
 			"Ticket do 360: título, status, cliente, descrição e interações.",

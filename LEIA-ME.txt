@@ -86,6 +86,17 @@ COMO INSTALAR (outro computador):
    (a guia do Chrome do 360 aberta); na primeira vez o Chrome pode pedir
    permissão de microfone nessa aba — clique em "Permitir".
 
+17. ABA 🎫 TICKET NO CARD + VÍNCULO AUTOMÁTICO (v1.12.0): o card completo
+   ganhou a aba 🎫 Ticket — mostra os tickets do 360 vinculados e, para o
+   selecionado, status, assunto, responsável, descrição do pedido e a última
+   interação (botão 🔄 atualiza, 🌐 abre no navegador, ✕ remove o vínculo;
+   o vínculo manual saiu da aba 👤 Cliente e agora mora aqui). VÍNCULO
+   AUTOMÁTICO: se você apertar Shift+F2 com um ticket na tela e depois
+   adicionar o cliente desse ticket ao Kanban (busca, assistente ou card
+   manual), o ticket capturado é vinculado ao card sozinho. A pesquisa de
+   tickets (Shift+F4 e o assistente) agora é pelo NÚMERO do ticket (com ou
+   sem #) ou pelo TÍTULO dele — não mais pelo código do cliente.
+
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
    guia do Chrome; faça login lá UMA vez e o app captura e salva o cookie

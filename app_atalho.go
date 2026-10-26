@@ -40,6 +40,31 @@ type TicketDaTela struct {
 	Mensagem    string `json:"mensagem"`
 }
 
+// TicketTelaCapturado guarda o ticket do 360 identificado pelo Shift+F2, para
+// vinculá-lo automaticamente ao card caso o cliente do ticket seja adicionado
+// ao Kanban depois (import do 360, chat do assistente, card manual). Válido só
+// com uuid/numero: código service sozinho não identifica um ticket.
+type TicketTelaCapturado struct {
+	UUID        string
+	Numero      string
+	CodService  string
+	NomeCliente string
+}
+
+// guardarTicketTela anota o último ticket visto na tela pelo Shift+F2.
+func (a *App) guardarTicketTela(t TicketTelaCapturado) {
+	a.muTicketTela.Lock()
+	a.ticketTela = t
+	a.muTicketTela.Unlock()
+}
+
+// ultimoTicketTela devolve uma cópia do último ticket capturado.
+func (a *App) ultimoTicketTela() TicketTelaCapturado {
+	a.muTicketTela.Lock()
+	defer a.muTicketTela.Unlock()
+	return a.ticketTela
+}
+
 // iniciarAtalhos registra os atalhos globais em goroutine dedicada —
 // a thread do hotkey precisa viver com o loop de mensagens até o fim.
 func (a *App) iniciarAtalhos() {
@@ -140,11 +165,16 @@ func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 	res := TicketDaTela{Titulo: cap.Titulo}
 
 	if m := regexTicketURL.FindStringSubmatch(cap.URL); m != nil {
-		if det := a.detalheDoTicket(m[1]); det != nil {
+		uuidTela := m[1]
+		if det := a.detalheDoTicket(uuidTela); det != nil {
 			res.Fonte = "tela"
 			res.CodService = det.CodService
 			res.NomeCliente = det.Solicitante
 			res.Titulo = "#" + det.Numero + " " + det.Titulo
+			a.guardarTicketTela(TicketTelaCapturado{
+				UUID: uuidTela, Numero: det.Numero,
+				CodService: det.CodService, NomeCliente: det.Solicitante,
+			})
 			autor := a.autorSessao360()
 			if autor == "" {
 				autor = det.ResponsavelNome // sem config, quem responde o ticket serve de aproximação
@@ -169,6 +199,7 @@ func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 		if cod := a.codigoDoTicketNaFila(m[1]); cod != "" {
 			res.CodService = cod
 			res.Fonte = "fila360"
+			a.guardarTicketTela(TicketTelaCapturado{UUID: uuidTela, CodService: cod})
 			if t, err := a.tickets.GetPorCodService(a.ctx, cod); err == nil && t != nil {
 				res.Achou = true
 				res.TicketID = t.ID
@@ -202,6 +233,7 @@ func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 		if cod := a.codigoDoTicketNaFila(u); cod != "" {
 			res.CodService = cod
 			res.Fonte = "fila360"
+			a.guardarTicketTela(TicketTelaCapturado{UUID: u, CodService: cod})
 		}
 	}
 

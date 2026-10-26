@@ -65,7 +65,7 @@ export default function BuscarTickets360Dialog(props: { onFechar: () => void }) 
         >
           <input
             className="flex-1 border rounded px-2 py-1 text-sm"
-            placeholder="Nº do ticket, código service ou nome"
+            placeholder="Nº do ticket (sem #) ou título do ticket"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             autoFocus
