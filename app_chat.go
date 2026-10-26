@@ -1120,6 +1120,19 @@ func (a *App) VinculosDoCard(ticketID int64) ([]db.Vinculo360, error) {
 	return vs, nil
 }
 
+// VinculosTodos devolve todos os vínculos card↔ticket do banco — alimenta o
+// filtro do board por assunto do ticket sem uma consulta por card.
+func (a *App) VinculosTodos() ([]db.Vinculo360, error) {
+	if a.vinculos == nil {
+		return nil, fmt.Errorf("vínculos indisponíveis")
+	}
+	vs, err := a.vinculos.ListTodos(a.ctx)
+	if err != nil {
+		return nil, friendly("VinculosTodos", err)
+	}
+	return vs, nil
+}
+
 // DetalheVinculo360 busca o ticket do 360 completo (status, responsável,
 // interações…) pelo uuid — alimenta a aba 🎫 Ticket do card completo.
 func (a *App) DetalheVinculo360(uuid string) (*rota360.TicketDetalhe360, error) {

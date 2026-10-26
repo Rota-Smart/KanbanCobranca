@@ -102,3 +102,37 @@ func TestVinculosUpsertListRemove(t *testing.T) {
 		t.Errorf("remover de novo devia dar ErrVinculoNaoEncontrado, veio %v", err)
 	}
 }
+
+func TestVinculosListTodos(t *testing.T) {
+	_, tr, vr := newVinculoTestDB(t)
+	ctx := context.Background()
+	id1, _ := tr.Save(ctx, ticketExemploPtr())
+	id2, _ := tr.Save(ctx, ticketExemploPtr())
+
+	// Banco vazio de vínculos: lista vazia, sem erro.
+	vs, err := vr.ListTodos(ctx)
+	if err != nil || len(vs) != 0 {
+		t.Fatalf("lista inicial = %v, %v", vs, err)
+	}
+
+	if err := vr.Upsert(ctx, id1, "uuid-1", "101", "Sem sinal"); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if err := vr.Upsert(ctx, id2, "uuid-2", "102", "Renegociação"); err != nil {
+		t.Fatalf("Upsert 2: %v", err)
+	}
+	vs, err = vr.ListTodos(ctx)
+	if err != nil {
+		t.Fatalf("ListTodos: %v", err)
+	}
+	if len(vs) != 2 {
+		t.Fatalf("queria 2 vínculos de cards diferentes, veio %d", len(vs))
+	}
+	porCard := map[int64]string{}
+	for _, v := range vs {
+		porCard[v.TicketID] = v.Assunto
+	}
+	if porCard[id1] != "Sem sinal" || porCard[id2] != "Renegociação" {
+		t.Errorf("assuntos por card = %v", porCard)
+	}
+}

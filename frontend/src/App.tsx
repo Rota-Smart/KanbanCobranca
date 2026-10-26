@@ -19,7 +19,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useState } from 'react';
 import * as bindings from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
-import type { ResultadoCobranca, Ticket } from './wails-types';
+import type { ResultadoCobranca, Ticket, Vinculo360 } from './wails-types';
 import BuscarCliente360Dialog from './components/BuscarCliente360Dialog';
 import BuscarTickets360Dialog from './components/BuscarTickets360Dialog';
 import ChatDrawer from './components/ChatDrawer';
@@ -28,6 +28,7 @@ import KanbanColumn from './components/KanbanColumn';
 import MovimentarTicketDialog from './components/MovimentarTicketDialog';
 import NegotiationModal from './components/NegotiationModal';
 import type { ModoCard } from './components/TicketCard';
+import VisitaModal from './components/VisitaModal';
 import { boardFromTickets, moveCard, type Board } from './kanban';
 
 const fallbackColunas = ['Fazer contato'];
@@ -41,6 +42,41 @@ interface ModosCards {
 }
 
 const modosIniciais: ModosCards = { global: 'resumo', colunas: {}, cards: {} };
+
+// Assuntos distintos dos vínculos card↔ticket, ordenados — alimenta o
+// <select> do filtro. Um card pode ter vários tickets, logo vários assuntos.
+function assuntosDistintos(vinculos: Vinculo360[]): string[] {
+  const set = new Set<string>();
+  for (const v of vinculos) {
+    const a = (v.assunto ?? '').trim();
+    if (a) set.add(a);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+// assuntosPorCard agrupa os vínculos por card para o filtro sem varrer a
+// lista de vínculos a cada card renderizado.
+function assuntosPorCard(vinculos: Vinculo360[]): Map<number, string[]> {
+  const mapa = new Map<number, string[]>();
+  for (const v of vinculos) {
+    const a = (v.assunto ?? '').trim();
+    if (!a) continue;
+    const lista = mapa.get(v.ticketId) ?? [];
+    lista.push(a);
+    mapa.set(v.ticketId, lista);
+  }
+  return mapa;
+}
+
+// cardPassaNoFiltro: o texto casa com nome do cliente, número do ticket ou
+// assunto; o assunto selecionado tem que estar entre os vínculos do card.
+function cardPassaNoFiltro(t: Ticket, assuntos: string[], texto: string, assunto: string): boolean {
+  if (assunto && !assuntos.some((a) => a.toLowerCase() === assunto.toLowerCase())) return false;
+  const q = texto.trim().toLowerCase();
+  if (!q) return true;
+  const alvo = [t.nomeCliente, t.ticket360Numero, ...assuntos].join('\n').toLowerCase();
+  return alvo.includes(q);
+}
 
 function modosDoStorage(): ModosCards {
   try {
@@ -90,6 +126,10 @@ function temaInicial(): 'claro' | 'escuro' {
 // colunaDisparaCobranca: mover para cá puxa o financeiro do 360 e gera a proposta.
 const colunaDisparaCobranca = 'Cobrança';
 
+// colunaVisitaAgendada: soltar o card nela abre o diálogo de agendamento de
+// visita (data, turno, horário, endereço + link do Google Maps).
+const colunaVisitaAgendada = 'Visita Agendada';
+
 // ColunaOrdenavel torna a coluna reordenável por arraste. Só a alça do
 // cabeçalho ativa o arraste (listeners nela), para não brigar com o arraste
 // dos cards, que acontece em outro DndContext.
@@ -129,6 +169,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [aberto, setAberto] = useState<Ticket | null>(null);
   const [preCobranca, setPreCobranca] = useState<ResultadoCobranca | null>(null);
+  const [visitaTicket, setVisitaTicket] = useState<Ticket | null>(null);
   const [buscar360Coluna, setBuscar360Coluna] = useState<string | null>(null);
   const [buscaTicketsAberta, setBuscaTicketsAberta] = useState(false);
   const [movimentaAberta, setMovimentaAberta] = useState(false);
@@ -139,6 +180,29 @@ export default function App() {
   const [tema, setTema] = useState<'claro' | 'escuro'>(temaInicial);
   const [sincronizando, setSincronizando] = useState(false);
   const [modos, setModos] = useState<ModosCards>(modosDoStorage);
+  const [filtroTexto, setFiltroTexto] = useState('');
+  const [filtroAssunto, setFiltroAssunto] = useState('');
+  const [vinculos, setVinculos] = useState<Vinculo360[]>([]);
+
+  async function carregarVinculos() {
+    try {
+      setVinculos(await bindings.VinculosTodos());
+    } catch {
+      // sem vínculos o filtro por assunto só fica vazio
+    }
+  }
+
+  const assuntosTodos = assuntosDistintos(vinculos);
+  const mapaAssuntos = assuntosPorCard(vinculos);
+  const filtroAtivo = filtroTexto.trim() !== '' || filtroAssunto !== '';
+
+  function cardVisivel(t: Ticket): boolean {
+    return cardPassaNoFiltro(t, mapaAssuntos.get(t.id) ?? [], filtroTexto, filtroAssunto);
+  }
+
+  // Contagem de cards visíveis (para o rótulo do filtro).
+  const totalCards = Object.values(board).reduce((n, ts) => n + ts.length, 0);
+  const visiveis = Object.values(board).reduce((n, ts) => n + ts.filter(cardVisivel).length, 0);
 
   useEffect(() => {
     localStorage.setItem('modosCards', JSON.stringify(modos));
@@ -220,6 +284,7 @@ export default function App() {
         setErro(String(e));
         setCarregando(false);
       });
+    void carregarVinculos();
   }, []);
 
   // Atalhos globais do Windows: Shift+F2 (ticket na tela → chat do Groq)
@@ -295,6 +360,7 @@ export default function App() {
       // Card aberto no modal: atualiza o snapshot também, senão a aba
       // Cliente continua mostrando o vínculo antigo.
       setAberto((a) => (a && a.id === t.id ? t : a));
+      void carregarVinculos(); // vínculo pode ter mudado → atualiza o filtro
       setBoard((b) => {
         const novo: Board = {};
         for (const [c, ts] of Object.entries(b)) {
@@ -315,6 +381,7 @@ export default function App() {
     } catch {
       // silencioso: o board atual continua visível
     }
+    void carregarVinculos();
   }
 
   async function persistMove(id: number, coluna: string, posicao: number, snapshot: Board) {
@@ -323,9 +390,24 @@ export default function App() {
       if (coluna === colunaDisparaCobranca) {
         await prepararCobranca(id, coluna);
       }
+      if (coluna === colunaVisitaAgendada) {
+        abrirVisita(id, snapshot);
+      }
     } catch (e) {
       setBoard(snapshot); // reverte a tela se o backend falhar
       showToast(String(e) || 'Não foi possível mover o card.');
+    }
+  }
+
+  // abrirVisita acha o card (em qualquer coluna do snapshot) e abre o
+  // diálogo de agendamento de visita.
+  function abrirVisita(id: number, fonte: Board) {
+    for (const ts of Object.values(fonte)) {
+      const t = ts.find((x) => x.id === id);
+      if (t) {
+        setVisitaTicket(t);
+        return;
+      }
     }
   }
 
@@ -393,6 +475,10 @@ export default function App() {
         ticket360Id: '',
         ticket360Numero: '',
         observacoes: '',
+        visitaData: '',
+        visitaTurno: '',
+        visitaHora: '',
+        visitaEndereco: '',
         colunaAtual: coluna,
         posicao: fim,
         createdAt: '',
@@ -575,6 +661,43 @@ export default function App() {
         </div>
       </header>
 
+      <div className="px-4 pt-2 flex items-center gap-2 flex-wrap">
+        <input
+          type="search"
+          value={filtroTexto}
+          onChange={(e) => setFiltroTexto(e.target.value)}
+          placeholder="Filtrar cards: cliente, nº ou assunto do ticket…"
+          className="text-sm rounded-lg px-3 py-1.5 w-72 bg-white/40 dark:bg-white/10 border border-white/50 dark:border-white/10 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-sky-400/60"
+        />
+        <select
+          value={filtroAssunto}
+          onChange={(e) => setFiltroAssunto(e.target.value)}
+          className="text-sm rounded-lg px-2 py-1.5 max-w-xs bg-white/40 dark:bg-white/10 border border-white/50 dark:border-white/10 outline-none focus:ring-2 focus:ring-sky-400/60"
+          title="Filtrar pelo assunto dos tickets vinculados aos cards"
+        >
+          <option value="">Assunto: todos</option>
+          {assuntosTodos.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
+        {filtroAtivo && (
+          <>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {visiveis} de {totalCards} cards
+            </span>
+            <button
+              className="text-xs rounded-lg px-2 py-1 bg-white/40 dark:bg-white/10 border border-white/50 dark:border-white/10 hover:bg-white/70 dark:hover:bg-white/20"
+              onClick={() => {
+                setFiltroTexto('');
+                setFiltroAssunto('');
+              }}
+            >
+              ✕ Limpar filtro
+            </button>
+          </>
+        )}
+      </div>
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -587,7 +710,7 @@ export default function App() {
                 <ColunaOrdenavel
                   key={c}
                   coluna={c}
-                  tickets={board[c] ?? []}
+                  tickets={(board[c] ?? []).filter(cardVisivel)}
                   acordosPorTicket={{}}
                   modoDoCard={modoDoCard}
                   onModoCard={setModoCard}
@@ -598,6 +721,7 @@ export default function App() {
                     setAberto(t);
                   }}
                   onExcluir={excluir}
+                  onAgendarVisita={setVisitaTicket}
                   onNovoCard={novoCard}
                   onBuscar360={setBuscar360Coluna}
                   onRenomear={renomearColuna}
@@ -637,6 +761,7 @@ export default function App() {
           onImportado={(t) => {
             setBoard((b) => ({ ...b, [t.colunaAtual]: [...(b[t.colunaAtual] ?? []), t] }));
             setBuscar360Coluna(null);
+            void carregarVinculos();
           }}
           onFechar={() => setBuscar360Coluna(null)}
         />
@@ -657,9 +782,22 @@ export default function App() {
               return { ...semEle, [t.colunaAtual]: [...(semEle[t.colunaAtual] ?? []), t] };
             });
             setMovimentaAberta(false);
+            void carregarVinculos();
             showToast(`#${t.ticket360Numero || 'ticket'} → ${t.nomeCliente} em "${t.colunaAtual}"`);
           }}
           onFechar={() => setMovimentaAberta(false)}
+        />
+      )}
+
+      {visitaTicket && (
+        <VisitaModal
+          ticket={visitaTicket}
+          onSalvo={(t) => {
+            window.dispatchEvent(new CustomEvent('ticket-atualizado', { detail: t }));
+            setVisitaTicket(null);
+            showToast(t.visitaData ? `📅 Visita de ${t.nomeCliente} agendada` : 'Visita removida do card.');
+          }}
+          onFechar={() => setVisitaTicket(null)}
         />
       )}
 

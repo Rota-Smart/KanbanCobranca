@@ -40,6 +40,27 @@ func (r *VinculoRepo) List(ctx context.Context, ticketID int64) ([]Vinculo360, e
 	return out, rows.Err()
 }
 
+// ListTodos devolve todos os vínculos do banco — alimenta o filtro de cards
+// por assunto do ticket no board, sem uma consulta por card.
+func (r *VinculoRepo) ListTodos(ctx context.Context) ([]Vinculo360, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, ticket_id, ticket360_id, ticket360_numero, assunto, criado_em
+		 FROM tickets_vinculos`)
+	if err != nil {
+		return nil, fmt.Errorf("listar todos os vínculos: %w", err)
+	}
+	defer rows.Close()
+	var out []Vinculo360
+	for rows.Next() {
+		var v Vinculo360
+		if err := rows.Scan(&v.ID, &v.TicketID, &v.Ticket360ID, &v.Ticket360Numero, &v.Assunto, &v.CriadoEm); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 // Upsert registra (ou atualiza o assunto/número de) um vínculo do card.
 // Re-vincular o mesmo ticket a outro card move o vínculo — o ticket fica em
 // um card só.
