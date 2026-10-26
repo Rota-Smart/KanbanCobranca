@@ -23,10 +23,10 @@ func TestColunasSeedEAddRemove(t *testing.T) {
 	colunas, tickets := abreTesteColunas(t)
 
 	cs, err := colunas.List(ctx)
-	if err != nil || len(cs) != 11 {
+	if err != nil || len(cs) != 12 {
 		t.Fatalf("seed: %v, %d colunas", err, len(cs))
 	}
-	if cs[0] != "Fazer contato" || cs[3] != "Cobrança" {
+	if cs[0] != "Fazer contato" || cs[2] != "Visita Agendada" || cs[4] != "Cobrança" {
 		t.Errorf("ordem da seed: %v", cs)
 	}
 
@@ -67,7 +67,7 @@ func TestColunaRenomear(t *testing.T) {
 		t.Fatalf("renomear: %v", err)
 	}
 	cs, _ := colunas.List(ctx)
-	if cs[2] != "Em negociação" {
+	if cs[3] != "Em negociação" {
 		t.Errorf("ordem após renomear: %v", cs)
 	}
 	tk, err := tickets.List(ctx)

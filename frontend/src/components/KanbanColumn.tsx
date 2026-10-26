@@ -41,6 +41,8 @@ interface Props {
   onModoColuna: (coluna: string, modo: ModoCard) => void;
   onAbrir: (ticket: Ticket) => void;
   onExcluir: (ticket: Ticket) => void;
+  /** Abre o diálogo de agendamento de visita (coluna "Visita Agendada"). */
+  onAgendarVisita?: (ticket: Ticket) => void;
   onNovoCard: (coluna: string, nome: string, tipo: string) => void;
   onBuscar360: (coluna: string) => void;
   onRenomear: (antigo: string, novo: string) => void;
@@ -68,7 +70,7 @@ function BotaoModo({ ativo, titulo, children, onClick }: { ativo: boolean; titul
   );
 }
 
-export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca }: Props) {
+export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onAgendarVisita, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna });
   const [recolhida, setRecolhida] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
@@ -223,6 +225,7 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDo
               onModo={onModoCard}
               onAbrir={() => onAbrir(t)}
               onExcluir={onExcluir}
+              onAgendarVisita={onAgendarVisita}
             />
           ))}
         </SortableContext>

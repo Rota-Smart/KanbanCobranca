@@ -34,6 +34,12 @@ function iniciais(nome: string): string {
   return ((partes[0][0] ?? '') + (partes.length > 1 ? partes[partes.length - 1][0] ?? '' : '')).toUpperCase();
 }
 
+// visitaResumo junta dia/turno/horário para o badge 📅 do card.
+function visitaResumo(t: Ticket): string {
+  const dia = t.visitaData ? t.visitaData.slice(8, 10) + '/' + t.visitaData.slice(5, 7) : '';
+  return [dia, t.visitaTurno, t.visitaHora].filter(Boolean).join(' · ');
+}
+
 // Avisa o App que o card mudou (vínculo com o ticket 360), para o board
 // atualizar sem prop drilling por coluna.
 function notificarCardAtualizado(t: Ticket) {
@@ -50,11 +56,13 @@ interface Props {
   onModo: (ticket: Ticket, modo: ModoCard | 'completo') => void;
   onAbrir: () => void;
   onExcluir: (ticket: Ticket) => void;
+  /** Abre o diálogo de agendamento de visita (coluna "Visita Agendada"). */
+  onAgendarVisita?: (ticket: Ticket) => void;
 }
 
 // Card estilo app de delivery: avatar com iniciais, faixa colorida do tipo,
 // código do pedido, endereço/telefone e badge de acordos.
-export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir }: Props) {
+export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir, onAgendarVisita }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
   const [menuAberto, setMenuAberto] = useState(false);
   const [vinculando, setVinculando] = useState(false);
@@ -115,6 +123,11 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           )}
           {ticket.observacoes?.trim() && (
             <span className="text-[11px] shrink-0" title="Tem observações internas">🗒️</span>
+          )}
+          {ticket.visitaData && (
+            <span className="text-[11px] px-1.5 rounded-full font-medium bg-orange-100/80 text-orange-800 dark:bg-orange-500/20 dark:text-orange-200 shrink-0" title={`Visita: ${visitaResumo(ticket)}`}>
+              📅
+            </span>
           )}
           {qtdAcordos > 0 && (
             <span className="text-[11px] px-1.5 rounded-full font-medium bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200 shrink-0">
@@ -203,6 +216,18 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
                 >
                   🗒️ obs
                 </span>
+              )}
+              {ticket.visitaData && (
+                <button
+                  className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-orange-100/80 text-orange-800 dark:bg-orange-500/20 dark:text-orange-200 hover:bg-orange-200/80"
+                  title={`Visita ${visitaResumo(ticket)}${ticket.visitaEndereco ? ` — ${ticket.visitaEndereco}` : ''} — clique para editar`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAgendarVisita?.(ticket);
+                  }}
+                >
+                  📅 {visitaResumo(ticket)}
+                </button>
               )}
             </div>
 
@@ -304,6 +329,15 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
               {erroVinculo}
             </p>
           )}
+          <button
+            className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+            onClick={() => {
+              setMenuAberto(false);
+              onAgendarVisita?.(ticket);
+            }}
+          >
+            {ticket.visitaData ? `Editar visita (${visitaResumo(ticket)})` : '📅 Agendar visita…'}
+          </button>
           <button
             className="block w-full text-left px-3 py-2 hover:bg-red-500/10 text-red-600 dark:text-red-400"
             onClick={() => {

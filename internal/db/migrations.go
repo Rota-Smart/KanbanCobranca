@@ -18,7 +18,20 @@ var migrations = []string{
 	migration008,
 	migration009,
 	migration010,
+	migration011,
 }
+
+// migration011: agendamento de visita do card — data, turno, horário e
+// endereço (sugerido do cadastro do cliente no 360, editável) e a coluna
+// "Visita Agendada" logo após "Contato feito".
+const migration011 = `
+ALTER TABLE tickets ADD COLUMN visita_data     TEXT NOT NULL DEFAULT '';
+ALTER TABLE tickets ADD COLUMN visita_turno    TEXT NOT NULL DEFAULT '';
+ALTER TABLE tickets ADD COLUMN visita_hora     TEXT NOT NULL DEFAULT '';
+ALTER TABLE tickets ADD COLUMN visita_endereco TEXT NOT NULL DEFAULT '';
+UPDATE kanban_columns SET posicao = posicao + 1 WHERE posicao >= 2;
+INSERT OR IGNORE INTO kanban_columns (nome, posicao) VALUES ('Visita Agendada', 2);
+`
 
 // migration010: observações internas do card (não vão para o cliente) e
 // vínculos múltiplos de tickets do 360 — um card pode ter vários tickets,

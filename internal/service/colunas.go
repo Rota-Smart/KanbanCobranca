@@ -13,6 +13,7 @@ import (
 var ColunasValidas = []string{
 	"Fazer contato",
 	"Contato feito",
+	"Visita Agendada",
 	"Negociando",
 	"Cobrança",
 	"Proposta enviada",
@@ -55,10 +56,15 @@ var (
 	ErrColunaInvalida     = errors.New("coluna inválida")
 	ErrTipoTicketInvalido = errors.New("tipo de ticket inválido")
 	ErrStatusInvalido     = errors.New("status inválido")
+	ErrTurnoInvalido      = errors.New("turno da visita inválido")
 	ErrTextoMuitoLongo    = errors.New("texto maior que o limite permitido")
 	ErrDataInvalida       = errors.New("data deve estar no formato yyyy-mm-dd")
+	ErrHoraInvalida       = errors.New("horário deve estar no formato HH:MM")
 	ErrPosicaoInvalida    = errors.New("posição não pode ser negativa")
 )
+
+// TurnosVisitaValidos restringe o turno do agendamento de visita.
+var TurnosVisitaValidos = []string{"Manhã", "Tarde", "Noite"}
 
 // ErrosDeValidacao reúne todos os sentinelas que podem chegar ao usuário
 // como estão; qualquer outro erro vira mensagem genérica em friendly().
@@ -73,8 +79,10 @@ var ErrosDeValidacao = []error{
 	ErrColunaInvalida,
 	ErrTipoTicketInvalido,
 	ErrStatusInvalido,
+	ErrTurnoInvalido,
 	ErrTextoMuitoLongo,
 	ErrDataInvalida,
+	ErrHoraInvalida,
 	ErrPosicaoInvalida,
 	db.ErrTicketNaoEncontrado,
 	db.ErrCobrancaNaoEncontrada,

@@ -17,6 +17,10 @@ type Ticket struct {
 	Ticket360ID     string `json:"ticket360Id"`     // uuid do ticket no helpdesk 360 (vazio = sem vínculo)
 	Ticket360Numero string `json:"ticket360Numero"` // número exibido no 360 (ex.: "12345")
 	Observacoes     string `json:"observacoes"`     // observações internas do card
+	VisitaData      string `json:"visitaData"`      // agendamento de visita (yyyy-mm-dd, vazio = sem visita)
+	VisitaTurno     string `json:"visitaTurno"`     // Manhã | Tarde | Noite
+	VisitaHora      string `json:"visitaHora"`      // horário livre opcional (HH:MM)
+	VisitaEndereco  string `json:"visitaEndereco"`  // endereço da visita; base do link do Google Maps
 }
 
 // Vinculo360 é um ticket do helpdesk 360 ligado a um card — um card pode ter
