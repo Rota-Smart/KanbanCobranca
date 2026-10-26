@@ -744,42 +744,83 @@ func (a *App) agentEquipamentos(ctx context.Context, cod string) (string, string
 	return resumo, fmt.Sprintf("consultou os equipamentos do cliente %s", cod), nil
 }
 
-// agentAtendimentos devolve OS ativas e os atendimentos recentes (Octadesk) —
-// a fatia para entender o histórico do cliente com o suporte.
+// agentAtendimentos devolve o histórico de O.S. (incluindo concluídas —
+// fonte os-funil, pois o dashboard360 só expõe as ativas) e os atendimentos
+// recentes (Octadesk) — a fatia para entender o histórico do cliente.
 func (a *App) agentAtendimentos(ctx context.Context, cod string) (string, string, error) {
 	c := a.rotaAtual()
 	if c == nil {
 		return "", "", rota360.ErrSemSessao
 	}
-	fin, err := c.FinanceiroCliente(ctx, cod)
-	if err != nil {
-		return "", "", err
-	}
-	dados := fin.Sources.InsideService.Data
 	var sb strings.Builder
-	if n := len(dados.OSAtivas); n > 0 {
-		sb.WriteString("OS ativas:\n")
-		for i, os := range dados.OSAtivas {
-			if i >= 5 {
-				fmt.Fprintf(&sb, "… (+%d mais)\n", n-5)
-				break
-			}
-			fmt.Fprintf(&sb, "- %s\n", resumoMapa(os, "numero", "descricao", "status", "data", "situacao"))
-		}
-	} else {
-		sb.WriteString("Sem OS ativas no cadastro.\n")
+	funil, errFunil := c.OSFunil(ctx, cod)
+	if errFunil != nil {
+		slog.Warn("os-funil do cliente falhou", "cod", cod, "err", errFunil)
 	}
-	if rec := fin.Sources.Octadesk.Data.TicketsRecentes; len(rec) > 0 {
-		sb.WriteString("\nAtendimentos recentes (Octadesk):\n")
-		for i, t := range rec {
-			if i >= 5 {
-				fmt.Fprintf(&sb, "… (+%d mais)\n", len(rec)-5)
+	if funil != nil {
+		ct := funil.Contagem
+		fmt.Fprintf(&sb, "Ordens de serviço (histórico): %d concluída(s), %d cancelada(s), %d fechada(s) sem processamento, %d atendida(s) sem fechamento, %d sem atendimento.\n",
+			ct.Concluida, ct.Cancelada, ct.FechadaSemProcessam, ct.AtendidaSemFechamento, ct.SemAtendimento)
+		for i, os := range funil.Itens {
+			if i >= 10 {
+				fmt.Fprintf(&sb, "… (+%d mais antigas)\n", len(funil.Itens)-10)
 				break
 			}
-			fmt.Fprintf(&sb, "- #%s %s [%s] (%s)\n", t.Number, t.Summary, t.Status.Name, t.CreatedAt)
+			abertura, fechamento := "—", "—"
+			if os.DataAbertura != nil {
+				abertura = os.DataAbertura.Format("02/01/2006")
+			}
+			if os.DataFechamento != nil {
+				fechamento = os.DataFechamento.Format("02/01/2006")
+			}
+			desc := primeiraLinha(os.DefeitoSigma)
+			if desc == "" {
+				desc = primeiraLinha(os.Descricao)
+			}
+			fmt.Fprintf(&sb, "- O.S. %d [%s/%s] aberta %s, fechada %s, técnico %s: %s\n",
+				os.Ordem, rota360.StatusOS(os.Status), rota360.TipoOS(os.Tipo), abertura, fechamento, os.Tecnico, limitarTexto(desc, 120))
 		}
+	}
+	// O dashboard complementa com as OS em aberto do cadastro (quando o
+	// os-funil falhou, é a única visão de OS que sobra).
+	if fin, err := c.FinanceiroCliente(ctx, cod); err == nil {
+		dados := fin.Sources.InsideService.Data
+		if n := len(dados.OSAtivas); n > 0 {
+			sb.WriteString("\nOS ativas no cadastro:\n")
+			for i, os := range dados.OSAtivas {
+				if i >= 5 {
+					fmt.Fprintf(&sb, "… (+%d mais)\n", n-5)
+					break
+				}
+				fmt.Fprintf(&sb, "- %s\n", resumoMapa(os, "numero", "descricao", "status", "data", "situacao"))
+			}
+		} else if funil == nil {
+			sb.WriteString("Sem OS ativas no cadastro.\n")
+		}
+		if rec := fin.Sources.Octadesk.Data.TicketsRecentes; len(rec) > 0 {
+			sb.WriteString("\nAtendimentos recentes (Octadesk):\n")
+			for i, t := range rec {
+				if i >= 5 {
+					fmt.Fprintf(&sb, "… (+%d mais)\n", len(rec)-5)
+					break
+				}
+				fmt.Fprintf(&sb, "- #%s %s [%s] (%s)\n", t.Number, t.Summary, t.Status.Name, t.CreatedAt)
+			}
+		}
+	} else if errFunil != nil {
+		return "", "", errFunil
 	}
 	return sb.String(), fmt.Sprintf("consultou os atendimentos do cliente %s", cod), nil
+}
+
+// primeiraLinha devolve a primeira linha não vazia do texto.
+func primeiraLinha(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			return l
+		}
+	}
+	return ""
 }
 
 // resumoMapa junta os valores dos campos pedidos de um mapa genérico

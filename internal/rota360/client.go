@@ -294,6 +294,81 @@ func (c *Cliente) PesquisarTickets(ctx context.Context, q string) ([]Ticket360, 
 	return out, nil
 }
 
+// OSItem360 é uma ordem de serviço do cliente no os-funil — inclui as
+// concluídas/fechadas, que o dashboard360 (osAtivas) não expõe.
+type OSItem360 struct {
+	Ordem          int64      `json:"Ordem"`
+	Status         string     `json:"Status"` // A aberta | B baixada | F fechada | C cancelada
+	Tipo           string     `json:"Tipo"`   // M corretiva | I interna | P preventiva | V instalação | A ampliação | R retirada
+	DefeitoSigma   string     `json:"DefeitoSigma"`
+	Descricao      string     `json:"Descricao"`
+	DataAbertura   *time.Time `json:"DataAbertura"`
+	DataFechamento *time.Time `json:"DataFechamento"`
+	Tecnico        string     `json:"Tecnico"`
+}
+
+// OSFunil360 é o resultado de /api/cliente/<cod>/os-funil.
+type OSFunil360 struct {
+	Itens    []OSItem360 `json:"itens"`
+	Contagem struct {
+		Concluida              int `json:"concluida"`
+		Cancelada              int `json:"cancelada"`
+		FechadaSemProcessam    int `json:"fechada_sem_processamento"`
+		AtendidaSemFechamento  int `json:"atendida_sem_fechamento"`
+		SemAtendimento         int `json:"sem_atendimento"`
+	} `json:"contagem"`
+}
+
+// OSFunil lista as ordens de serviço do cliente (todas as situações,
+// mais recentes primeiro — o portal limita a ~50).
+func (c *Cliente) OSFunil(ctx context.Context, codService string) (*OSFunil360, error) {
+	if _, err := strconv.ParseInt(codService, 10, 64); err != nil {
+		return nil, fmt.Errorf("código service inválido: %s", codService)
+	}
+	var out OSFunil360
+	if err := c.get(ctx, "/api/cliente/"+codService+"/os-funil", &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// StatusOS traduz o código de situação do ERP do 360 (os.go do portal:
+// A aberta, B baixada, F fechada, C cancelada).
+func StatusOS(s string) string {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "A":
+		return "aberta"
+	case "B", "F":
+		return "concluída"
+	case "C":
+		return "cancelada"
+	case "":
+		return "sem status"
+	default:
+		return "status " + s
+	}
+}
+
+// TipoOS traduz o código do tipo de O.S. (M/I/P/V/A/R).
+func TipoOS(t string) string {
+	switch strings.ToUpper(strings.TrimSpace(t)) {
+	case "M":
+		return "corretiva"
+	case "I":
+		return "interna"
+	case "P":
+		return "preventiva"
+	case "V":
+		return "instalação"
+	case "A":
+		return "ampliação"
+	case "R":
+		return "retirada"
+	default:
+		return t
+	}
+}
+
 // ServicoContratado360 é um serviço do cadastro (ex.: "MONITORAMENTO DE
 // ALARME", "CÂMERA WIFI EXTERNA - GRÁTIS").
 type ServicoContratado360 struct {

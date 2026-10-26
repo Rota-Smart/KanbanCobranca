@@ -1,6 +1,7 @@
 package rota360
 
 import (
+	"time"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -164,5 +165,64 @@ func TestPesquisarTickets(t *testing.T) {
 
 	if res, _ := c.PesquisarTickets(context.Background(), "   "); len(res) != 0 {
 		t.Errorf("termo vazio deveria devolver vazio, veio %+v", res)
+	}
+}
+
+func TestOSFunil(t *testing.T) {
+	c, _ := servidorFalso(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/cliente/13754/os-funil" {
+			t.Errorf("caminho errado: %s", r.URL.Path)
+		}
+		abertura := "2026-10-06T20:10:48"
+		fechamento := "2026-10-08T00:00:00"
+		json.NewEncoder(w).Encode(OSFunil360{
+			Itens: []OSItem360{
+				{Ordem: 400548, Status: "B", Tipo: "I", DefeitoSigma: "MANUTENÇÃO", DataAbertura: horaP(&abertura), DataFechamento: horaP(&fechamento), Tecnico: "ANALISE"},
+				{Ordem: 400700, Status: "A", Tipo: "M"},
+			},
+		})
+		// contagem fica zerada no teste — só os itens interessam ao parse
+	})
+	res, err := c.OSFunil(context.Background(), "13754")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Itens) != 2 {
+		t.Fatalf("esperava 2 OS, veio %d", len(res.Itens))
+	}
+	if res.Itens[0].Status != "B" || res.Itens[0].Ordem != 400548 {
+		t.Fatalf("primeira OS errada: %+v", res.Itens[0])
+	}
+	if res.Itens[0].DataFechamento == nil || res.Itens[0].DataFechamento.Format("02/01/2006") != "08/10/2026" {
+		t.Fatalf("fechamento errado: %+v", res.Itens[0].DataFechamento)
+	}
+}
+
+func TestOSFunilCodigoInvalido(t *testing.T) {
+	c, _ := servidorFalso(t, func(w http.ResponseWriter, r *http.Request) {})
+	if _, err := c.OSFunil(context.Background(), "x"); err == nil {
+		t.Fatal("código não numérico deveria falhar")
+	}
+}
+
+func horaOS(s string) time.Time { t, _ := time.Parse("2006-01-02T15:04:05", s); return t }
+
+func horaP(t *string) *time.Time { v, _ := time.Parse("2006-01-02T15:04:05", *t); return &v }
+
+func TestStatusOSETipoOS(t *testing.T) {
+	casos := map[[2]string]string{
+		{"B", "concluída"}: StatusOS("B"),
+		{"F", "concluída"}: StatusOS("F"),
+		{"A", "aberta"}:    StatusOS("A"),
+		{"C", "cancelada"}: StatusOS("C"),
+		{"", "sem status"}: StatusOS(""),
+	}
+	for caso, got := range casos {
+		if got != caso[1] {
+			t.Errorf("StatusOS(%q) = %q, esperava %q", caso[0], got, caso[1])
+		}
+	}
+	if TipoOS("V") != "instalação" || TipoOS("M") != "corretiva" || TipoOS("X") != "X" {
+		t.Error("tipoOS com traduções erradas")
 	}
 }

@@ -65,7 +65,7 @@ func AgentTools() []map[string]any {
 			"Equipamentos do cliente no 360: alarme, câmera, sensores e produtos.",
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
 		tool("atendimentos_cliente",
-			"OS ativas e atendimentos (Octadesk) do cliente no 360.",
+			"O.S. do cliente: ativas, concluídas, canceladas + atendimentos (Octadesk).",
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
 		tool("pesquisar_tickets",
 			"Pesquisa tickets ABERTOS do 360 pelo número (com ou sem #) ou pelo título do ticket — NÃO pesquise pelo código service do cliente. Use antes de detalhe/abrir/responder.",
