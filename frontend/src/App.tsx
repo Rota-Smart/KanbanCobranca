@@ -186,7 +186,9 @@ export default function App() {
 
   async function carregarVinculos() {
     try {
-      setVinculos(await bindings.VinculosTodos());
+      // ?? []: versão velha da bridge pode devolver null quando não há
+      // vínculos — iterar null derrubava o app inteiro (tela azul).
+      setVinculos((await bindings.VinculosTodos()) ?? []);
     } catch {
       // sem vínculos o filtro por assunto só fica vazio
     }

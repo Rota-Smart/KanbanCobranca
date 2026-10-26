@@ -29,7 +29,9 @@ func (r *VinculoRepo) List(ctx context.Context, ticketID int64) ([]Vinculo360, e
 		return nil, fmt.Errorf("listar vínculos: %w", err)
 	}
 	defer rows.Close()
-	var out []Vinculo360
+	// slice vazio (não nil): nil vira null no JSON da bridge e o filtro do
+	// board quebra com "vinculos is not iterable" no frontend.
+	out := []Vinculo360{}
 	for rows.Next() {
 		var v Vinculo360
 		if err := rows.Scan(&v.ID, &v.TicketID, &v.Ticket360ID, &v.Ticket360Numero, &v.Assunto, &v.CriadoEm); err != nil {
@@ -50,7 +52,9 @@ func (r *VinculoRepo) ListTodos(ctx context.Context) ([]Vinculo360, error) {
 		return nil, fmt.Errorf("listar todos os vínculos: %w", err)
 	}
 	defer rows.Close()
-	var out []Vinculo360
+	// slice vazio (não nil): nil vira null no JSON da bridge e o filtro do
+	// board quebra com "vinculos is not iterable" no frontend.
+	out := []Vinculo360{}
 	for rows.Next() {
 		var v Vinculo360
 		if err := rows.Scan(&v.ID, &v.TicketID, &v.Ticket360ID, &v.Ticket360Numero, &v.Assunto, &v.CriadoEm); err != nil {
