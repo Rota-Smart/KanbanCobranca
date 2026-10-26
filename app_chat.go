@@ -158,17 +158,22 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		return service.ChatResultado{}, fmt.Errorf("mensagem vazia")
 	}
 
-	// Comando rígido de card ("apague o card do João", "mova o card 123 para
-	// Cobrança"): reconhecido e executado localmente, sem chamar a API —
-	// funciona até sem chave de IA configurada.
-	if res, ok := a.executarIntencaoLocal(mensagem); ok {
+	// Comandos rígidos executados localmente, sem chamar a API — funcionam
+	// até sem chave de IA configurada. "/move" (ticket do 360 ou card) vem
+	// primeiro; "apague o card do João" / "mova o card 123 para Cobrança"
+	// depois. Frases fora do molde caem no fluxo normal do agente.
+	local, reconhecido := a.executarComandoMove(mensagem)
+	if !reconhecido {
+		local, reconhecido = a.executarIntencaoLocal(mensagem)
+	}
+	if reconhecido {
 		if err := a.chats.AddMensagem(a.ctx, chatID, "user", mensagem, ""); err != nil {
 			return service.ChatResultado{}, friendly("EnviarChat", err)
 		}
-		if err := a.gravarResposta(chatID, res); err != nil {
+		if err := a.gravarResposta(chatID, local); err != nil {
 			return service.ChatResultado{}, err
 		}
-		return *res, nil
+		return *local, nil
 	}
 
 	if a.groq == nil || !a.groq.TemChave() {

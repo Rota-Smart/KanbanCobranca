@@ -111,6 +111,14 @@ COMO INSTALAR (outro computador):
    mostra o selo 📅 com o resumo; clicar nele reabre o agendamento. Há também
    a barra de filtro no topo (cliente, nº ou assunto do ticket).
 
+20. MOVER TICKET PELO CHAT COM /move (v1.15.0): no chat do assistente, digite
+   "/move 12345 para Cobrança" e o app move o ticket do 360 para a coluna na
+   hora — mesma ação do Shift+F6, sem gastar IA (funciona até sem chave de
+   IA). Aceita nº do ticket (com ou sem #), uuid ou URL do 360; a coluna pode
+   ser um pedaço do nome, sem acento ("cobr" acha "Cobrança"). Também move um
+   card que já existe pelo nome: "/move João para Cobrança". Só "/move" mostra
+   as colunas disponíveis. O Shift+F6 continua funcionando normalmente.
+
 PRIMEIROS PASSOS:
 1. ⚙ Configurações → Sessão do 360: clique em "Conectar" — abre o site numa
    guia do Chrome; faça login lá UMA vez e o app captura e salva o cookie

@@ -35,6 +35,74 @@ func TestParseIntencaoCard(t *testing.T) {
 	}
 }
 
+func TestParseComandoMove(t *testing.T) {
+	url := "https://360.rotagroup.com.br/helpdesk/tickets/abc-123-def"
+	cases := []struct {
+		msg    string
+		quer   bool
+		ticket string
+		card   string
+		coluna string
+	}{
+		{"/move 12345 para Cobrança", true, "12345", "", "Cobrança"},
+		{"/move #12345 pro Orçamento.", true, "#12345", "", "Orçamento"},
+		{"/Mover 12345 Cobrança", true, "12345", "", "Cobrança"},
+		{"/movimentar " + url + " para Aguardando", true, url, "", "Aguardando"},
+		{"/move João da Silva para Cobrança", true, "", "João da Silva", "Cobrança"},
+		{"/move João na Cobrança", true, "", "João", "Cobrança"},
+		{"/move 12345", true, "12345", "", ""},
+		{"/move", true, "", "", ""},
+		{"/move para Cobrança", true, "", "Cobrança", ""}, // sem alvo: o app pede a coluna
+		{"mova o card do João para Cobrança", false, "", "", ""}, // fluxo antigo
+		{"/apague o card do João", false, "", "", ""},
+		{"", false, "", "", ""},
+	}
+	for _, tc := range cases {
+		cmd, ok := ParseComandoMove(tc.msg)
+		if ok != tc.quer {
+			t.Errorf("%q: ok=%v, quer %v", tc.msg, ok, tc.quer)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		if cmd.Ticket != tc.ticket || cmd.Card != tc.card || cmd.Coluna != tc.coluna {
+			t.Errorf("%q: veio %+v, quer ticket=%q card=%q coluna=%q", tc.msg, cmd, tc.ticket, tc.card, tc.coluna)
+		}
+	}
+}
+
+func TestCasarColuna(t *testing.T) {
+	colunas := []string{"Fazer contato", "Cobrança", "Aguardando", "Visita Agendada", "Orçamento"}
+	casos := []struct {
+		texto string
+		quer  string
+		falha bool
+	}{
+		{"Cobrança", "Cobrança", false},
+		{"cobranca", "Cobrança", false},
+		{"COBRANÇA.", "Cobrança", false},
+		{"cobr", "Cobrança", false},
+		{"visita agendada", "Visita Agendada", false},
+		{"orcamento", "Orçamento", false},
+		{"a", "", true}, // casa "Aguardando" e "Fazer contato" → ambíguo
+		{"xyz", "", true},
+		{"", "", true},
+	}
+	for _, tc := range casos {
+		got, err := CasarColuna(tc.texto, colunas)
+		if tc.falha {
+			if err == nil {
+				t.Errorf("%q: queria erro, veio %q", tc.texto, got)
+			}
+			continue
+		}
+		if err != nil || got != tc.quer {
+			t.Errorf("%q: veio %q (%v), quer %q", tc.texto, got, err, tc.quer)
+		}
+	}
+}
+
 func TestResolverCard(t *testing.T) {
 	cards := []CardResumo{
 		{1, "João da Silva", "123"},

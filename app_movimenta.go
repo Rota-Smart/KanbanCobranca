@@ -73,3 +73,66 @@ func (a *App) MovimentarTicket360(entrada, coluna string) (db.Ticket, error) {
 	}
 	return t, nil
 }
+
+// executarComandoMove reconhece o comando "/move" do chat e executa direto,
+// sem IA: com nº/uuid/URL de ticket roda o mesmo fluxo do Shift+F6 (busca no
+// 360, move o card do cliente ou importa um novo e vincula); com nome/código
+// move um card que já existe. ok=false quando não é o comando (o texto segue
+// para o fluxo normal do agente).
+func (a *App) executarComandoMove(mensagem string) (*service.ChatResultado, bool) {
+	cmd, ok := service.ParseComandoMove(mensagem)
+	if !ok {
+		return nil, false
+	}
+	colunas := a.colunasAtivas()
+	if cmd.Ticket == "" && cmd.Card == "" {
+		return &service.ChatResultado{
+			Resposta: fmt.Sprintf(
+				"Uso: /move <nº do ticket> para <coluna> — ex.: /move 12345 para Cobrança (mesma ação do Shift+F6; aceita nº, uuid ou URL do ticket). Também move um card existente: /move João para Cobrança.\nColunas: %s.",
+				strings.Join(colunas, ", ")), Acoes: []service.AcaoDoAgente{},
+		}, true
+	}
+	if cmd.Ticket != "" {
+		coluna, err := service.CasarColuna(cmd.Coluna, colunas)
+		if err != nil {
+			return &service.ChatResultado{Resposta: err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+		}
+		t, err := a.MovimentarTicket360(cmd.Ticket, coluna)
+		if err != nil {
+			return &service.ChatResultado{Resposta: "⚠ " + err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+		}
+		numero := t.Ticket360Numero
+		if numero == "" {
+			numero = strings.TrimPrefix(cmd.Ticket, "#")
+		}
+		return &service.ChatResultado{
+			Resposta: fmt.Sprintf("✅ Ticket #%s → card %d (%s) na coluna **%s**.", numero, t.ID, t.NomeCliente, t.ColunaAtual),
+			Acoes: []service.AcaoDoAgente{{Ferramenta: "movimentar_ticket_360",
+				Resumo: fmt.Sprintf("moveu o ticket #%s para %s via /move", numero, t.ColunaAtual)}},
+		}, true
+	}
+	coluna, err := service.CasarColuna(cmd.Coluna, colunas)
+	if err != nil {
+		return &service.ChatResultado{Resposta: err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	ts, err := a.tickets.List(a.ctx)
+	if err != nil {
+		return &service.ChatResultado{Resposta: "Não consegui listar os cards: " + err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	cards := make([]service.CardResumo, 0, len(ts))
+	for _, t := range ts {
+		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService})
+	}
+	card, err := service.ResolverCard(cmd.Card, cards)
+	if err != nil {
+		return &service.ChatResultado{Resposta: err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	if err := a.MoveTicket(card.ID, coluna, a.contagemColuna(coluna)); err != nil {
+		return &service.ChatResultado{Resposta: "Falhou ao mover: " + err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	return &service.ChatResultado{
+		Resposta: fmt.Sprintf("✅ Card %d (%s) movido para **%s**.", card.ID, card.NomeCliente, coluna),
+		Acoes: []service.AcaoDoAgente{{Ferramenta: "mover_card",
+			Resumo: fmt.Sprintf("moveu o card %d (%s) para %s via /move", card.ID, card.NomeCliente, coluna)}},
+	}, true
+}

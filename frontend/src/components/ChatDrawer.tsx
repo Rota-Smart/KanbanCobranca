@@ -27,6 +27,19 @@ function textoFormatado(s: string): React.ReactNode[] {
   });
 }
 
+// Comandos de barra reconhecidos pelo app (sem IA): o dicionário alimenta a
+// dica que aparece quando o usuário começa a digitar "/".
+const comandosBarra: { cmd: string; exemplo: string }[] = [
+  { cmd: '/move', exemplo: '/move 12345 para Cobrança' },
+];
+
+function dicaDaBarra(texto: string): string | null {
+  if (!texto.startsWith('/')) return null;
+  const palavra = texto.split(/\s/)[0].toLowerCase();
+  const achou = comandosBarra.find((c) => c.cmd.startsWith(palavra));
+  return achou ? achou.exemplo : null;
+}
+
 // ChatDrawer: conversas com o agente Groq, que age no app — busca clientes
 // no 360, adiciona cards, cria colunas, move cards e puxa financeiro.
 // Cada conversa tem histórico persistido no banco; a lista de conversas fica
@@ -257,8 +270,8 @@ export default function ChatDrawer(props: {
             <div>
               <h2 className="text-lg font-semibold dark:text-slate-100">Assistente (Groq)</h2>
               <p className="text-xs text-slate-500">
-                Peça: “adicione o cliente 24755 em Cobrança”, “crie a coluna Renegociação”, “qual o
-                financeiro do 20690?”…
+                Peça: “adicione o cliente 24755 em Cobrança”, “/move 12345 para Cobrança”, “crie a
+                coluna Renegociação”, “qual o financeiro do 20690?”…
               </p>
             </div>
             <button aria-label="Fechar chat" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
@@ -273,6 +286,7 @@ export default function ChatDrawer(props: {
                 <br />• “Buscar o cliente RESOLUTE e adicionar em Negociando”
                 <br />• “Crie uma coluna chamada Renegociação”
                 <br />• “Financeiro do 24755” e depois “adicione em Cobrança e gere a proposta”
+                <br />• “/move 12345 para Cobrança” — move um ticket do 360 pro board (igual ao Shift+F6)
               </p>
             )}
             {msgs.map((m, i) => (
@@ -297,6 +311,16 @@ export default function ChatDrawer(props: {
             <div ref={fimRef} />
           </div>
 
+          {dicaDaBarra(texto) && !enviando && (
+            <button
+              type="button"
+              className="mt-1 self-start text-xs rounded bg-white/60 dark:bg-slate-700/70 border border-white/30 dark:border-white/10 px-2 py-1 text-slate-600 dark:text-slate-200 hover:bg-white/80 dark:hover:bg-slate-600"
+              onClick={() => setTexto(comandosBarra[0].exemplo)}
+              title="Clique para completar o comando"
+            >
+              {dicaDaBarra(texto)}
+            </button>
+          )}
           <form
             className="mt-2 flex gap-1 items-center"
             onSubmit={(e) => {
