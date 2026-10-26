@@ -23,10 +23,11 @@ import (
 )
 
 // AbreChromeVoz relança o Chrome do perfil dedicado do app (já logado no
-// 360 — o cookie vive no perfil) com porta de depuração, e o DEIXA rodando:
-// a voz precisa de uma aba viva para injetar o gravador, e o fluxo de
-// conexão normal mata o Chrome assim que lê o cookie. Reuso nas gravações
-// seguintes e nas navegações de ticket (aba do 360 fica aberta).
+// 360 — o cookie vive no perfil) com porta de depuração, EM HEADLESS (sem
+// janela ou guia visível), e o DEIXA rodando: a voz precisa de uma aba
+// viva para injetar o gravador, e o fluxo de conexão normal mata o Chrome
+// assim que lê o cookie. Reuso nas gravações seguintes e nas navegações de
+// ticket (aba do 360 fica aberta).
 func AbreChromeVoz() (int, error) {
 	chrome, err := chromeExecutavel()
 	if err != nil {
@@ -45,7 +46,13 @@ func AbreChromeVoz() (int, error) {
 	cmd := exec.Command(chrome,
 		"--user-data-dir="+perfil,
 		fmt.Sprintf("--remote-debugging-port=%d", porta),
+		// Headless: a captura é só getUserMedia injetado via CDP — nada
+		// precisa aparecer. O cookie do perfil (já logado no 360) segue
+		// valendo e a aba carregada recebe o gravador sem janela visível.
+		"--headless=new",
 		"--no-first-run", "--no-default-browser-check",
+		// No headless não há UI de prompt de permissão — auto-concede o mic.
+		"--use-fake-ui-for-media-stream",
 		"--window-size=1100,800",
 		urlLogin360,
 	)
