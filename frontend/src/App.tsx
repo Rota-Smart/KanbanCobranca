@@ -25,6 +25,7 @@ import BuscarTickets360Dialog from './components/BuscarTickets360Dialog';
 import ChatDrawer from './components/ChatDrawer';
 import Configuracoes from './components/Configuracoes';
 import KanbanColumn from './components/KanbanColumn';
+import MovimentarTicketDialog from './components/MovimentarTicketDialog';
 import NegotiationModal from './components/NegotiationModal';
 import type { ModoCard } from './components/TicketCard';
 import { boardFromTickets, moveCard, type Board } from './kanban';
@@ -130,6 +131,7 @@ export default function App() {
   const [preCobranca, setPreCobranca] = useState<ResultadoCobranca | null>(null);
   const [buscar360Coluna, setBuscar360Coluna] = useState<string | null>(null);
   const [buscaTicketsAberta, setBuscaTicketsAberta] = useState(false);
+  const [movimentaAberta, setMovimentaAberta] = useState(false);
   const [configAberta, setConfigAberta] = useState(false);
   const [chatAberto, setChatAberto] = useState(false);
   const [chatMsgInicial, setChatMsgInicial] = useState<string | null>(null);
@@ -239,6 +241,10 @@ export default function App() {
     const offBuscaTickets = EventsOn('atalho:busca-tickets', () => {
       setBuscaTicketsAberta(true);
     });
+    // Shift+F6: movimentar ticket para coluna sem passar pela IA.
+    const offMovimenta = EventsOn('atalho:movimenta', () => {
+      setMovimentaAberta(true);
+    });
     // Shift+F5: leitura da tela do Access (OS) — abre o chat com o briefing.
     const offAcesso = EventsOn('atalho:acesso', (d: LeituraAcesso) => {
       if (d?.mensagem && d.achou) {
@@ -253,6 +259,7 @@ export default function App() {
       offTela();
       offBusca();
       offBuscaTickets();
+      offMovimenta();
       offAcesso();
     };
   }, [colunas]);
@@ -540,6 +547,13 @@ export default function App() {
           </button>
           <button
             className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
+            title="Mover ticket para coluna — direto, sem o assistente (Shift+F6)"
+            onClick={() => setMovimentaAberta(true)}
+          >
+            📥 Mover ticket
+          </button>
+          <button
+            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
             onClick={() => setChatAberto(true)}
           >
             💬 Assistente
@@ -629,6 +643,25 @@ export default function App() {
       )}
 
       {buscaTicketsAberta && <BuscarTickets360Dialog onFechar={() => setBuscaTicketsAberta(false)} />}
+
+      {movimentaAberta && (
+        <MovimentarTicketDialog
+          colunas={colunas}
+          onPronto={(t) => {
+            // Cliente novo: card entra na coluna; cliente existente: atualiza o card.
+            setBoard((b) => {
+              const semEle: Board = {};
+              for (const [c, ts] of Object.entries(b)) {
+                semEle[c] = ts.filter((x) => x.id !== t.id);
+              }
+              return { ...semEle, [t.colunaAtual]: [...(semEle[t.colunaAtual] ?? []), t] };
+            });
+            setMovimentaAberta(false);
+            showToast(`#${t.ticket360Numero || 'ticket'} → ${t.nomeCliente} em "${t.colunaAtual}"`);
+          }}
+          onFechar={() => setMovimentaAberta(false)}
+        />
+      )}
 
       {configAberta && <Configuracoes onFechar={() => setConfigAberta(false)} onToast={showToast} />}
 

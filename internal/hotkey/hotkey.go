@@ -20,6 +20,7 @@ const (
 	vkF3        = 0x72
 	vkF4        = 0x73
 	vkF5        = 0x74
+	vkF6        = 0x75
 )
 
 const (
@@ -27,6 +28,7 @@ const (
 	idBuscaClientes = 2 // Shift+F3
 	idBuscaTickets  = 3 // Shift+F4
 	idAcessoTela    = 4 // Shift+F5
+	idMovimenta     = 5 // Shift+F6
 )
 
 var (
@@ -46,11 +48,12 @@ type msg struct {
 }
 
 // Registrar registra Shift+F2 (ticket da tela), Shift+F3 (busca de clientes),
-// Shift+F4 (busca de tickets) e Shift+F5 (leitura da tela do Access)
-// globalmente e entra no loop de mensagens até o processo sair. Cada disparo
-// roda o callback correspondente em nova goroutine.
+// Shift+F4 (busca de tickets), Shift+F5 (leitura da tela do Access) e
+// Shift+F6 (movimentar ticket para coluna) globalmente e entra no loop de
+// mensagens até o processo sair. Cada disparo roda o callback correspondente
+// em nova goroutine.
 // Bloqueia a thread atual — chamar de uma goroutine dedicada.
-func Registrar(onTicketTela, onBuscaClientes, onBuscaTickets, onAcessoTela func()) error {
+func Registrar(onTicketTela, onBuscaClientes, onBuscaTickets, onAcessoTela, onMovimenta func()) error {
 	errCh := make(chan error, 1)
 	go func() {
 		// RegisterHotKey é por thread: registra e bombeia mensagens na mesma.
@@ -65,6 +68,7 @@ func Registrar(onTicketTela, onBuscaClientes, onBuscaTickets, onAcessoTela func(
 			{idBuscaClientes, vkF3, onBuscaClientes},
 			{idBuscaTickets, vkF4, onBuscaTickets},
 			{idAcessoTela, vkF5, onAcessoTela},
+			{idMovimenta, vkF6, onMovimenta},
 		}
 		for _, a := range atalhos {
 			r, _, err := procRegisterHotKey.Call(0, a.id, uintptr(modShift|modNoRepeat), a.vk)
@@ -95,6 +99,8 @@ func Registrar(onTicketTela, onBuscaClientes, onBuscaTickets, onAcessoTela func(
 				go onBuscaTickets()
 			case idAcessoTela:
 				go onAcessoTela()
+			case idMovimenta:
+				go onMovimenta()
 			}
 		}
 	}()

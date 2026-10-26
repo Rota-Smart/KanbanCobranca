@@ -26,6 +26,8 @@ const (
 	evAtalhoBuscaTickets = "atalho:busca-tickets"
 	// Shift+F5: lê a tela do Access (OS) e abre o chat com o texto.
 	evAtalhoAcesso = "atalho:acesso"
+	// Shift+F6: abre o diálogo de movimentar ticket para coluna (sem IA).
+	evAtalhoMovimenta = "atalho:movimenta"
 )
 
 // TicketDaTela é o resultado da identificação do que estava na tela
@@ -69,7 +71,7 @@ func (a *App) ultimoTicketTela() TicketTelaCapturado {
 // a thread do hotkey precisa viver com o loop de mensagens até o fim.
 func (a *App) iniciarAtalhos() {
 	go func() {
-		if err := hotkey.Registrar(a.onAtalhoTicketTela, a.onAtalhoBusca, a.onAtalhoBuscaTickets, a.onAtalhoAcesso); err != nil {
+		if err := hotkey.Registrar(a.onAtalhoTicketTela, a.onAtalhoBusca, a.onAtalhoBuscaTickets, a.onAtalhoAcesso, a.onAtalhoMovimenta); err != nil {
 			slog.Warn("atalhos globais indisponíveis", "err", err)
 		}
 	}()
@@ -93,6 +95,13 @@ func (a *App) onAtalhoBusca() {
 func (a *App) onAtalhoBuscaTickets() {
 	a.mostrarJanela()
 	runtime.EventsEmit(a.ctx, evAtalhoBuscaTickets)
+}
+
+// onAtalhoMovimenta (Shift+F6): abre o diálogo de movimentar ticket para
+// coluna — ação manual, sem passar pela IA.
+func (a *App) onAtalhoMovimenta() {
+	a.mostrarJanela()
+	runtime.EventsEmit(a.ctx, evAtalhoMovimenta)
 }
 
 // LeituraAcesso é o resultado do Shift+F5: o texto lido da janela em foco
