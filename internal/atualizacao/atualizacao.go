@@ -19,7 +19,7 @@ import (
 )
 
 // VersaoApp é a versão deste binário; bump a cada release.
-const VersaoApp = "1.11.1"
+const VersaoApp = "1.11.2"
 
 // BasePadrao é a fonte de atualização padrão (branch release do repo).
 const BasePadrao = "https://raw.githubusercontent.com/Rota-Smart/KanbanCobranca/release"

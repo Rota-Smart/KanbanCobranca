@@ -322,7 +322,6 @@ export default function ChatDrawer(props: {
               placeholder={gravando ? 'Ouvindo… fale sua mensagem' : 'Peça uma ação ao assistente…'}
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
-              disabled={enviando}
             />
             <button
               type="submit"
