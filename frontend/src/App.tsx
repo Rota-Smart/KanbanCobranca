@@ -339,6 +339,7 @@ export default function App() {
   // Verificação de tickets fechados: consulta o 360 e move os cards cujos
   // tickets resolveram para a coluna Ticket Fechado — sem passar pela IA.
   const [verificandoFechados, setVerificandoFechados] = useState(false);
+  const [menuAcao, setMenuAcao] = useState<{ x: number; y: number } | null>(null);
   async function verificarFechados() {
     if (verificandoFechados) return;
     setVerificandoFechados(true);
@@ -656,17 +657,44 @@ export default function App() {
           >
             🎟 Tickets
           </button>
-          <button
-            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium disabled:opacity-60"
-            title="Abre o diálogo de mover ticket (Shift+F6) e, antes, confere no 360 os tickets vinculados — os resolvidos vão sozinhos para a coluna Ticket Fechado"
-            disabled={verificandoFechados}
-            onClick={async () => {
-              await verificarFechados();
-              setMovimentaAberta(true);
-            }}
-          >
-            {verificandoFechados ? '🔍 Conferindo…' : '🎫 Tickets'}
-          </button>
+          <div className="relative">
+            <button
+              className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium disabled:opacity-60"
+              title="Ações de ticket: mover para coluna ou fechar os finalizados"
+              disabled={verificandoFechados}
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setMenuAcao((m) => (m ? null : { x: r.right, y: r.bottom + 4 }));
+              }}
+            >
+              {verificandoFechados ? '🔍 Conferindo…' : '🎫 Ação'}
+            </button>
+            {menuAcao && (
+              <>
+                <div
+                  className="fixed inset-0 z-[100]"
+                  onClick={() => setMenuAcao(null)}
+                />
+                <div
+                  className="fixed z-[101] rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-600/60 shadow-xl overflow-y-auto max-h-[60vh] min-w-[12rem]"
+                  style={{ right: window.innerWidth - menuAcao.x, top: menuAcao.y }}
+                >
+                  <button
+                    className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+                    onClick={() => { setMenuAcao(null); setMovimentaAberta(true); }}
+                  >
+                    📥 Mover ticket para coluna…
+                  </button>
+                  <button
+                    className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+                    onClick={() => { setMenuAcao(null); void verificarFechados(); }}
+                  >
+                    ✅ Fechar finalizados (Ticket Fechado)
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button
             className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
             onClick={() => setChatAberto(true)}
