@@ -74,9 +74,14 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
   // porque o card tem overflow-hidden, que cortava o menu comprido.
   function abrirMenu(e: React.MouseEvent) {
     e.stopPropagation();
-    e.preventDefault();
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setMenu((m) => (m ? null : { right: window.innerWidth - r.right, top: r.bottom + 4 }));
+  }
+
+  // Impede que o pointerdown no botão ative o drag do card (dnd-kit), o que
+  // engolia o clique e nunca deixava o menu abrir.
+  function pararDrag(e: React.PointerEvent) {
+    e.stopPropagation();
   }
 
   // Vincula (ou desvincula, com entrada vazia) o ticket do 360 ao card.
@@ -111,6 +116,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
     <>
       <div
         className="fixed inset-0 z-[99]"
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
           setMenu(null);
@@ -119,6 +125,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
       <div
         className="fixed z-[100] rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-600/60 shadow-xl overflow-y-auto max-h-[60vh] min-w-[13rem]"
         style={{ right: menu.right, top: menu.top }}
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -259,7 +266,8 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           )}
           <button
             aria-label="Opções do card"
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-white px-1 rounded shrink-0"
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-white px-1 rounded shrink-0 touch-none"
+            onPointerDown={pararDrag}
             onClick={abrirMenu}
           >
             ⋯
@@ -309,7 +317,8 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
               </div>
               <button
                 aria-label="Opções do card"
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-white px-1 rounded shrink-0"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white px-1 rounded shrink-0 touch-none"
+                onPointerDown={pararDrag}
                 onClick={abrirMenu}
               >
                 ⋯
