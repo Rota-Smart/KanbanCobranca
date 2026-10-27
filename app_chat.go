@@ -873,11 +873,11 @@ func resumoEquipamentos(prods []rota360.Produto360) string {
 		temCamera = temCamera || ehCamera || strings.Contains(d, "CFTV")
 		switch {
 		case strings.Contains(d, "SENSOR"):
-			sensores += p.Quantidade
+			sensores += int(p.Quantidade)
 		case strings.Contains(d, "CONTROLE"):
-			controles += p.Quantidade
+			controles += int(p.Quantidade)
 		case ehCamera:
-			cameras += p.Quantidade
+			cameras += int(p.Quantidade)
 		}
 		for _, m := range regexModeloCamera.FindAllString(d, -1) {
 			if !modelos[m] {

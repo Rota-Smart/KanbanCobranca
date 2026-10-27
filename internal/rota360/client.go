@@ -154,11 +154,30 @@ type TicketHistorico360 struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+// FlexInt aceita número inteiro ou com casas decimais (entre aspas ou não).
+// O portal 360 já devolveu 8.400000005960464 em quantidadeAtual (float32 do
+// backend deles), o que recusava o decode do dashboard inteiro por um campo.
+type FlexInt int
+
+func (f *FlexInt) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" {
+		*f = 0
+		return nil
+	}
+	n, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return fmt.Errorf("número inválido %s", s)
+	}
+	*f = FlexInt(n) // trunca a fração (8.4 vira 8)
+	return nil
+}
+
 // Produto360 é um produto/linha de contrato do cliente.
 type Produto360 struct {
 	CodProduto           int64     `json:"codProduto"`
 	Descricao            string    `json:"descricao"`
-	Quantidade           int       `json:"quantidadeAtual"`
+	Quantidade           FlexInt   `json:"quantidadeAtual"`
 	Tipo                 string    `json:"tipo"` // Locado | Vendido | Brinde...
 	ValorTotal           float64   `json:"valorTotal"`
 	PrimeiraMovimentacao time.Time `json:"primeiraMovimentacao"`
