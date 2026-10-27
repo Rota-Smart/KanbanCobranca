@@ -334,7 +334,6 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
       setReneg(r);
       if (r.cortesiaRestantes > 0) setCortesiaQtd(1);
       setSuja(true);
-      setAba('proposta');
     } catch (e) {
       setGerarErro(String(e));
     } finally {
