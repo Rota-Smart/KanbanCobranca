@@ -159,10 +159,14 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 	}
 
 	// Comandos rígidos executados localmente, sem chamar a API — funcionam
-	// até sem chave de IA configurada. "/move" (ticket do 360 ou card) vem
-	// primeiro; "apague o card do João" / "mova o card 123 para Cobrança"
-	// depois. Frases fora do molde caem no fluxo normal do agente.
-	local, reconhecido := a.executarComandoMove(mensagem)
+	// até sem chave de IA configurada. "/vincular" (varredura de vínculos)
+	// vem primeiro; "/move" (ticket do 360 ou card) depois; "apague o card
+	// do João" / "mova o card 123 para Cobrança" por último. Frases fora do
+	// molde caem no fluxo normal do agente.
+	local, reconhecido := a.executarComandoVincular(mensagem)
+	if !reconhecido {
+		local, reconhecido = a.executarComandoMove(mensagem)
+	}
 	if !reconhecido {
 		local, reconhecido = a.executarIntencaoLocal(mensagem)
 	}
@@ -1412,6 +1416,35 @@ func (a *App) agentAlterarStatusTicket(ctx context.Context, numero, status strin
 	}
 	resumo := fmt.Sprintf("alterou o status do ticket #%s para %q", item.Numero, status)
 	return fmt.Sprintf("Status do ticket #%s alterado para %s.", item.Numero, status), resumo, nil
+}
+
+// executarComandoVincular roda o /vincular (varredura de vínculos, sem IA).
+// ok=false quando a mensagem não é o comando.
+func (a *App) executarComandoVincular(mensagem string) (*service.ChatResultado, bool) {
+	if !service.ParseComandoVincular(mensagem) {
+		return nil, false
+	}
+	res, err := a.VincularTicketsPendentes()
+	if err != nil {
+		return &service.ChatResultado{Resposta: "Falhou ao vincular: " + err.Error()}, true
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "🔗 Varri %d card(s) sem ticket vinculado: %d vinculado(s).",
+		res.Varridos, len(res.Vinculados))
+	for _, v := range res.Vinculados {
+		fmt.Fprintf(&sb, "\n• %s → ticket #%s (%s)", v.Cliente, v.TicketNumero, v.Titulo)
+	}
+	if len(res.SemTicket) > 0 {
+		sb.WriteString("\nSem ticket na fila aberta: " + strings.Join(res.SemTicket, ", "))
+	}
+	for _, e := range res.Erros {
+		sb.WriteString("\n⚠ " + e)
+	}
+	return &service.ChatResultado{
+		Resposta: sb.String(),
+		Acoes: []service.AcaoDoAgente{{Ferramenta: "vincular_ticket",
+			Resumo: fmt.Sprintf("vinculou %d card(s) via /vincular", len(res.Vinculados))}},
+	}, true
 }
 
 // executarIntencaoLocal reconhece comandos rígidos de card no texto e os

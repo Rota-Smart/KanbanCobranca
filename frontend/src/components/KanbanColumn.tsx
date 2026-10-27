@@ -50,6 +50,10 @@ interface Props {
   onMover: (coluna: string, direcao: -1 | 1) => void;
   /** Alça de arrastar a coluna (reordenação), renderizada no início do cabeçalho. */
   alca?: React.ReactNode;
+  /** Contagem real de cards (quando a coluna exibe só uma fatia deles). */
+  contagem?: number;
+  /** Conteúdo extra entre os cards e o rodapé padrão (ex.: botão de histórico). */
+  rodape?: React.ReactNode;
 }
 
 // Botãozinho de modo (minimizar/resumir) aplicado a todos os cards da coluna.
@@ -70,7 +74,7 @@ function BotaoModo({ ativo, titulo, children, onClick }: { ativo: boolean; titul
   );
 }
 
-export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onAgendarVisita, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca }: Props) {
+export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onAgendarVisita, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca, contagem, rodape }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna });
   const [recolhida, setRecolhida] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
@@ -99,7 +103,7 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDo
           <Seta aberta={false} />
         </button>
         <span className="text-xs text-slate-500 [writing-mode:vertical-rl] font-medium tracking-wide">
-          {coluna} ({tickets.length})
+          {coluna} ({contagem ?? tickets.length})
         </span>
       </div>
     );
@@ -137,7 +141,7 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDo
             <>
               <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{coluna}</h2>
               <span className="text-[11px] font-medium text-slate-500 bg-slate-500/10 rounded-full px-2 py-0.5 shrink-0">
-                {tickets.length}
+                {contagem ?? tickets.length}
               </span>
             </>
           )}
@@ -230,6 +234,8 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDo
           ))}
         </SortableContext>
       </div>
+
+      {rodape}
 
       {novoAberto ? (
         <form

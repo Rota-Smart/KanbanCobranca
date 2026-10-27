@@ -31,12 +31,13 @@ function textoFormatado(s: string): React.ReactNode[] {
 // dica que aparece quando o usuário começa a digitar "/".
 const comandosBarra: { cmd: string; exemplo: string }[] = [
   { cmd: '/move', exemplo: '/move 12345 para Cobrança' },
+  { cmd: '/vincular', exemplo: '/vincular' },
 ];
 
 function dicaDaBarra(texto: string): string | null {
   if (!texto.startsWith('/')) return null;
   const palavra = texto.split(/\s/)[0].toLowerCase();
-  const achou = comandosBarra.find((c) => c.cmd.startsWith(palavra));
+  const achou = comandosBarra.find((c) => c.cmd.startsWith(palavra) || palavra.startsWith(c.cmd));
   return achou ? achou.exemplo : null;
 }
 
@@ -288,6 +289,7 @@ export default function ChatDrawer(props: {
                 <br />• “Crie uma coluna chamada Renegociação”
                 <br />• “Financeiro do 24755” e depois “adicione em Cobrança e gere a proposta”
                 <br />• “/move 12345 para Cobrança” — move um ticket do 360 pro board (igual ao Shift+F6)
+                <br />• “/vincular” — liga cada card sem ticket ao ticket mais recente do cliente na fila do 360
               </p>
             )}
             {msgs.map((m, i) => (
@@ -316,7 +318,7 @@ export default function ChatDrawer(props: {
             <button
               type="button"
               className="mt-1 self-start text-xs rounded bg-white/60 dark:bg-slate-700/70 border border-white/30 dark:border-white/10 px-2 py-1 text-slate-600 dark:text-slate-200 hover:bg-white/80 dark:hover:bg-slate-600"
-              onClick={() => setTexto(comandosBarra[0].exemplo)}
+              onClick={() => setTexto(dicaDaBarra(texto) ?? '')}
               title="Clique para completar o comando"
             >
               {dicaDaBarra(texto)}

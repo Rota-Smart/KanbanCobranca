@@ -29,16 +29,19 @@ interface Props {
   preCobranca?: ResultadoCobranca | null;
   onFechouComSave: () => void;
   onFechar: () => void;
+  /** Abre o diálogo de agendamento/edição da visita deste card. */
+  onAgendarVisita?: (t: Ticket) => void;
 }
 
 // Seções do card completo: o nav troca o conteúdo, estilo coluna do Kanban.
-type Aba = 'acordo' | 'proposta' | 'cliente' | 'ticket' | 'observacoes' | 'financeiro' | 'historico';
+type Aba = 'acordo' | 'proposta' | 'cliente' | 'ticket' | 'visita' | 'observacoes' | 'financeiro' | 'historico';
 
 const abas: { id: Aba; icone: string; rotulo: string }[] = [
   { id: 'acordo', icone: '📝', rotulo: 'Acordo' },
   { id: 'proposta', icone: '✉️', rotulo: 'Proposta' },
   { id: 'cliente', icone: '👤', rotulo: 'Cliente' },
   { id: 'ticket', icone: '🎫', rotulo: 'Ticket' },
+  { id: 'visita', icone: '📅', rotulo: 'Visita' },
   { id: 'observacoes', icone: '🗒️', rotulo: 'Observações' },
   { id: 'financeiro', icone: '💰', rotulo: 'Financeiro' },
   { id: 'historico', icone: '🕘', rotulo: 'Histórico' },
@@ -50,17 +53,26 @@ function CampoMoeda(props: {
   onChange: (v: string) => void;
   onBlur: () => void;
   erro?: string;
+  /** Texto exibido à direita, dentro do campo, num tom mais apagado (ex.: mínimo). */
+  adendo?: string;
 }) {
   return (
     <label className="flex flex-col gap-0.5 text-sm">
       <span className="text-slate-600 dark:text-slate-300">{props.label}</span>
-      <input
-        className={`border rounded px-2 py-1 bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100 ${props.erro ? 'border-red-400' : ''}`}
-        inputMode="decimal"
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        onBlur={props.onBlur}
-      />
+      <div className="relative">
+        <input
+          className={`border rounded px-2 py-1 pr-2 w-full bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100 ${props.erro ? 'border-red-400' : ''}`}
+          inputMode="decimal"
+          value={props.value}
+          onChange={(e) => props.onChange(e.target.value)}
+          onBlur={props.onBlur}
+        />
+        {props.adendo && (
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400 pointer-events-none">
+            {props.adendo}
+          </span>
+        )}
+      </div>
       {props.erro && <span className="text-xs text-red-600">{props.erro}</span>}
     </label>
   );
@@ -92,7 +104,7 @@ const dataBR = (iso: string) => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('pt-BR');
 };
 
-export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFechouComSave, onFechar }: Props) {
+export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFechouComSave, onFechar, onAgendarVisita }: Props) {
   const [aba, setAba] = useState<Aba>('acordo');
   const [total, setTotal] = useState('');
   const [entrada, setEntrada] = useState('0');
@@ -126,6 +138,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
   const [obsEstado, setObsEstado] = useState<'pronto' | 'salvando' | 'salvo' | 'erro'>('pronto');
   const [vinculos, setVinculos] = useState<Vinculo360[]>([]);
   const [entradaVinculo, setEntradaVinculo] = useState('');
+  const [entradaMin, setEntradaMin] = useState<number | null>(null);
   const [vinculoErro, setVinculoErro] = useState('');
   const [vinculando, setVinculando] = useState(false);
   const [vinculoAtivo, setVinculoAtivo] = useState<Vinculo360 | null>(null);
@@ -155,6 +168,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
       setFaturas(preCobranca.faturas ?? []);
       setCobAtiva(preCobranca.cobranca);
       if (preCobranca.aviso) setCalcErro(preCobranca.aviso);
+      if (preCobranca.entradaMinimaCents) setEntradaMin(preCobranca.entradaMinimaCents);
       return;
     }
     App.GetCobrancaAtiva(ticket.id).then((c) => {
@@ -325,6 +339,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
       const r = await App.GerarRenegociacao(ticket.id);
       setTotal(formatCents(r.totalAbertoCents));
       setEntrada(formatCents(r.entradaCents));
+      setEntradaMin(r.entradaMinimaCents || null);
       setBase(formatCents(r.parcelaBaseCents));
       setVezes(String(r.numeroVezes));
       setProposta(r.proposta);
@@ -341,30 +356,8 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
     }
   }
 
-  // pagamentoAVista preenche o acordo como entrada única dos valores já
-  // vencidos com 50% de desconto nos juros (encargos) — o mês corrente segue
-  // na mensalidade normal.
-  async function pagamentoAVista() {
-    if (!reneg || reneg.totalVencidoCents <= 0) return;
-    const valor = valorAVista(reneg);
-    const input: ReparcelamentoInput = {
-      totalAbertoCents: valor,
-      entradaCents: valor,
-      numeroVezes: 1,
-      parcelaBaseCents: parseCents(base) ?? reneg.parcelaBaseCents,
-    };
-    setTotal(formatCents(input.totalAbertoCents));
-    setEntrada(formatCents(input.entradaCents));
-    setVezes('1');
-    setSuja(true);
-    try {
-      const p = await App.GenerateProposal(ticket.id, input, false);
-      setProposta(p);
-      setAba('proposta');
-    } catch (e) {
-      setGerarErro(String(e));
-    }
-  }
+  // pagamentoAVista foi removido: o selo à vista é só informativo (mostra a
+  // quitação das vencidas com 50% de desconto nos juros), sem clique.
 
   async function gerarComVezes(n: number) {
     const totalC = parseCents(total);
@@ -507,6 +500,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
           totalVencidoCents: 0,
           totalVencidoEncargosCents: 0,
           entradaCents: 0,
+          entradaMinimaCents: 0,
           numeroVezes: 0,
           parcelaBaseCents: 0,
           valorMensalidadeCents: avaliacao.mensalidadeCents,
@@ -591,13 +585,12 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
 
             {reneg && reneg.totalVencidoCents > 0 && (
               <div className="flex flex-wrap gap-1.5 items-center">
-                <button
-                  className="px-2.5 py-1.5 rounded-lg text-[13px] font-medium text-white bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 disabled:opacity-60"
+                <div
+                  className="px-2.5 py-1.5 rounded-lg text-[13px] font-medium text-white bg-gradient-to-r from-rose-500 to-red-600 cursor-default select-none"
                   title={`Entrada única quitando as faturas vencidas com 50% de desconto nos juros; a mensalidade do mês segue normal`}
-                  onClick={pagamentoAVista}
                 >
                   💵 À vista (vencidas + 50% dos juros: {formatCents(valorAVista(reneg))})
-                </button>
+                </div>
                 {[3, 6, 12].map((n) => (
                   <button
                     key={n}
@@ -628,6 +621,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
               onChange={(v) => { setEntrada(v); setSuja(true); }}
               onBlur={() => blurMoeda(setEntrada)(entrada)}
               erro={erros.entrada}
+              adendo={entradaMin ? `mín. ${formatCents(entradaMin)}` : undefined}
             />
             <CampoMoeda
               label="Parcela base (mensalidade atual)"
@@ -660,7 +654,14 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
                 <span className="text-slate-500">Saldo devedor</span>
                 <span className="text-right">{formatCents(calc.saldoCents)}</span>
                 <span className="text-slate-500">Entrada</span>
-                <span className="text-right">{formatCents(parseCents(entrada) ?? 0)}</span>
+                <span className="text-right">
+                  {formatCents(parseCents(entrada) ?? 0)}
+                  {entradaMin !== null && (
+                    <span className="ml-1.5 text-xs text-slate-400 dark:text-slate-500">
+                      mín. {formatCents(entradaMin)}
+                    </span>
+                  )}
+                </span>
                 <span className="text-slate-500">Parcelado</span>
                 <span className="text-right">{formatCents(calc.parceladoCents)}</span>
                 <span className="text-slate-500">Parcela base</span>
@@ -1047,6 +1048,74 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
                       );
                     })()}
                   </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {aba === 'visita' && (
+          <div className="mt-3 flex flex-col gap-3">
+            {ticket.visitaData ? (
+              <>
+                <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-3 text-sm flex flex-col gap-1">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-slate-500 dark:text-slate-400 shrink-0">Situação</span>
+                    <span
+                      className={`text-right font-medium ${
+                        ticket.colunaAtual === 'Visita Agendada'
+                          ? 'text-sky-700 dark:text-sky-300'
+                          : 'text-slate-800 dark:text-slate-100'
+                      }`}
+                    >
+                      {ticket.colunaAtual === 'Visita Agendada'
+                        ? '📅 Agendada'
+                        : `Visita registrada — card em ${ticket.colunaAtual}`}
+                    </span>
+                  </div>
+                  <LinhaDado
+                    rotulo="Data"
+                    valor={
+                      ticket.visitaData.slice(8, 10) + '/' + ticket.visitaData.slice(5, 7) + '/' + ticket.visitaData.slice(0, 4)
+                    }
+                  />
+                  <LinhaDado rotulo="Horário" valor={ticket.visitaHora} />
+                  <LinhaDado rotulo="Turno" valor={ticket.visitaTurno} />
+                  <LinhaDado rotulo="Endereço" valor={ticket.visitaEndereco} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="text-sm px-3 py-1.5 rounded-lg bg-white/60 dark:bg-white/10 hover:bg-white dark:hover:bg-white/20 border border-slate-200 dark:border-slate-600"
+                    onClick={() => {
+                      const end = (ticket.visitaEndereco || '').trim();
+                      if (end) void App.AbrirNoMaps(end).catch(() => {});
+                    }}
+                    disabled={!(ticket.visitaEndereco || '').trim()}
+                  >
+                    🗺️ Abrir no Google Maps
+                  </button>
+                  {onAgendarVisita && (
+                    <button
+                      className="text-sm px-3 py-1.5 rounded-lg bg-white/60 dark:bg-white/10 hover:bg-white dark:hover:bg-white/20 border border-slate-200 dark:border-slate-600"
+                      onClick={() => onAgendarVisita(ticket)}
+                    >
+                      ✏️ Editar agendamento…
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Nenhuma visita agendada para este card. Agende para que ela apareça no botão 📅 Visitas do cabeçalho.
+                </p>
+                {onAgendarVisita && (
+                  <button
+                    className="self-start text-sm px-3 py-1.5 rounded-lg bg-sky-600 text-white hover:bg-sky-500"
+                    onClick={() => onAgendarVisita(ticket)}
+                  >
+                    📅 Agendar visita…
+                  </button>
                 )}
               </div>
             )}

@@ -338,9 +338,12 @@ type ResultadoCobranca struct {
 	Cobranca   db.Cobranca           `json:"cobranca"`
 	Proposta   service.Proposta      `json:"proposta"`
 	Avaliacao  *service.Avaliacao    `json:"avaliacao"`
-	Financeiro rota360.Financeiro360 `json:"financeiro"`
-	Faturas    []rota360.Fatura360   `json:"faturas"`
-	Aviso      string                `json:"aviso"`
+	// Política v7: entrada mínima do cliente (20% ou 40% do total, múltiplo
+	// de R$ 50) — o acordo salvo pode usar outra entrada.
+	EntradaMinimaCents int64                 `json:"entradaMinimaCents"`
+	Financeiro         rota360.Financeiro360 `json:"financeiro"`
+	Faturas            []rota360.Fatura360   `json:"faturas"`
+	Aviso              string                `json:"aviso"`
 }
 
 // PrepararCobranca roda o fluxo automático da coluna Cobrança: puxa o
@@ -413,6 +416,7 @@ func (a *App) PrepararCobranca(ticketID int64) (ResultadoCobranca, error) {
 	if a.avaliador != nil {
 		if av, err := a.avaliador.Avaliar(ctx, ticketID, t.CodService); err == nil {
 			res.Avaliacao = av
+			res.EntradaMinimaCents = service.EntradaMinima(totalCents, av.Renegociou)
 		}
 	}
 
@@ -441,6 +445,7 @@ type RenegociacaoPronta struct {
 	TotalVencidoCents         int64                 `json:"totalVencidoCents"`         // faturas já vencidas, sem encargos
 	TotalVencidoEncargosCents int64                 `json:"totalVencidoEncargosCents"` // vencidas + multa/mora
 	EntradaCents              int64                 `json:"entradaCents"`
+	EntradaMinimaCents        int64                 `json:"entradaMinimaCents"` // Política v7: 20%/40% em múltiplo de R$ 50
 	NumeroVezes               int                   `json:"numeroVezes"`
 	ParcelaBaseCents          int64                 `json:"parcelaBaseCents"`
 	ValorMensalidadeCents     int64                 `json:"valorMensalidadeCents"` // mensalidade exata do contrato
@@ -683,6 +688,7 @@ func (a *App) GerarRenegociacao(ticketID int64) (RenegociacaoPronta, error) {
 	// (cliente já renegociou), num múltiplo de R$ 50 pra cima.
 	jaRenegociou := res.Avaliacao != nil && res.Avaliacao.Renegociou
 	res.EntradaCents = service.EntradaMinima(res.TotalAbertoCents, jaRenegociou)
+	res.EntradaMinimaCents = res.EntradaCents
 
 	in := service.ReparcelamentoInput{
 		TotalAbertoCents: res.TotalAbertoCents,

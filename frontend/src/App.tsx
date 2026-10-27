@@ -130,6 +130,19 @@ const colunaDisparaCobranca = 'Cobrança';
 // visita (data, turno, horário, endereço + link do Google Maps).
 const colunaVisitaAgendada = 'Visita Agendada';
 
+// colunaTicketFechado: destino dos cards com tickets resolvidos no 360. A
+// coluna exibe só os últimos cards movidos para ela; o resto fica no histórico.
+const colunaTicketFechado = 'Ticket Fechado';
+const maxCardsFechadosVisiveis = 5;
+
+// Linha do histórico da coluna Ticket Fechado (binding HistoricoTicketsFechados).
+interface FechadoHistorico {
+  cardId: number;
+  cliente: string;
+  ticketNumero: string;
+  movidoEm: string;
+}
+
 // ColunaOrdenavel torna a coluna reordenável por arraste. Só a alça do
 // cabeçalho ativa o arraste (listeners nela), para não brigar com o arraste
 // dos cards, que acontece em outro DndContext.
@@ -183,6 +196,16 @@ export default function App() {
   const [filtroTexto, setFiltroTexto] = useState('');
   const [filtroAssunto, setFiltroAssunto] = useState('');
   const [vinculos, setVinculos] = useState<Vinculo360[]>([]);
+  const [historicoFechados, setHistoricoFechados] = useState<FechadoHistorico[]>([]);
+  const [historicoAberto, setHistoricoAberto] = useState(false);
+
+  async function carregarHistoricoFechados() {
+    try {
+      setHistoricoFechados((await bindings.HistoricoTicketsFechados()) ?? []);
+    } catch {
+      // sem histórico (coluna nem criada) a coluna mostra o que tem
+    }
+  }
 
   async function carregarVinculos() {
     try {
@@ -287,6 +310,7 @@ export default function App() {
         setCarregando(false);
       });
     void carregarVinculos();
+    void carregarHistoricoFechados();
   }, []);
 
   // Atalhos globais do Windows: Shift+F2 (ticket na tela → chat do Groq)
@@ -341,24 +365,22 @@ export default function App() {
   const [verificandoFechados, setVerificandoFechados] = useState(false);
   const [menuAcao, setMenuAcao] = useState<{ x: number; y: number } | null>(null);
 
-  // Visitas agendadas nos próximos 3 dias (inclusive hoje), ordenadas pela
-  // data e depois pelo horário/turno — alimentam o botão 📅 Visitas.
+  // Visitas agendadas, de qualquer data (atrasadas incluídas), mais os cards
+  // que estão na coluna "Visita Agendada" sem data gravada — alimentam o botão
+  // 📅 Visitas. Ordenadas pela data e depois pelo horário/turno.
   const [menuVisitas, setMenuVisitas] = useState<{ x: number; y: number } | null>(null);
+  const chaveDia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const hojeISO = chaveDia(new Date());
   const visitasProximas = (() => {
-    const hoje = new Date();
-    const limite = new Date(hoje);
-    limite.setDate(limite.getDate() + 3);
-    const chave = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const de = chave(hoje);
-    const ate = chave(limite);
     const ordemTurno: Record<string, number> = { Manhã: 0, Tarde: 1, Noite: 2 };
     const itens: Ticket[] = [];
     for (const lista of Object.values(board)) {
       for (const t of lista) {
-        if (t.visitaData && t.visitaData >= de && t.visitaData <= ate) itens.push(t);
+        if (t.visitaData || t.colunaAtual === colunaVisitaAgendada) itens.push(t);
       }
     }
     itens.sort((a, b) => {
+      if (!a.visitaData !== !b.visitaData) return a.visitaData ? -1 : 1; // sem data por último
       if (a.visitaData !== b.visitaData) return a.visitaData < b.visitaData ? -1 : 1;
       if (a.visitaHora || b.visitaHora) return (a.visitaHora || '99:99') < (b.visitaHora || '99:99') ? -1 : 1;
       return (ordemTurno[a.visitaTurno] ?? 3) - (ordemTurno[b.visitaTurno] ?? 3);
@@ -366,10 +388,13 @@ export default function App() {
     return itens;
   })();
   function resumoVisita(t: Ticket): string {
-    const dia = t.visitaData.slice(8, 10) + '/' + t.visitaData.slice(5, 7);
+    const dia = t.visitaData
+      ? t.visitaData.slice(8, 10) + '/' + t.visitaData.slice(5, 7)
+      : 'sem data';
     const quando = t.visitaHora || t.visitaTurno;
     return `${dia}${quando ? ' · ' + quando : ''} — ${t.nomeCliente}`;
   }
+  const visitaAtrasada = (t: Ticket) => !!t.visitaData && t.visitaData < hojeISO;
 
   async function verificarFechados() {
     if (verificandoFechados) return;
@@ -439,6 +464,7 @@ export default function App() {
       // silencioso: o board atual continua visível
     }
     void carregarVinculos();
+    void carregarHistoricoFechados();
   }
 
   async function persistMove(id: number, coluna: string, posicao: number, snapshot: Board) {
@@ -691,7 +717,7 @@ export default function App() {
           <div className="relative">
             <button
               className={`text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium ${visitasProximas.length > 0 ? 'text-sky-700 dark:text-sky-300' : ''}`}
-              title="Visitas agendadas nos próximos 3 dias"
+              title="Visitas agendadas (qualquer data — atrasadas incluídas)"
               onClick={(e) => {
                 const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                 setMenuVisitas((m) => (m ? null : { x: r.right, y: r.bottom + 4 }));
@@ -711,13 +737,13 @@ export default function App() {
                 >
                   {visitasProximas.length === 0 ? (
                     <div className="px-3 py-2 text-slate-500 dark:text-slate-400">
-                      Nenhuma visita nos próximos 3 dias.
+                      Nenhuma visita agendada.
                     </div>
                   ) : (
                     visitasProximas.map((t) => (
                       <button
                         key={t.id}
-                        className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+                        className={`block w-full text-left px-3 py-2 hover:bg-slate-500/10 ${visitaAtrasada(t) ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}`}
                         title={t.visitaEndereco || t.endereco || ''}
                         onClick={() => {
                           setMenuVisitas(null);
@@ -726,6 +752,7 @@ export default function App() {
                         }}
                       >
                         📍 {resumoVisita(t)}
+                        {visitaAtrasada(t) ? ' · atrasada' : ''}
                       </button>
                     ))
                   )}
@@ -839,29 +866,54 @@ export default function App() {
       >
         <div className="flex gap-3 p-3 overflow-x-auto overscroll-x-contain flex-1">
           <SortableContext items={colunas} strategy={horizontalListSortingStrategy}>
-              {colunas.map((c) => (
-                <ColunaOrdenavel
-                  key={c}
-                  coluna={c}
-                  tickets={(board[c] ?? []).filter(cardVisivel)}
-                  acordosPorTicket={{}}
-                  modoDoCard={modoDoCard}
-                  onModoCard={setModoCard}
-                  modoColuna={modos.colunas[c] ?? modos.global}
-                  onModoColuna={setModoColuna}
-                  onAbrir={(t) => {
-                    setPreCobranca(null);
-                    setAberto(t);
-                  }}
-                  onExcluir={excluir}
-                  onAgendarVisita={setVisitaTicket}
-                  onNovoCard={novoCard}
-                  onBuscar360={setBuscar360Coluna}
-                  onRenomear={renomearColuna}
-                  onRemover={removerColuna}
-                  onMover={moverColuna}
-                />
-              ))}
+              {colunas.map((c) => {
+                const todosDaColuna = (board[c] ?? []).filter(cardVisivel);
+                const ehFechada = c === colunaTicketFechado;
+                // Coluna de fechados: só os últimos movidos ficam visíveis —
+                // a ordem vem do histórico (mais recente primeiro); o que não
+                // está nele vai para o fim.
+                let ticketsDaColuna = todosDaColuna;
+                if (ehFechada) {
+                  const ordem = new Map(historicoFechados.map((h, i) => [h.cardId, i]));
+                  ticketsDaColuna = [...todosDaColuna]
+                    .sort((a, b) => (ordem.get(a.id) ?? Infinity) - (ordem.get(b.id) ?? Infinity))
+                    .slice(0, maxCardsFechadosVisiveis);
+                }
+                return (
+                  <ColunaOrdenavel
+                    key={c}
+                    coluna={c}
+                    tickets={ticketsDaColuna}
+                    contagem={todosDaColuna.length}
+                    acordosPorTicket={{}}
+                    modoDoCard={modoDoCard}
+                    onModoCard={setModoCard}
+                    modoColuna={modos.colunas[c] ?? modos.global}
+                    onModoColuna={setModoColuna}
+                    onAbrir={(t) => {
+                      setPreCobranca(null);
+                      setAberto(t);
+                    }}
+                    onExcluir={excluir}
+                    onAgendarVisita={setVisitaTicket}
+                    onNovoCard={novoCard}
+                    onBuscar360={setBuscar360Coluna}
+                    onRenomear={renomearColuna}
+                    onRemover={removerColuna}
+                    onMover={moverColuna}
+                    rodape={
+                      ehFechada && historicoFechados.length > 0 ? (
+                        <button
+                          className="mt-1 w-full text-xs text-sky-600 dark:text-sky-300 hover:text-sky-700 dark:hover:text-sky-200 py-1 rounded font-medium"
+                          onClick={() => setHistoricoAberto(true)}
+                        >
+                          🗂 Histórico de fechados ({historicoFechados.length})
+                        </button>
+                      ) : undefined
+                    }
+                  />
+                );
+              })}
             </SortableContext>
           <button
             className="glass-soft rounded-2xl w-56 shrink-0 self-start p-3 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-white font-medium text-left"
@@ -885,6 +937,7 @@ export default function App() {
             setAberto(null);
             setPreCobranca(null);
           }}
+          onAgendarVisita={(t) => setVisitaTicket(t)}
         />
       )}
 
@@ -901,6 +954,70 @@ export default function App() {
       )}
 
       {buscaTicketsAberta && <BuscarTickets360Dialog onFechar={() => setBuscaTicketsAberta(false)} />}
+
+      {historicoAberto && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center p-4"
+          onClick={() => setHistoricoAberto(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[26rem] max-w-full max-h-[70vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0">
+              <h3 className="font-semibold text-slate-800 dark:text-slate-100 text-sm">
+                🗂 Histórico — {colunaTicketFechado}
+              </h3>
+              <button
+                aria-label="Fechar histórico"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                onClick={() => setHistoricoAberto(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="overflow-y-auto p-2">
+              {historicoFechados.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400 p-3">
+                  Nenhum card foi movido para lá ainda.
+                </p>
+              ) : (
+                historicoFechados.map((h) => {
+                  let card: Ticket | undefined;
+                  for (const ts of Object.values(board)) {
+                    const achou = ts.find((x) => x.id === h.cardId);
+                    if (achou) {
+                      card = achou;
+                      break;
+                    }
+                  }
+                  return (
+                    <button
+                      key={h.cardId}
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-500/10 text-sm text-slate-700 dark:text-slate-200 disabled:opacity-60"
+                      disabled={!card}
+                      title={card ? 'Abrir o card' : 'Este card não está mais no board'}
+                      onClick={() => {
+                        setHistoricoAberto(false);
+                        if (card) {
+                          setPreCobranca(null);
+                          setAberto(card);
+                        }
+                      }}
+                    >
+                      <span className="font-medium">{h.cliente || `card ${h.cardId}`}</span>
+                      {h.ticketNumero ? <span className="text-slate-500"> · #{h.ticketNumero}</span> : null}
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">
+                        movido em {new Date(h.movidoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {movimentaAberta && (
         <MovimentarTicketDialog

@@ -226,3 +226,38 @@ func (r *TicketRepo) SetObservacoes(ctx context.Context, id int64, obs string) e
 	}
 	return nil
 }
+
+// MovimentoFechado é uma linha do histórico de uma coluna de destino: o
+// último movimento de um card para ela, com o carimbo de quando aconteceu.
+type MovimentoFechado struct {
+	CardID       int64  `json:"cardId"`
+	Cliente      string `json:"cliente"`
+	TicketNumero string `json:"ticketNumero"`
+	MovidoEm     string `json:"movidoEm"`
+}
+
+// HistoricoFechados devolve todos os cards que já foram movidos para a
+// coluna, do mais recente para o mais antigo (data do último movimento para
+// ela — re-entradas atualizam o carimbo).
+func (r *TicketRepo) HistoricoFechados(ctx context.Context, coluna string) ([]MovimentoFechado, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT m.ticket_id, t.nome_cliente, COALESCE(t.ticket360_numero, ''), MAX(m.created_at)
+		 FROM movimentacoes m
+		 JOIN tickets t ON t.id = m.ticket_id
+		 WHERE m.para_coluna = ?
+		 GROUP BY m.ticket_id
+		 ORDER BY MAX(m.created_at) DESC`, coluna)
+	if err != nil {
+		return nil, fmt.Errorf("histórico de %s: %w", coluna, err)
+	}
+	defer rows.Close()
+	out := []MovimentoFechado{}
+	for rows.Next() {
+		var m MovimentoFechado
+		if err := rows.Scan(&m.CardID, &m.Cliente, &m.TicketNumero, &m.MovidoEm); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

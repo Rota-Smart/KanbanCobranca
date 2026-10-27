@@ -91,6 +91,34 @@ func mapaTexto(s string) string {
 	return s
 }
 
+// ---- Comando /vincular do chat ----
+
+var comandosVincular = []string{"/vincular", "/vincule", "/vincula", "/vincular_todos", "/vinculartodos"}
+
+// ParseComandoVincular reconhece o comando /vincular (e variantes), sem
+// argumentos: uma varredura única que liga a cada card sem ticket o ticket
+// mais recente do cliente na fila do 360.
+func ParseComandoVincular(msg string) bool {
+	f := strings.Fields(strings.TrimSpace(msg))
+	if len(f) == 0 {
+		return false
+	}
+	palavra := strings.ToLower(strings.Trim(f[0], ".,!?;:"))
+	for _, c := range comandosVincular {
+		if palavra == c {
+			return true
+		}
+	}
+	return false
+}
+
+// NormalizarTexto expõe a normalização interna (caixa, acentos, pontuação
+// das pontas) para quem está fora do pacote casar nomes de cliente com
+// solicitantes do 360.
+func NormalizarTexto(s string) string {
+	return normalizar(s)
+}
+
 // ---- Comando /move do chat ----
 
 // ComandoMove é o "/move ..." reconhecido no texto do chat: com Ticket preen-
