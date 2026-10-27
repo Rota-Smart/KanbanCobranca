@@ -607,12 +607,18 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
 
             {calc && (
               <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-3 text-sm grid grid-cols-2 gap-y-1">
+                <span className="text-slate-500">Entrada</span>
+                <span className="text-right">{formatCents(parseCents(entrada) ?? 0)}</span>
                 <span className="text-slate-500">Saldo devedor</span>
                 <span className="text-right">{formatCents(calc.saldoCents)}</span>
                 <span className="text-slate-500">Parcelado</span>
                 <span className="text-right">{formatCents(calc.parceladoCents)}</span>
-                <span className="text-slate-500">Nova parcela mensal</span>
+                <span className="text-slate-500">Parcela base</span>
+                <span className="text-right">{formatCents(parseCents(base) ?? 0)}</span>
+                <span className="text-slate-500">Parcela mensal da renegociação</span>
                 <span className="text-right font-medium">{formatCents(calc.finalCents)}</span>
+                <span className="text-slate-500">Parcela base + renegociação</span>
+                <span className="text-right font-semibold">{formatCents((parseCents(base) ?? 0) + calc.finalCents)}</span>
                 {calc.ultimaParcelaCents !== calc.parceladoCents && (
                   <>
                     <span className="text-slate-500">Última parcela</span>
