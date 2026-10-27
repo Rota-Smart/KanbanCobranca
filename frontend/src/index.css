@@ -52,6 +52,44 @@
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
 }
 
+/* ===== Scrollbars no tema do kanban =====
+   Póleo fino estilo delivery: índigo no claro, slate translúcido no escuro. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #818cf8 transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(129, 140, 248, 0.55);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.8);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.dark {
+  scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.45);
+  background-clip: content-box;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(165, 180, 252, 0.7);
+  background-clip: content-box;
+}
+
 /* Seta de recolher coluna: gira suavemente */
 .seta-coluna {
   transition: transform 0.2s ease;
