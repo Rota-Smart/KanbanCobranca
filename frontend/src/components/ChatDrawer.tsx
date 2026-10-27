@@ -124,11 +124,12 @@ export default function ChatDrawer(props: {
 
   useEffect(() => {
     App.ListarChats().then((cs) => {
-      setChats(cs);
+      const lista = cs ?? []; // bridge velha podia devolver null com 0 chats
+      setChats(lista);
       // Se há mensagem inicial (Shift+F2), ela cria um chat novo — abrir o
       // mais recente aqui disputaria com o envio e sobrescreveria a tela
       // com a conversa antiga quando a resposta chegasse por último.
-      if (cs.length > 0 && !props.mensagemInicial?.trim()) abrir(cs[0].id);
+      if (lista.length > 0 && !props.mensagemInicial?.trim()) abrir(lista[0].id);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -195,7 +196,7 @@ export default function ChatDrawer(props: {
       const res = await App.EnviarChat(id, m);
       setMsgs((ms) => [...ms.slice(0, -1), { papel: 'assistant', conteudo: res.resposta, acoes: res.acoes }]);
       if (res.acoes.length > 0) props.onMutou();
-      App.ListarChats().then(setChats); // reordena pela atividade + título auto
+      App.ListarChats().then((cs) => setChats(cs ?? [])); // reordena pela atividade + título auto
     } catch (e) {
       setMsgs((ms) => [...ms.slice(0, -1), { papel: 'assistant', conteudo: `⚠ ${String(e)}` }]);
     } finally {

@@ -48,7 +48,9 @@ func (r *TicketRepo) List(ctx context.Context) ([]Ticket, error) {
 		return nil, fmt.Errorf("listar tickets: %w", err)
 	}
 	defer rows.Close()
-	var out []Ticket
+	// slice vazio (não nil): nil vira null na bridge do Wails e derruba o
+	// frontend que iterar a lista (tela azul da v1.14.0).
+	out := []Ticket{}
 	for rows.Next() {
 		var t Ticket
 		if err := scanTicket(rows, &t); err != nil {

@@ -37,7 +37,7 @@ func (r *ChatRepo) List(ctx context.Context) ([]Chat, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Chat
+	out := []Chat{}
 	for rows.Next() {
 		var c Chat
 		if err := rows.Scan(&c.ID, &c.Titulo, &c.UpdatedAt); err != nil {
@@ -89,7 +89,7 @@ func (r *ChatRepo) Mensagens(ctx context.Context, chatID int64) ([]ChatMensagem,
 		return nil, err
 	}
 	defer rows.Close()
-	var out []ChatMensagem
+	out := []ChatMensagem{}
 	for rows.Next() {
 		var m ChatMensagem
 		if err := rows.Scan(&m.ID, &m.ChatID, &m.Papel, &m.Conteudo, &m.AcoesJSON); err != nil {

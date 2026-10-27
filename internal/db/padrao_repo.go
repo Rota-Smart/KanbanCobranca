@@ -44,7 +44,7 @@ func (r *PadraoRepo) List(ctx context.Context) ([]Padrao, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Padrao
+	out := []Padrao{}
 	for rows.Next() {
 		var p Padrao
 		if err := rows.Scan(&p.Nome, &p.Conteudo); err != nil {

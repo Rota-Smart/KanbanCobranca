@@ -77,7 +77,7 @@ func (r *CobrancaRepo) History(ctx context.Context, ticketID int64) ([]Cobranca,
 		return nil, fmt.Errorf("listar histórico do ticket %d: %w", ticketID, err)
 	}
 	defer rows.Close()
-	var out []Cobranca
+	out := []Cobranca{}
 	for rows.Next() {
 		var c Cobranca
 		if err := rows.Scan(&c.ID, &c.TicketID, &c.DataContrato, &c.DataVencimento, &c.TotalAbertoCents,

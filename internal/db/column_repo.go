@@ -23,7 +23,7 @@ func (r *ColumnRepo) List(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []string
+	out := []string{}
 	for rows.Next() {
 		var n string
 		if err := rows.Scan(&n); err != nil {

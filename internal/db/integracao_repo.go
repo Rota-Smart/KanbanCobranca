@@ -120,7 +120,7 @@ FROM parametros_negociacao ORDER BY id`)
 		return nil, err
 	}
 	defer rows.Close()
-	var out []ParametroNegociacao
+	out := []ParametroNegociacao{}
 	for rows.Next() {
 		var p ParametroNegociacao
 		if err := rows.Scan(&p.ID, &p.Fonte, &p.NomeArquivo, &p.Conteudo, &p.CreatedAt); err != nil {
