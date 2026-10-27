@@ -438,6 +438,27 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
 
   // verValorAtual reconsulta o 360 — mostra quanto o débito cresceu com os
   // juros desde que o card entrou na coluna.
+  // emularCondicoes preenche o acordo com o valor de agora (com juros) para
+  // o resumo abaixo mostrar como ficaria nas novas condições — não salva nada.
+  async function emularCondicoes() {
+    setValorAtualErro('');
+    let v = valorAtual;
+    if (v === null) {
+      setConsultando(true);
+      try {
+        v = await App.ValorAtualCliente(ticket.id);
+        setValorAtual(v);
+      } catch (e) {
+        setValorAtualErro(String(e));
+        return;
+      } finally {
+        setConsultando(false);
+      }
+    }
+    setTotal(formatCents(v));
+    setSuja(true);
+  }
+
   async function verValorAtual() {
     setConsultando(true);
     setValorAtualErro('');
@@ -636,10 +657,10 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
 
             {calc && (
               <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-3 text-sm grid grid-cols-2 gap-y-1">
-                <span className="text-slate-500">Entrada</span>
-                <span className="text-right">{formatCents(parseCents(entrada) ?? 0)}</span>
                 <span className="text-slate-500">Saldo devedor</span>
                 <span className="text-right">{formatCents(calc.saldoCents)}</span>
+                <span className="text-slate-500">Entrada</span>
+                <span className="text-right">{formatCents(parseCents(entrada) ?? 0)}</span>
                 <span className="text-slate-500">Parcelado</span>
                 <span className="text-right">{formatCents(calc.parceladoCents)}</span>
                 <span className="text-slate-500">Parcela base</span>
@@ -727,6 +748,14 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
                     onClick={verValorAtual}
                   >
                     {consultando ? '🔄 Consultando…' : '🔍 Ver valor atual'}
+                  </button>
+                  <button
+                    className="px-2.5 py-1.5 rounded-lg text-[13px] font-medium border text-slate-600 hover:bg-slate-500/10 dark:text-slate-300 disabled:opacity-60"
+                    disabled={consultando}
+                    title="Preenche o acordo com o valor de agora (com juros) e mostra no resumo como ficaria nas novas condições — nada é salvo"
+                    onClick={emularCondicoes}
+                  >
+                    🧪 Emular nas novas condições
                   </button>
                   {valorAtual !== null && valorAtual !== cobAtiva.totalAbertoCents && (
                     <button
