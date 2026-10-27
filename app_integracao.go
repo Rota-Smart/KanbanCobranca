@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"regexp"
 	"strconv"
@@ -349,7 +351,7 @@ func (a *App) PrepararCobranca(ticketID int64) (ResultadoCobranca, error) {
 	res := ResultadoCobranca{Ticket: *t}
 	var totalCents int64
 	if _, fin, err := a.sincronizarCliente(ctx, c, t.CodService); err != nil {
-		res.Aviso = "Não foi possível atualizar o financeiro do 360; usando valores em cache."
+		res.Aviso = motivoSync360(err)
 		if cli, _ := a.clientes.Get(ctx, t.CodService); cli != nil {
 			totalCents = cli.SaldoCents
 		}
@@ -364,6 +366,9 @@ func (a *App) PrepararCobranca(ticketID int64) (ResultadoCobranca, error) {
 	}
 
 	if totalCents <= 0 {
+		if res.Aviso != "" {
+			return ResultadoCobranca{}, fmt.Errorf("%s (sem saldo em cache do cliente %s)", res.Aviso, t.CodService)
+		}
 		return ResultadoCobranca{}, fmt.Errorf("sem saldo em aberto no 360 para o cliente %s", t.CodService)
 	}
 	if res.Faturas == nil {
@@ -513,6 +518,21 @@ func contratoVigente(contratos []rota360.Contrato360) *rota360.Contrato360 {
 	return melhor
 }
 
+// motivoSync360 traduz a falha ao atualizar o financeiro do 360 num aviso
+// acionável — antes o erro era engolido e o usuário só via "sem saldo em
+// aberto", sem saber que a sessão havia expirado.
+func motivoSync360(err error) string {
+	switch {
+	case errors.Is(err, rota360.ErrSessaoExpirada):
+		return "Sessão do 360 expirada — o portal rejeitou o cookie. Reconecte-se nas Configurações (login ou colar o cookie de novo)."
+	case errors.Is(err, rota360.ErrSemSessao):
+		return "Sessão do 360 não configurada — conecte-se nas Configurações."
+	default:
+		slog.Warn("sync 360 falhou", "err", err)
+		return "Não foi possível atualizar o financeiro do 360 (" + err.Error() + "); usando valores em cache."
+	}
+}
+
 // GerarRenegociacao puxa os valores em aberto do 360, o contrato (mensalidade
 // exata e vigência), avalia a cortesia pelas observações do cadastro e gera a
 // proposta no padrão. As condições da Política (PDF nas Configurações) são
@@ -536,7 +556,7 @@ func (a *App) GerarRenegociacao(ticketID int64) (RenegociacaoPronta, error) {
 	res := RenegociacaoPronta{EntradaCents: 0, NumeroVezes: 12, Faturas: []rota360.Fatura360{}}
 	var totalCents int64
 	if _, fin, err := a.sincronizarCliente(ctx, c, t.CodService); err != nil {
-		res.Aviso = "Não foi possível atualizar o financeiro do 360; usando valores em cache."
+		res.Aviso = motivoSync360(err)
 		if cli, _ := a.clientes.Get(ctx, t.CodService); cli != nil {
 			totalCents = cli.SaldoCents
 			res.Faturas = faturasDoCache(cli)
@@ -552,6 +572,9 @@ func (a *App) GerarRenegociacao(ticketID int64) (RenegociacaoPronta, error) {
 		res.Faturas = faturasDoCache(cli)
 	}
 	if totalCents <= 0 {
+		if res.Aviso != "" {
+			return RenegociacaoPronta{}, fmt.Errorf("%s (sem saldo em cache do cliente %s)", res.Aviso, t.CodService)
+		}
 		return RenegociacaoPronta{}, fmt.Errorf("sem saldo em aberto no 360 para o cliente %s", t.CodService)
 	}
 	res.TotalAbertoCents = totalCents
