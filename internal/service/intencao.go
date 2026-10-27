@@ -23,7 +23,7 @@ var (
 	reApagarCard = regexp.MustCompile(
 		`(?i)^\s*(?:apag\w+|exclu\w+|remov\w+|delet\w+)\s+(?:o\s+|a\s+|esse\s+|esse\s+aqui\s+o\s+)?card\b(?:\s+d[oa]s?\s+cliente)?\s+(.+?)\s*[.!?]*$`)
 	reMoverCard = regexp.MustCompile(
-		`(?i)^\s*(?:mov\w+|arrast\w+|passe|passar|lev\w+|mand\w+|mud\w+|jog\w+|pux\w+)\s+(?:o\s+|a\s+)?card\b(?:\s+d[oa]s?\s+cliente)?\s+(.+?)\s+(?:para|pro|pra|p\/|to)\s+(?:a\s+coluna\s+|coluna\s+|o\s+)?(.+?)\s*[.!?]*$`)
+		`(?i)^\s*(?:mov\w+|arrast\w+|passe|passar|lev\w+|mand\w+|mud\w+|jog\w+|pux\w+|coloc\w+|coloque|coloq\w+|ponh\w+|põe|poe|pôr|por|deix\w+|mex\w+|encaix\w+)\s+(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|um\s+|uma\s+)?(?:card|cliente|ticket)\b(?:\s+d[oa]s?\s+cliente)?\s+(.+?)\s+(?:para|pro|pra|p\/|em|na|no|to)\s+(?:a\s+coluna\s+|coluna\s+|o\s+|a\s+)?(.+?)\s*[.!?]*$`)
 )
 
 // ParseIntencaoCard reconhece "apagar card X" e "mover card X para Y" no
@@ -228,6 +228,8 @@ func normalizar(s string) string {
 func CasarColuna(texto string, colunas []string) (string, error) {
 	lista := strings.Join(colunas, ", ")
 	t := normalizar(texto)
+	t = strings.TrimPrefix(t, "a coluna ")
+	t = strings.TrimPrefix(t, "coluna ")
 	if t == "" {
 		return "", fmt.Errorf("diga a coluna de destino. Colunas: %s", lista)
 	}

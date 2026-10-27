@@ -16,7 +16,13 @@ func TestParseIntencaoCard(t *testing.T) {
 		{"mova o card do João para Cobrança", true, false, "do João", "Cobrança"},
 		{"mover card #456 para a coluna Orçamento", true, false, "#456", "Orçamento"},
 		{"passe o card 123 pra Negociação", true, false, "123", "Negociação"},
-		{"mova o card para Cobrança", false, false, "", ""}, // sem alvo
+		{"coloque o cliente João em Cobrança", true, false, "João", "Cobrança"},
+		{"coloque o card do João na Cobrança", true, false, "do João", "Cobrança"},
+		{"coloca o cliente 12345 na coluna cobrança.", true, false, "12345", "cobrança"},
+		{"deixe o ticket do João no Orçamento", true, false, "do João", "Orçamento"},
+		{"ponha o card #456 em Aguardando", true, false, "#456", "Aguardando"},
+		{"coloque observações no card", false, false, "", ""}, // sem card/cliente/ticket → agente
+		{"mova o card para Cobrança", false, false, "", ""},   // sem alvo
 		{"busque o cliente João", false, false, "", ""},
 		{"como você funciona?", false, false, "", ""},
 	}
@@ -84,6 +90,8 @@ func TestCasarColuna(t *testing.T) {
 		{"COBRANÇA.", "Cobrança", false},
 		{"cobr", "Cobrança", false},
 		{"visita agendada", "Visita Agendada", false},
+		{"a coluna Cobrança", "Cobrança", false},
+		{"coluna orcamento", "Orçamento", false},
 		{"orcamento", "Orçamento", false},
 		{"a", "", true}, // casa "Aguardando" e "Fazer contato" → ambíguo
 		{"xyz", "", true},

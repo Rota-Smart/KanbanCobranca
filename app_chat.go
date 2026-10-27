@@ -1448,17 +1448,11 @@ func (a *App) executarIntencaoLocal(mensagem string) (*service.ChatResultado, bo
 		if err != nil {
 			return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error()}, true
 		}
-		valida := false
-		for _, c := range colunas {
-			if strings.EqualFold(c, in.Coluna) {
-				in.Coluna = c
-				valida = true
-				break
-			}
+		coluna, err := service.CasarColuna(in.Coluna, colunas)
+		if err != nil {
+			return &service.ChatResultado{Resposta: err.Error()}, true
 		}
-		if !valida {
-			return &service.ChatResultado{Resposta: fmt.Sprintf("Coluna %q não existe. Colunas: %s.", in.Coluna, strings.Join(colunas, ", "))}, true
-		}
+		in.Coluna = coluna
 		if err := a.MoveTicket(card.ID, in.Coluna, a.contagemColuna(in.Coluna)); err != nil {
 			return &service.ChatResultado{Resposta: "Falhou ao mover: " + err.Error()}, true
 		}
