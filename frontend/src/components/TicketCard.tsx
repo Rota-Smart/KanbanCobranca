@@ -64,11 +64,20 @@ interface Props {
 // código do pedido, endereço/telefone e badge de acordos.
 export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir, onAgendarVisita }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
-  const [menuAberto, setMenuAberto] = useState(false);
+  const [menu, setMenu] = useState<{ right: number; top: number } | null>(null);
   const [vinculando, setVinculando] = useState(false);
   const [entradaTicket, setEntradaTicket] = useState('');
   const [erroVinculo, setErroVinculo] = useState('');
   const cor = corPorTipo[ticket.tipoTicket] ?? corPorTipo['Outro'];
+
+  // Abre o menu ⋯ ancorado no botão. Usa position: fixed em vez de absolute
+  // porque o card tem overflow-hidden, que cortava o menu comprido.
+  function abrirMenu(e: React.MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setMenu((m) => (m ? null : { right: window.innerWidth - r.right, top: r.bottom + 4 }));
+  }
 
   // Vincula (ou desvincula, com entrada vazia) o ticket do 360 ao card.
   async function vincular(entrada: string) {
@@ -91,6 +100,120 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
       setErroVinculo(String(e));
     }
   }
+
+  const itemMenu =
+    'block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200';
+
+  // Menu de opções do card, compartilhado entre os modos min/resumido.
+  // Fundo sólido (o glass ficava transparente), scroll interno e backdrop
+  // para fechar ao clicar fora.
+  const menuEl = menu && (
+    <>
+      <div
+        className="fixed inset-0 z-[99]"
+        onClick={(e) => {
+          e.stopPropagation();
+          setMenu(null);
+        }}
+      />
+      <div
+        className="fixed z-[100] rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-600/60 shadow-xl overflow-y-auto max-h-[60vh] min-w-[13rem]"
+        style={{ right: menu.right, top: menu.top }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          className={itemMenu}
+          onClick={() => {
+            setMenu(null);
+            onModo(ticket, 'min');
+          }}
+        >
+          Minimizar card
+        </button>
+        <button
+          className={itemMenu}
+          onClick={() => {
+            setMenu(null);
+            onModo(ticket, 'resumo');
+          }}
+        >
+          Deixar resumido
+        </button>
+        <button
+          className={itemMenu}
+          onClick={() => {
+            setMenu(null);
+            onModo(ticket, 'completo');
+          }}
+        >
+          Abrir completo
+        </button>
+        <button
+          className={itemMenu}
+          onClick={() => {
+            setErroVinculo('');
+            setVinculando((v) => !v);
+          }}
+        >
+          {ticket.ticket360Numero ? `Trocar ticket 360 (agora #${ticket.ticket360Numero})` : 'Vincular ticket 360…'}
+        </button>
+        {vinculando && (
+          <form
+            className="px-3 py-2 border-t border-slate-500/10"
+            onSubmit={(e) => {
+              e.preventDefault();
+              vincular(entradaTicket.trim());
+            }}
+          >
+            <input
+              autoFocus
+              className="w-full border rounded px-2 py-1 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100"
+              placeholder="nº, #nº, uuid ou URL do ticket"
+              value={entradaTicket}
+              onChange={(e) => setEntradaTicket(e.target.value)}
+            />
+            <p className="mt-1 text-[10px] text-slate-500">
+              Cole a URL do ticket no 360, o uuid ou só o número. Vazio + Enter desvincula.
+            </p>
+          </form>
+        )}
+        {ticket.ticket360Numero && (
+          <button
+            className={itemMenu}
+            onClick={() => {
+              setMenu(null);
+              vincular('');
+            }}
+          >
+            Desvincular ticket (#{ticket.ticket360Numero})
+          </button>
+        )}
+        {erroVinculo && (
+          <p className="px-3 py-2 text-[10px] text-red-600 dark:text-red-400 max-w-[16rem] break-words">
+            {erroVinculo}
+          </p>
+        )}
+        <button
+          className={itemMenu}
+          onClick={() => {
+            setMenu(null);
+            onAgendarVisita?.(ticket);
+          }}
+        >
+          {ticket.visitaData ? `Editar visita (${visitaResumo(ticket)})` : '📅 Agendar visita…'}
+        </button>
+        <button
+          className="block w-full text-left px-3 py-2 hover:bg-red-500/10 text-red-600 dark:text-red-400"
+          onClick={() => {
+            setMenu(null);
+            onExcluir(ticket);
+          }}
+        >
+          Excluir
+        </button>
+      </div>
+    </>
+  );
 
   if (modo === 'min') {
     return (
@@ -134,7 +257,15 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
               ✓{qtdAcordos}
             </span>
           )}
+          <button
+            aria-label="Opções do card"
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-white px-1 rounded shrink-0"
+            onClick={abrirMenu}
+          >
+            ⋯
+          </button>
         </div>
+        {menuEl}
       </div>
     );
   }
@@ -179,10 +310,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
               <button
                 aria-label="Opções do card"
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-white px-1 rounded shrink-0"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMenuAberto((v) => !v);
-                }}
+                onClick={abrirMenu}
               >
                 ⋯
               </button>
@@ -252,103 +380,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
         </div>
       </div>
 
-      {menuAberto && (
-        <div
-          className="glass absolute right-1 top-9 z-10 rounded-xl text-xs overflow-hidden"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
-            onClick={() => {
-              setMenuAberto(false);
-              onModo(ticket, 'min');
-            }}
-          >
-            Minimizar card
-          </button>
-          <button
-            className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
-            onClick={() => {
-              setMenuAberto(false);
-              onModo(ticket, 'resumo');
-            }}
-          >
-            Deixar resumido
-          </button>
-          <button
-            className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
-            onClick={() => {
-              setMenuAberto(false);
-              onModo(ticket, 'completo');
-            }}
-          >
-            Abrir completo
-          </button>
-          <button
-            className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
-            onClick={() => {
-              setErroVinculo('');
-              setVinculando((v) => !v);
-            }}
-          >
-            {ticket.ticket360Numero ? `Trocar ticket 360 (agora #${ticket.ticket360Numero})` : 'Vincular ticket 360…'}
-          </button>
-          {vinculando && (
-            <form
-              className="px-3 py-2 border-t border-slate-500/10"
-              onSubmit={(e) => {
-                e.preventDefault();
-                vincular(entradaTicket.trim());
-              }}
-            >
-              <input
-                autoFocus
-                className="w-full border rounded px-2 py-1 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100"
-                placeholder="nº, #nº, uuid ou URL do ticket"
-                value={entradaTicket}
-                onChange={(e) => setEntradaTicket(e.target.value)}
-              />
-              <p className="mt-1 text-[10px] text-slate-500">
-                Cole a URL do ticket no 360, o uuid ou só o número. Vazio + Enter desvincula.
-              </p>
-            </form>
-          )}
-          {ticket.ticket360Numero && (
-            <button
-              className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
-              onClick={() => {
-                setMenuAberto(false);
-                vincular('');
-              }}
-            >
-              Desvincular ticket (#{ticket.ticket360Numero})
-            </button>
-          )}
-          {erroVinculo && (
-            <p className="px-3 py-2 text-[10px] text-red-600 dark:text-red-400 max-w-[16rem] break-words">
-              {erroVinculo}
-            </p>
-          )}
-          <button
-            className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
-            onClick={() => {
-              setMenuAberto(false);
-              onAgendarVisita?.(ticket);
-            }}
-          >
-            {ticket.visitaData ? `Editar visita (${visitaResumo(ticket)})` : '📅 Agendar visita…'}
-          </button>
-          <button
-            className="block w-full text-left px-3 py-2 hover:bg-red-500/10 text-red-600 dark:text-red-400"
-            onClick={() => {
-              setMenuAberto(false);
-              onExcluir(ticket);
-            }}
-          >
-            Excluir
-          </button>
-        </div>
-      )}
+      {menuEl}
     </div>
   );
 }
