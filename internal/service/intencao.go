@@ -21,7 +21,7 @@ type IntencaoLocal struct {
 
 var (
 	reApagarCard = regexp.MustCompile(
-		`(?i)^\s*(?:apag\w+|exclu\w+|remov\w+|delet\w+)\s+(?:o\s+|a\s+|esse\s+|esse\s+aqui\s+o\s+)?card\b(?:\s+d[oa]s?\s+cliente)?\s+(.+?)\s*[.!?]*$`)
+		`(?i)^\s*(?:apag\w+|exclu\w+|remov\w+|delet\w+|elimin\w+|tire|tira|retir\w+)\s+(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|um\s+|uma\s+|esse\s+aqui\s+o\s+)?(?:card|cliente|ticket)\b(?:\s+d[oa]s?\s+cliente)?\s+(.+?)\s*[.!?]*$`)
 	reMoverCard = regexp.MustCompile(
 		`(?i)^\s*(?:mov\w+|arrast\w+|passe|passar|lev\w+|mand\w+|mud\w+|jog\w+|pux\w+|coloc\w+|coloque|coloq\w+|ponh\w+|põe|poe|pôr|por|deix\w+|mex\w+|encaix\w+)\s+(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|um\s+|uma\s+)?(?:card|cliente|ticket)\b(?:\s+d[oa]s?\s+cliente)?\s+(.+?)\s+(?:para|pro|pra|p\/|em|na|no|to)\s+(?:a\s+coluna\s+|coluna\s+|o\s+|a\s+)?(.+?)\s*[.!?]*$`)
 )

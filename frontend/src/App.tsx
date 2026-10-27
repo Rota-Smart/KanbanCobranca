@@ -340,6 +340,37 @@ export default function App() {
   // tickets resolveram para a coluna Ticket Fechado — sem passar pela IA.
   const [verificandoFechados, setVerificandoFechados] = useState(false);
   const [menuAcao, setMenuAcao] = useState<{ x: number; y: number } | null>(null);
+
+  // Visitas agendadas nos próximos 3 dias (inclusive hoje), ordenadas pela
+  // data e depois pelo horário/turno — alimentam o botão 📅 Visitas.
+  const [menuVisitas, setMenuVisitas] = useState<{ x: number; y: number } | null>(null);
+  const visitasProximas = (() => {
+    const hoje = new Date();
+    const limite = new Date(hoje);
+    limite.setDate(limite.getDate() + 3);
+    const chave = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const de = chave(hoje);
+    const ate = chave(limite);
+    const ordemTurno: Record<string, number> = { Manhã: 0, Tarde: 1, Noite: 2 };
+    const itens: Ticket[] = [];
+    for (const lista of Object.values(board)) {
+      for (const t of lista) {
+        if (t.visitaData && t.visitaData >= de && t.visitaData <= ate) itens.push(t);
+      }
+    }
+    itens.sort((a, b) => {
+      if (a.visitaData !== b.visitaData) return a.visitaData < b.visitaData ? -1 : 1;
+      if (a.visitaHora || b.visitaHora) return (a.visitaHora || '99:99') < (b.visitaHora || '99:99') ? -1 : 1;
+      return (ordemTurno[a.visitaTurno] ?? 3) - (ordemTurno[b.visitaTurno] ?? 3);
+    });
+    return itens;
+  })();
+  function resumoVisita(t: Ticket): string {
+    const dia = t.visitaData.slice(8, 10) + '/' + t.visitaData.slice(5, 7);
+    const quando = t.visitaHora || t.visitaTurno;
+    return `${dia}${quando ? ' · ' + quando : ''} — ${t.nomeCliente}`;
+  }
+
   async function verificarFechados() {
     if (verificandoFechados) return;
     setVerificandoFechados(true);
@@ -657,6 +688,51 @@ export default function App() {
           >
             🎟 Tickets
           </button>
+          <div className="relative">
+            <button
+              className={`text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium ${visitasProximas.length > 0 ? 'text-sky-700 dark:text-sky-300' : ''}`}
+              title="Visitas agendadas nos próximos 3 dias"
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setMenuVisitas((m) => (m ? null : { x: r.right, y: r.bottom + 4 }));
+              }}
+            >
+              📅 Visitas{visitasProximas.length > 0 ? ` (${visitasProximas.length})` : ''}
+            </button>
+            {menuVisitas && (
+              <>
+                <div
+                  className="fixed inset-0 z-[100]"
+                  onClick={() => setMenuVisitas(null)}
+                />
+                <div
+                  className="fixed z-[101] rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-600/60 shadow-xl overflow-y-auto max-h-[60vh] min-w-[16rem]"
+                  style={{ right: window.innerWidth - menuVisitas.x, top: menuVisitas.y }}
+                >
+                  {visitasProximas.length === 0 ? (
+                    <div className="px-3 py-2 text-slate-500 dark:text-slate-400">
+                      Nenhuma visita nos próximos 3 dias.
+                    </div>
+                  ) : (
+                    visitasProximas.map((t) => (
+                      <button
+                        key={t.id}
+                        className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+                        title={t.visitaEndereco || t.endereco || ''}
+                        onClick={() => {
+                          setMenuVisitas(null);
+                          setPreCobranca(null);
+                          setAberto(t);
+                        }}
+                      >
+                        📍 {resumoVisita(t)}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           <div className="relative">
             <button
               className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium disabled:opacity-60"
