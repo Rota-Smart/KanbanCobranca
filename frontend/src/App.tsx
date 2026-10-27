@@ -657,19 +657,15 @@ export default function App() {
             🎟 Tickets
           </button>
           <button
-            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
-            title="Mover ticket para coluna — direto, sem o assistente (Shift+F6)"
-            onClick={() => setMovimentaAberta(true)}
-          >
-            📥 Mover ticket
-          </button>
-          <button
             className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium disabled:opacity-60"
-            title="Consulta o status de todos os tickets vinculados e move os cards resolvidos para a coluna Ticket Fechado — direto do 360, sem IA"
+            title="Abre o diálogo de mover ticket (Shift+F6) e, antes, confere no 360 os tickets vinculados — os resolvidos vão sozinhos para a coluna Ticket Fechado"
             disabled={verificandoFechados}
-            onClick={verificarFechados}
+            onClick={async () => {
+              await verificarFechados();
+              setMovimentaAberta(true);
+            }}
           >
-            {verificandoFechados ? '🔍 Conferindo…' : '✅ Tickets fechados'}
+            {verificandoFechados ? '🔍 Conferindo…' : '🎫 Tickets'}
           </button>
           <button
             className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
