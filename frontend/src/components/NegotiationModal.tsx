@@ -474,6 +474,36 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
     onFechar();
   }
 
+  // Painel de cortesia: com reneg na sessão usa os dados do 360; ao reabrir
+  // um card com acordo salvo (sem gerar renegociação), deriva da avaliação —
+  // mensalidade dos produtos e elegibilidade — para mostrar como ficaria.
+  type RenegInfo = Omit<RenegociacaoPronta, 'convertValues'> & { convertValues?: RenegociacaoPronta['convertValues'] };
+  const renegInfo: RenegInfo | null =
+    reneg ??
+    (avaliacao && avaliacao.elegivelCortesia && avaliacao.mensalidadeCents > 0
+      ? {
+          totalAbertoCents: 0,
+          totalVencidoCents: 0,
+          totalVencidoEncargosCents: 0,
+          entradaCents: 0,
+          numeroVezes: 0,
+          parcelaBaseCents: 0,
+          valorMensalidadeCents: avaliacao.mensalidadeCents,
+          diaVencimento: 0,
+          contratoAssinatura: '',
+          contratoPrazoMeses: 0,
+          contratoTermino: '',
+          direitoCortesia: true,
+          cortesiaRestantes: Math.max(1, 3 - avaliacao.qtdRenegociacoes),
+          cortesiaMotivo: avaliacao.observacoes[0] || 'Elegível pela avaliação do cliente',
+          proposta: proposta ?? ({ texto: '', aviso: '' } as Proposta),
+          avaliacao,
+          financeiro: fin ?? { TotalDevendo: 0, TotalDevendoComEncargos: 0, TotalEncargosAtraso: 0, TotalAtrasadas: 0 },
+          faturas: faturas ?? [],
+          aviso: '',
+        }
+      : null);
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30 backdrop-blur-sm" onClick={tentarFechar}>
       <aside
@@ -526,13 +556,13 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
                   {gerando ? '🔄 Puxando valores do 360…' : '🔄 Gerar renegociação'}
                 </button>
                 {gerarErro && <p className="text-xs text-red-600 break-words">{gerarErro}</p>}
-                {reneg && reneg.valorMensalidadeCents > 0 && (
+                {renegInfo && renegInfo.valorMensalidadeCents > 0 && (
                   <p className="text-xs text-slate-600 dark:text-slate-300 bg-white/50 dark:bg-white/5 rounded-lg px-3 py-2">
-                    📄 Contrato: <b>{formatCents(reneg.valorMensalidadeCents)}</b>/mês
-                    {reneg.diaVencimento > 0 && <> · vence dia <b>{reneg.diaVencimento}</b></>}
-                    {reneg.contratoAssinatura && <> · assinado em {reneg.contratoAssinatura}</>}
-                    {reneg.contratoPrazoMeses > 0 && <> · prazo de {reneg.contratoPrazoMeses} meses</>}
-                    {reneg.contratoTermino && <> · termina em {reneg.contratoTermino}</>}
+                    📄 Contrato: <b>{formatCents(renegInfo.valorMensalidadeCents)}</b>/mês
+                    {renegInfo.diaVencimento > 0 && <> · vence dia <b>{renegInfo.diaVencimento}</b></>}
+                    {renegInfo.contratoAssinatura && <> · assinado em {renegInfo.contratoAssinatura}</>}
+                    {renegInfo.contratoPrazoMeses > 0 && <> · prazo de {renegInfo.contratoPrazoMeses} meses</>}
+                    {renegInfo.contratoTermino && <> · termina em {renegInfo.contratoTermino}</>}
                   </p>
                 )}
               </>
@@ -628,13 +658,13 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
             )}
             {calcErro && <p className="text-xs text-red-600">{calcErro}</p>}
 
-            {reneg && (
-              <div className={`rounded-lg p-3 text-sm border ${reneg.direitoCortesia ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800' : 'bg-slate-50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600'}`}>
+            {renegInfo && (
+              <div className={`rounded-lg p-3 text-sm border ${renegInfo.direitoCortesia ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800' : 'bg-slate-50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600'}`}>
                 <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  🎁 Cortesia {reneg.direitoCortesia ? `— ${reneg.cortesiaRestantes} disponíve${reneg.cortesiaRestantes > 1 ? 'is' : 'l'}` : '— sem direito'}
+                  🎁 Cortesia {renegInfo.direitoCortesia ? `— ${renegInfo.cortesiaRestantes} disponíve${renegInfo.cortesiaRestantes > 1 ? 'is' : 'l'}` : '— sem direito'}
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{reneg.cortesiaMotivo}</p>
-                {reneg.direitoCortesia && reneg.valorMensalidadeCents > 0 && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{renegInfo.cortesiaMotivo}</p>
+                {renegInfo.direitoCortesia && renegInfo.valorMensalidadeCents > 0 && (
                   <>
                     <div className="mt-2 flex flex-wrap gap-2 items-end">
                       <label className="flex flex-col gap-0.5 text-xs">
@@ -644,7 +674,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
                           value={cortesiaQtd}
                           onChange={(e) => setCortesiaQtd(Number(e.target.value))}
                         >
-                          {Array.from({ length: reneg.cortesiaRestantes }, (_, i) => i + 1).map((n) => (
+                          {Array.from({ length: renegInfo.cortesiaRestantes }, (_, i) => i + 1).map((n) => (
                             <option key={n} value={n}>{n} mensalidade{n > 1 ? 's' : ''}</option>
                           ))}
                         </select>
@@ -663,10 +693,10 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
                       </label>
                     </div>
                     <p className="mt-2 text-xs text-slate-700 dark:text-slate-200">
-                      Cortesia total de <b>{formatCents(reneg.valorMensalidadeCents * cortesiaQtd)}</b> —
-                      {' '}desconto de <b>{formatCents(Math.round((reneg.valorMensalidadeCents * cortesiaQtd) / cortesiaMeses))}/mês</b> durante {cortesiaMeses} {cortesiaMeses === 1 ? 'mês' : 'meses'}
+                      Cortesia total de <b>{formatCents(renegInfo.valorMensalidadeCents * cortesiaQtd)}</b> —
+                      {' '}desconto de <b>{formatCents(Math.round((renegInfo.valorMensalidadeCents * cortesiaQtd) / cortesiaMeses))}/mês</b> durante {cortesiaMeses} {cortesiaMeses === 1 ? 'mês' : 'meses'}
                       {calc && calc.finalCents > 0 && (
-                        <> · parcela durante: <b>{formatCents(Math.max(0, calc.finalCents - Math.round((reneg.valorMensalidadeCents * cortesiaQtd) / cortesiaMeses)))}</b></>
+                        <> · parcela durante: <b>{formatCents(Math.max(0, calc.finalCents - Math.round((renegInfo.valorMensalidadeCents * cortesiaQtd) / cortesiaMeses)))}</b></>
                       )}
                     </p>
                     <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
