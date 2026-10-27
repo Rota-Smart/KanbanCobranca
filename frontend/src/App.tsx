@@ -331,9 +331,32 @@ export default function App() {
     };
   }, [colunas]);
 
-  function showToast(msg: string) {
+  function showToast(msg: string, ms = 4000) {
     setToast(msg);
-    setTimeout(() => setToast(''), 4000);
+    setTimeout(() => setToast(''), ms);
+  }
+
+  // Verificação de tickets fechados: consulta o 360 e move os cards cujos
+  // tickets resolveram para a coluna Ticket Fechado — sem passar pela IA.
+  const [verificandoFechados, setVerificandoFechados] = useState(false);
+  async function verificarFechados() {
+    if (verificandoFechados) return;
+    setVerificandoFechados(true);
+    showToast('🔍 Conferindo tickets no 360…');
+    try {
+      const r = await bindings.VerificarTicketsFechados();
+      if ((r.movidos?.length ?? 0) === 0) {
+        showToast(`✅ ${r.verificados} ticket(s) conferido(s) — nenhum card para mover.${r.erros?.length ? ' ' + r.erros[0] : ''}`, 6000);
+      } else {
+        const nomes = r.movidos.map((m) => m.cliente || `card ${m.cardId}`).join(', ');
+        showToast(`✅ ${r.movidos.length} card(s) movido(s) para ${r.coluna}: ${nomes}`, 8000);
+        await recarregarBoard();
+      }
+    } catch (e) {
+      showToast('⚠ Falha ao verificar tickets: ' + String(e), 6000);
+    } finally {
+      setVerificandoFechados(false);
+    }
   }
 
   // Resultado da atualização em background: os avisos ficam aqui (nível App)
@@ -639,6 +662,14 @@ export default function App() {
             onClick={() => setMovimentaAberta(true)}
           >
             📥 Mover ticket
+          </button>
+          <button
+            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium disabled:opacity-60"
+            title="Consulta o status de todos os tickets vinculados e move os cards resolvidos para a coluna Ticket Fechado — direto do 360, sem IA"
+            disabled={verificandoFechados}
+            onClick={verificarFechados}
+          >
+            {verificandoFechados ? '🔍 Conferindo…' : '✅ Tickets fechados'}
           </button>
           <button
             className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"

@@ -429,6 +429,29 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		return fmt.Sprintf("Card %d movido para %s%s.", id, coluna, extra),
 			fmt.Sprintf("moveu o card %d para %s", id, coluna), nil
 
+	case "verificar_tickets_fechados":
+		res, err := a.VerificarTicketsFechados()
+		if err != nil {
+			return "", "", err
+		}
+		msg := fmt.Sprintf("%d ticket(s) verificado(s): %d card(s) movido(s) para %s, %d ficaram.",
+			res.Verificados, len(res.Movidos), res.Coluna, res.Ficaram)
+		for _, m := range res.Movidos {
+			nome := m.Cliente
+			if nome == "" {
+				nome = fmt.Sprintf("card %d", m.CardID)
+			}
+			num := m.TicketNumero
+			if num != "" {
+				num = " #" + num
+			}
+			msg += fmt.Sprintf("\n• %s%s — %s", nome, num, m.Motivo)
+		}
+		for _, e := range res.Erros {
+			msg += "\n⚠ " + e
+		}
+		return msg, fmt.Sprintf("moveu %d card(s) para %s", len(res.Movidos), res.Coluna), nil
+
 	case "apagar_card":
 		id := argInt("ticketId")
 		if id <= 0 {

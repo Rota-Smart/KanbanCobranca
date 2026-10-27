@@ -117,6 +117,11 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
       <div
         className="fixed inset-0 z-[99]"
         onPointerDown={(e) => e.stopPropagation()}
+        onWheel={(e) => {
+          // o backdrop engoliria o scroll: repassa para o scrollable atrás
+          const alvo = (e.currentTarget as HTMLElement).parentElement?.closest('.overflow-y-auto, .overflow-x-auto, [data-scroll]');
+          if (alvo) alvo.scrollTop += e.deltaY;
+        }}
         onClick={(e) => {
           e.stopPropagation();
           setMenu(null);
