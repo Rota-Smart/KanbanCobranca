@@ -275,6 +275,10 @@ type resumoCliente360 struct {
 	Endereco    string `json:"Endereco"`
 	NumEndereco string `json:"NumEndereco"`
 	Situacao    string `json:"Situacao"`
+
+	// AvisoSync: quando o financeiro falha mas o cadastro veio, o motivo fica
+	// aqui para os fluxos de cobrança mostrarem ao usuário em vez de engolir.
+	AvisoSync string
 }
 
 // sincronizarCliente grava o snapshot do 360 no cache e devolve cadastro+dashboard.
@@ -300,7 +304,15 @@ func (a *App) sincronizarCliente(ctx context.Context, c *rota360.Cliente, codSer
 	}
 	fin, err := c.FinanceiroCliente(ctx, codService)
 	if err != nil {
-		return r, nil, nil // cadastro ok; financeiro falhou — segue sem ele
+		// cadastro ok; financeiro falhou — segue sem ele, mas registra o
+		// motivo (antes era engolido e o usuário só via "sem saldo em aberto")
+		slog.Warn("financeiro 360 falhou", "cod", codService, "err", err)
+		r.AvisoSync = motivoSync360(err)
+		return r, nil, nil
+	}
+	if fin.Sources.InsideService.Data.Financeiro.TotalDevendoComEncargos <= 0 {
+		slog.Warn("financeiro 360 veio zerado", "cod", codService,
+			"devendo", fin.Sources.InsideService.Data.Financeiro.TotalDevendoComEncargos)
 	}
 	cache := &db.Cliente360{
 		CodService: codService,
@@ -350,8 +362,9 @@ func (a *App) PrepararCobranca(ticketID int64) (ResultadoCobranca, error) {
 
 	res := ResultadoCobranca{Ticket: *t}
 	var totalCents int64
-	if _, fin, err := a.sincronizarCliente(ctx, c, t.CodService); err != nil {
-		res.Aviso = motivoSync360(err)
+	rSync, fin, syncErr := a.sincronizarCliente(ctx, c, t.CodService)
+	if syncErr != nil {
+		res.Aviso = motivoSync360(syncErr)
 		if cli, _ := a.clientes.Get(ctx, t.CodService); cli != nil {
 			totalCents = cli.SaldoCents
 		}
@@ -365,6 +378,9 @@ func (a *App) PrepararCobranca(ticketID int64) (ResultadoCobranca, error) {
 		totalCents = cli.SaldoCents
 	}
 
+	if res.Aviso == "" && rSync != nil {
+		res.Aviso = rSync.AvisoSync
+	}
 	if totalCents <= 0 {
 		if res.Aviso != "" {
 			return ResultadoCobranca{}, fmt.Errorf("%s (sem saldo em cache do cliente %s)", res.Aviso, t.CodService)
@@ -555,8 +571,9 @@ func (a *App) GerarRenegociacao(ticketID int64) (RenegociacaoPronta, error) {
 
 	res := RenegociacaoPronta{EntradaCents: 0, NumeroVezes: 12, Faturas: []rota360.Fatura360{}}
 	var totalCents int64
-	if _, fin, err := a.sincronizarCliente(ctx, c, t.CodService); err != nil {
-		res.Aviso = motivoSync360(err)
+	rSync, fin, syncErr := a.sincronizarCliente(ctx, c, t.CodService)
+	if syncErr != nil {
+		res.Aviso = motivoSync360(syncErr)
 		if cli, _ := a.clientes.Get(ctx, t.CodService); cli != nil {
 			totalCents = cli.SaldoCents
 			res.Faturas = faturasDoCache(cli)
@@ -570,6 +587,9 @@ func (a *App) GerarRenegociacao(ticketID int64) (RenegociacaoPronta, error) {
 	} else if cli, _ := a.clientes.Get(ctx, t.CodService); cli != nil {
 		totalCents = cli.SaldoCents
 		res.Faturas = faturasDoCache(cli)
+	}
+	if res.Aviso == "" && rSync != nil {
+		res.Aviso = rSync.AvisoSync
 	}
 	if totalCents <= 0 {
 		if res.Aviso != "" {
