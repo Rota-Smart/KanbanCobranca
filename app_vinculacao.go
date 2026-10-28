@@ -47,17 +47,28 @@ func (a *App) VincularTicketsPendentes() (ResultadoVinculacao, error) {
 	// Fila inteira uma vez só (as três views, sem repetição) — consultar o
 	// 360 por card estouraria o tempo com board grande.
 	filaMap := map[string]rota360.Ticket360{}
+	filaPorCod := map[string]rota360.Ticket360{}
+	falhasView := 0
 	for _, view := range []string{"em_aberto", "meus_em_aberto", "pendentes"} {
 		if err := ctx.Err(); err != nil {
 			return ResultadoVinculacao{}, err
 		}
 		itens, _, err := c.TicketsDaFila(ctx, view, 1, 100)
 		if err != nil {
+			falhasView++
 			continue // uma view pode falhar (permissão) — segue com as outras
 		}
 		for _, t := range itens {
 			filaMap[t.ID] = t
+			if t.CodigoService != "" {
+				if antigo, ok := filaPorCod[t.CodigoService]; !ok || criadoDepois(&t, &antigo) {
+					filaPorCod[t.CodigoService] = t
+				}
+			}
 		}
+	}
+	if falhasView == 3 {
+		return ResultadoVinculacao{}, fmt.Errorf("não consegui ler a fila do 360 (as 3 views falharam) — sessão do 360 pode ter vencido, reconecte em Configurações")
 	}
 	fila := make([]rota360.Ticket360, 0, len(filaMap))
 	for _, t := range filaMap {
@@ -78,12 +89,24 @@ func (a *App) VincularTicketsPendentes() (ResultadoVinculacao, error) {
 	}
 
 	res := ResultadoVinculacao{Vinculados: []CardVinculadoAgora{}, SemTicket: []string{}, Erros: []string{}}
+	codCache := map[string]string{} // nome normalizado → código service resolvido no 360
+	erroBusca := ""
 	for _, t := range ts {
 		if comVinculo[t.ID] || strings.TrimSpace(t.Ticket360ID) != "" {
 			continue // restrição única: só cards sem NENHUM ticket vinculado
 		}
 		res.Varridos++
 		tk := escolherTicketParaCard(t, fila)
+		if tk == nil {
+			// Nome não casou com o solicitante: resolve o código service do
+			// cliente na busca do 360 e procura a fila por código — o
+			// solicitante do ticket costuma ser uma pessoa, não a empresa.
+			if cod := a.resolverCodService(ctx, c, t.NomeCliente, codCache, &erroBusca); cod != "" {
+				if t2, ok := filaPorCod[cod]; ok {
+					tk = &t2
+				}
+			}
+		}
 		if tk == nil {
 			res.SemTicket = append(res.SemTicket, t.NomeCliente)
 			continue
@@ -98,6 +121,9 @@ func (a *App) VincularTicketsPendentes() (ResultadoVinculacao, error) {
 			TicketNumero: tk.Numero,
 			Titulo:       tk.Titulo,
 		})
+	}
+	if erroBusca != "" && len(res.SemTicket) > 0 {
+		res.Erros = append(res.Erros, "busca de clientes no 360 falhou (pode ter mascarado tickets em aberto): "+erroBusca)
 	}
 	return res, nil
 }
@@ -139,6 +165,41 @@ func escolherTicketParaCard(card db.Ticket, fila []rota360.Ticket360) *rota360.T
 // string já é cronológica). Empate ou formato estranho: novo não vence.
 func criadoDepois(a, b *rota360.Ticket360) bool {
 	return a.CriadoEm > b.CriadoEm
+}
+
+// resolverCodService acha o código service do cliente na busca do 360 pelo
+// nome do card (com cache por nome — a busca é a mesma para cards homônimos).
+// Só aceita resultado cujo nome confira com o do card nos dois sentidos; se
+// a busca falhar uma vez, guarda o erro e não insiste nos próximos cards.
+func (a *App) resolverCodService(ctx context.Context, c *rota360.Cliente, nome string, cache map[string]string, erroBusca *string) string {
+	chave := service.NormalizarTexto(nome)
+	if cod, ok := cache[chave]; ok {
+		return cod
+	}
+	cache[chave] = "" // padrão: não achou
+	if *erroBusca != "" {
+		return ""
+	}
+	cls, err := c.BuscarClientes(ctx, nome, "")
+	if err != nil {
+		*erroBusca = err.Error()
+		return ""
+	}
+	alvo := service.NormalizarTexto(nome)
+	if alvo == "" {
+		return ""
+	}
+	for _, cl := range cls {
+		achado := service.NormalizarTexto(cl.Nome)
+		if achado == "" {
+			continue
+		}
+		if strings.Contains(achado, alvo) || strings.Contains(alvo, achado) {
+			cache[chave] = fmt.Sprintf("%d", cl.CodCliente)
+			break
+		}
+	}
+	return cache[chave]
 }
 
 // FechadoHistorico é um card no histórico da coluna Ticket Fechado.
