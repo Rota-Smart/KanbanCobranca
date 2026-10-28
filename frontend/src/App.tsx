@@ -92,6 +92,43 @@ function modosDoStorage(): ModosCards {
   return modosIniciais;
 }
 
+// ---- Ordenação dos cards por coluna (data de adição, posição do arraste, A-Z) ----
+
+type OrdenacaoModo = 'manual' | 'data' | 'alfabetica';
+interface Ordenacao {
+  modo: OrdenacaoModo;
+  desc: boolean;
+}
+
+const ordenacaoPadrao: Ordenacao = { modo: 'manual', desc: false };
+
+function ordenacoesDoStorage(): Record<string, Ordenacao> {
+  try {
+    const bruto = JSON.parse(localStorage.getItem('ordenacaoColunas') ?? '');
+    if (bruto && typeof bruto === 'object') return bruto;
+  } catch {
+    // sem valor salvo ou inválido: usa o padrão
+  }
+  return {};
+}
+
+// Ordena uma cópia dos cards; "manual" devolve o array como está (a ordem
+// vem do banco, que é onde o arraste grava a posição).
+function ordenarTickets(tickets: Ticket[], o: Ordenacao): Ticket[] {
+  if (o.modo === 'manual') return tickets;
+  const copia = [...tickets];
+  copia.sort((a, b) => {
+    let r: number;
+    if (o.modo === 'data') {
+      r = (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0);
+    } else {
+      r = a.nomeCliente.localeCompare(b.nomeCliente, 'pt-BR', { sensitivity: 'base' });
+    }
+    return o.desc ? -r : r;
+  });
+  return copia;
+}
+
 // TicketDaTela: payload do evento "atalho:tela" (Shift+F2 capturou a tela).
 interface TicketDaTela {
   achou: boolean;
@@ -203,6 +240,7 @@ export default function App() {
   const [tema, setTema] = useState<'claro' | 'escuro'>(temaInicial);
   const [sincronizando, setSincronizando] = useState(false);
   const [modos, setModos] = useState<ModosCards>(modosDoStorage);
+  const [ordenacoes, setOrdenacoes] = useState<Record<string, Ordenacao>>(ordenacoesDoStorage);
   const [filtroTexto, setFiltroTexto] = useState('');
   const [filtroAssunto, setFiltroAssunto] = useState('');
   const [vinculos, setVinculos] = useState<Vinculo360[]>([]);
@@ -244,6 +282,19 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('modosCards', JSON.stringify(modos));
   }, [modos]);
+
+  // setOrdenacaoColuna grava a ordenação da coluna (modo + direção) e persiste.
+  function setOrdenacaoColuna(coluna: string, modo: OrdenacaoModo, desc: boolean) {
+    setOrdenacoes((o) => {
+      const n = { ...o, [coluna]: { modo, desc } };
+      localStorage.setItem('ordenacaoColunas', JSON.stringify(n));
+      return n;
+    });
+  }
+
+  function ordenacaoDe(coluna: string): Ordenacao {
+    return ordenacoes[coluna] ?? ordenacaoPadrao;
+  }
 
   // modoDoCard resolve card > coluna > global.
   function modoDoCard(t: Ticket): ModoCard {
@@ -582,6 +633,17 @@ export default function App() {
     const origem = Object.keys(board).find((c) => board[c].some((t) => t.id === id));
     if (!origem) return;
     const destino = colunaDe(over.id) ?? origem;
+    // Coluna com ordenação ativa (data/A-Z): a ordem exibida não é a posição
+    // salva, então arrastar dentro dela só anexa ao fim — sem reordenar no meio.
+    if (ordenacaoDe(destino).modo !== 'manual') {
+      if (origem === destino) return;
+      const fim = board[destino].length;
+      const snapshot = board;
+      const novo = moveCard(board, id, destino, fim);
+      setBoard(novo);
+      persistMove(id, destino, novo[destino].findIndex((t) => t.id === id), snapshot);
+      return;
+    }
     const posicao = board[String(over.id)]
       ? board[destino].length
       : Math.max(0, board[destino].findIndex((t) => t.id === Number(over.id)));
@@ -996,6 +1058,8 @@ ${txt.trim()}` : txt.trim());
                   ticketsDaColuna = [...todosDaColuna]
                     .sort((a, b) => (ordem.get(a.id) ?? Infinity) - (ordem.get(b.id) ?? Infinity))
                     .slice(0, maxCardsFechadosVisiveis);
+                } else {
+                  ticketsDaColuna = ordenarTickets(todosDaColuna, ordenacaoDe(c));
                 }
                 return (
                   <ColunaOrdenavel
@@ -1003,6 +1067,9 @@ ${txt.trim()}` : txt.trim());
                     coluna={c}
                     tickets={ticketsDaColuna}
                     contagem={todosDaColuna.length}
+                    ordenacaoModo={ordenacaoDe(c).modo}
+                    ordenacaoDesc={ordenacaoDe(c).desc}
+                    onOrdenacao={(modo, desc) => setOrdenacaoColuna(c, modo, desc)}
                     acordosPorTicket={{}}
                     modoDoCard={modoDoCard}
                     onModoCard={setModoCard}

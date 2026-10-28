@@ -31,9 +31,18 @@ function Seta({ aberta }: { aberta: boolean }) {
   );
 }
 
+// Ordenação dos cards dentro da coluna. "manual" respeita a ordem dos
+// arrastes (posição salva no banco); as demais só mudam a exibição.
+export type OrdenacaoModo = 'manual' | 'data' | 'alfabetica';
+
 interface Props {
   coluna: string;
   tickets: Ticket[];
+  /** Ordenação ativa da coluna (exibida no controle do cabeçalho). */
+  ordenacaoModo?: OrdenacaoModo;
+  ordenacaoDesc?: boolean;
+  /** Troca o modo; a direção (desc) é alternada pela seta ao lado. */
+  onOrdenacao?: (modo: OrdenacaoModo, desc: boolean) => void;
   acordosPorTicket: Record<number, number>;
   modoDoCard: (ticket: Ticket) => ModoCard;
   onModoCard: (ticket: Ticket, modo: ModoCard | 'completo') => void;
@@ -82,7 +91,7 @@ function BotaoModo({ ativo, titulo, children, onClick }: { ativo: boolean; titul
   );
 }
 
-export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onAgendarVisita, comissoes, onReceberComissao, onEditarComissao, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca, contagem, rodape, selecionado, emSelecao, onAlternarSelecao }: Props) {
+export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual', ordenacaoDesc = false, onOrdenacao, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onAgendarVisita, comissoes, onReceberComissao, onEditarComissao, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca, contagem, rodape, selecionado, emSelecao, onAlternarSelecao }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna });
   const [recolhida, setRecolhida] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
@@ -155,6 +164,28 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDo
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {onOrdenacao && (
+            <div className="flex items-center rounded-lg bg-slate-500/10 overflow-hidden" title="Ordenar os cards da coluna">
+              <select
+                aria-label={`Ordenar cards de ${coluna}`}
+                className="border-0 bg-transparent text-[11px] text-slate-500 dark:text-slate-300 py-0.5 pl-1.5 pr-0.5 outline-none cursor-pointer appearance-none max-w-[72px]"
+                value={ordenacaoModo}
+                onChange={(e) => onOrdenacao(e.target.value as OrdenacaoModo, ordenacaoDesc)}
+              >
+                <option value="manual">Ordem</option>
+                <option value="data">Data</option>
+                <option value="alfabetica">A-Z</option>
+              </select>
+              <button
+                aria-label={ordenacaoDesc ? `Ordem decrescente em ${coluna}` : `Ordem crescente em ${coluna}`}
+                title={ordenacaoDesc ? 'Decrescente (clique p/ crescente)' : 'Crescente (clique p/ decrescente)'}
+                className="px-1 py-0.5 text-[11px] leading-none text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                onClick={() => onOrdenacao(ordenacaoModo, !ordenacaoDesc)}
+              >
+                {ordenacaoDesc ? '↓' : '↑'}
+              </button>
+            </div>
+          )}
           <BotaoModo ativo={modoColuna === 'min'} titulo={`Minimizar todos os cards de ${coluna}`} onClick={() => onModoColuna(coluna, 'min')}>
             ▁
           </BotaoModo>
