@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"rota-smart/internal/db"
 	"rota-smart/internal/rota360"
 	"rota-smart/internal/service"
 )
@@ -151,6 +152,9 @@ func (a *App) prepararPrebusca(ctx context.Context, msg string) (*prebusca, erro
 		sb.WriteString("\n" + txt)
 		p.cache["equipamentos_cliente"] = txt
 	}
+	if bloco := a.blocoCardsCliente(cod); bloco != "" {
+		sb.WriteString("\n" + bloco)
+	}
 	p.bloco = strings.TrimRight(sb.String(), "\n")
 	p.removidas = service.FerramentasRemovidas(classe, alvo.Tipo != "" || cod != "")
 	if cod != "" {
@@ -191,6 +195,11 @@ func (a *App) prebuscaTicket(ctx context.Context, c *rota360.Cliente, numero str
 	fmt.Fprintf(&sb, "Ticket #%s — %s [%s] | cliente %s (código %s) | assunto %s/%s | responsável %s\n\n",
 		det.Numero, det.Titulo, det.Status, det.Solicitante, det.CodService, det.CategoriaNome, det.AssuntoNome, det.ResponsavelNome)
 	sb.WriteString(resumoMensagensTicket(det.Mensagens, autor))
+	if det.CodService != "" {
+		if bloco := a.blocoCardsCliente(det.CodService); bloco != "" {
+			sb.WriteString("\n" + bloco)
+		}
+	}
 
 	p := &prebusca{classe: classe, cache: map[string]string{
 		"detalhe_ticket_360": sb.String(),
@@ -198,6 +207,40 @@ func (a *App) prebuscaTicket(ctx context.Context, c *rota360.Cliente, numero str
 	p.bloco = "Contexto pré-coletado pelo app direto do 360 (dado oficial e atual — NÃO chame ferramentas para buscar de novo o que está aqui; use para responder):\n\n" + sb.String()
 	p.removidas = service.FerramentasRemovidas(classe, true)
 	return p, nil
+}
+
+// blocoCardsCliente verifica no banco LOCAL (sem rede, antes da IA) se o
+// cliente já tem card no Kanban e devolve o bloco de contexto correspondente.
+// Vazio só se o banco falhar — a resposta "sem card" também é informação
+// útil para o modelo.
+func (a *App) blocoCardsCliente(cod string) string {
+	ts, err := a.tickets.List(a.ctx)
+	if err != nil {
+		slog.Warn("pré-busca: listagem de cards falhou", "cod", cod, "err", err)
+		return ""
+	}
+	var encontrados []db.Ticket
+	for _, t := range ts {
+		if t.CodService == cod {
+			encontrados = append(encontrados, t)
+		}
+	}
+	if len(encontrados) == 0 {
+		return fmt.Sprintf("Cards no sistema: o cliente (código %s) NÃO tem card no Kanban local.", cod)
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Cards no sistema (%d card(s) do cliente no Kanban local):\n", len(encontrados))
+	for _, t := range encontrados {
+		detalhe := t.NomeCliente
+		if t.Ticket360Numero != "" {
+			detalhe += " | ticket 360 #" + t.Ticket360Numero
+		}
+		if t.Observacoes != "" {
+			detalhe += " | obs: " + limitarTexto(t.Observacoes, 200)
+		}
+		fmt.Fprintf(&sb, "- coluna %q | %s | atualizado em %s\n", t.ColunaAtual, detalhe, t.UpdatedAt)
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 // codDoNome resolve um nome de cliente para código service: primeiro nos
