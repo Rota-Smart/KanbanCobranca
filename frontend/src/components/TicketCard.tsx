@@ -59,11 +59,38 @@ interface Props {
   onExcluir: (ticket: Ticket) => void;
   /** Abre o diálogo de agendamento de visita (coluna "Visita Agendada"). */
   onAgendarVisita?: (ticket: Ticket) => void;
+  /** Seleção múltipla: card marcado, modo seleção ativo e alternância. */
+  selecionado?: boolean;
+  emSelecao?: boolean;
+  onAlternarSelecao?: (ticket: Ticket) => void;
+}
+
+// Botãozinho de checkbox do modo seleção múltipla. stopPropagation no
+// pointerdown evita que o dnd-kit transforme o toque em arrastar do card.
+function CheckSelecao({ ticket, selecionado, onAlternar }: { ticket: Ticket; selecionado: boolean; onAlternar: (t: Ticket) => void }) {
+  return (
+    <button
+      aria-label={selecionado ? 'Desmarcar card' : 'Selecionar card'}
+      title={selecionado ? 'Desmarcar card' : 'Selecionar card'}
+      className={`shrink-0 w-5 h-5 rounded-md border flex items-center justify-center text-[11px] font-bold leading-none transition touch-none ${
+        selecionado
+          ? 'bg-indigo-500 border-indigo-500 text-white'
+          : 'bg-white/70 dark:bg-slate-800/70 border-slate-400/70 dark:border-slate-500/70 text-transparent opacity-50 hover:opacity-100'
+      }`}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onAlternar(ticket);
+      }}
+    >
+      ✓
+    </button>
+  );
 }
 
 // Card estilo app de delivery: avatar com iniciais, faixa colorida do tipo,
 // código do pedido, endereço/telefone e badge de acordos.
-export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir, onAgendarVisita }: Props) {
+export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir, onAgendarVisita, selecionado = false, emSelecao = false, onAlternarSelecao }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
   const [menu, setMenu] = useState<{ right: number; top: number } | null>(null);
   const [vinculando, setVinculando] = useState(false);
@@ -212,6 +239,15 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           className={itemMenu}
           onClick={() => {
             setMenu(null);
+            onAlternarSelecao?.(ticket);
+          }}
+        >
+          {selecionado ? 'Desmarcar card' : '☑ Selecionar (ações em massa)'}
+        </button>
+        <button
+          className={itemMenu}
+          onClick={() => {
+            setMenu(null);
             onAgendarVisita?.(ticket);
           }}
         >
@@ -234,7 +270,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
       <div
         ref={setNodeRef}
         style={{ transform: CSS.Translate.toString(transform), transition }}
-        className={`glass card-delivery rounded-2xl relative overflow-hidden text-sm cursor-pointer ${isDragging ? 'opacity-50 scale-95' : ''}`}
+        className={`glass card-delivery rounded-2xl relative overflow-hidden text-sm cursor-pointer ${isDragging ? 'opacity-50 scale-95' : ''} ${selecionado ? 'ring-2 ring-indigo-500' : ''}`}
         {...attributes}
         {...listeners}
         onClick={onAbrir}
@@ -271,6 +307,9 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
               ✓{qtdAcordos}
             </span>
           )}
+          {(emSelecao || selecionado) && onAlternarSelecao && (
+            <CheckSelecao ticket={ticket} selecionado={selecionado} onAlternar={onAlternarSelecao} />
+          )}
           <button
             aria-label="Opções do card"
             className="text-slate-400 hover:text-slate-600 dark:hover:text-white px-1 rounded shrink-0 touch-none"
@@ -289,7 +328,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={`glass card-delivery rounded-2xl relative overflow-hidden text-sm ${isDragging ? 'opacity-50 scale-95' : ''}`}
+      className={`glass card-delivery rounded-2xl relative overflow-hidden text-sm ${isDragging ? 'opacity-50 scale-95' : ''} ${selecionado ? 'ring-2 ring-indigo-500' : ''}`}
       {...attributes}
       {...listeners}
       onClick={onAbrir}
@@ -322,14 +361,19 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
                   <span className="text-[11px] text-slate-500 font-mono">#{ticket.codService}</span>
                 )}
               </div>
-              <button
-                aria-label="Opções do card"
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-white px-1 rounded shrink-0 touch-none"
-                onPointerDown={pararDrag}
-                onClick={abrirMenu}
-              >
-                ⋯
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                {(emSelecao || selecionado) && onAlternarSelecao && (
+                  <CheckSelecao ticket={ticket} selecionado={selecionado} onAlternar={onAlternarSelecao} />
+                )}
+                <button
+                  aria-label="Opções do card"
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-white px-1 rounded shrink-0 touch-none"
+                  onPointerDown={pararDrag}
+                  onClick={abrirMenu}
+                >
+                  ⋯
+                </button>
+              </div>
             </div>
 
             <div className="mt-1.5 flex flex-wrap items-center gap-1">

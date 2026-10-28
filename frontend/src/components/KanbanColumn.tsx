@@ -54,6 +54,10 @@ interface Props {
   contagem?: number;
   /** Conteúdo extra entre os cards e o rodapé padrão (ex.: botão de histórico). */
   rodape?: React.ReactNode;
+  /** Seleção múltipla: repassa direto aos cards. */
+  selecionado?: (t: Ticket) => boolean;
+  emSelecao?: boolean;
+  onAlternarSelecao?: (ticket: Ticket) => void;
 }
 
 // Botãozinho de modo (minimizar/resumir) aplicado a todos os cards da coluna.
@@ -74,7 +78,7 @@ function BotaoModo({ ativo, titulo, children, onClick }: { ativo: boolean; titul
   );
 }
 
-export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onAgendarVisita, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca, contagem, rodape }: Props) {
+export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onAgendarVisita, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca, contagem, rodape, selecionado, emSelecao, onAlternarSelecao }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna });
   const [recolhida, setRecolhida] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
@@ -230,6 +234,9 @@ export default function KanbanColumn({ coluna, tickets, acordosPorTicket, modoDo
               onAbrir={() => onAbrir(t)}
               onExcluir={onExcluir}
               onAgendarVisita={onAgendarVisita}
+              selecionado={selecionado?.(t)}
+              emSelecao={emSelecao}
+              onAlternarSelecao={onAlternarSelecao}
             />
           ))}
         </SortableContext>

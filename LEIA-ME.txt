@@ -170,3 +170,9 @@ Os dados agora podem ficar iguais em vários PCs via GitHub:
 
 Se os dois PCs mudarem ao mesmo tempo, o app pergunta qual lado vence.
 Repositório: github.com/luisboneta/banco-de-dados (privado).
+
+22. AÇÕES EM MASSA (v1.21.0): selecione vários cards de uma vez (menu ⋯ do
+   card > "Selecionar", ou o checkbox que aparece assim que a seleção começa)
+   e use a barra no pé da tela para mover todos para uma coluna, adicionar a
+   mesma observação em todos (acrescenta à que já existe) ou excluir todos
+   (com confirmação — apaga também os acordos).

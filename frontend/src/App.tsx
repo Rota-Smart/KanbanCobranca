@@ -198,6 +198,8 @@ export default function App() {
   const [vinculos, setVinculos] = useState<Vinculo360[]>([]);
   const [historicoFechados, setHistoricoFechados] = useState<FechadoHistorico[]>([]);
   const [historicoAberto, setHistoricoAberto] = useState(false);
+  const [selecao, setSelecao] = useState<Set<number>>(new Set());
+  const [destinoMassa, setDestinoMassa] = useState('');
 
   async function carregarHistoricoFechados() {
     try {
@@ -586,6 +588,75 @@ export default function App() {
     }
   }
 
+  // ---- Seleção múltipla: ações em massa (mover, observação, excluir) ----
+
+  function alternarSelecao(t: Ticket) {
+    setSelecao((s) => {
+      const n = new Set(s);
+      if (n.has(t.id)) n.delete(t.id);
+      else n.add(t.id);
+      return n;
+    });
+  }
+
+  async function moverSelecionados() {
+    const ids = [...selecao];
+    if (!destinoMassa || ids.length === 0) return;
+    try {
+      let pos = (board[destinoMassa] ?? []).length;
+      for (const id of ids) {
+        await bindings.MoveTicket(id, destinoMassa, pos++);
+        if (destinoMassa === colunaDisparaCobranca) await prepararCobranca(id, destinoMassa);
+      }
+      showToast(`${ids.length} card${ids.length > 1 ? 's' : ''} movido${ids.length > 1 ? 's' : ''} para ${destinoMassa}.`);
+    } catch (e) {
+      showToast(String(e));
+    }
+    setSelecao(new Set());
+    setDestinoMassa('');
+    await recarregarBoard();
+  }
+
+  async function observacaoSelecionados() {
+    const txt = window.prompt('Observação a adicionar em TODOS os cards selecionados:');
+    if (!txt || !txt.trim()) return;
+    const ids = [...selecao];
+    let ok = 0;
+    try {
+      for (const id of ids) {
+        // acrescenta à observação existente do card, não substitui
+        const atual = Object.values(board).flat().find((t) => t.id === id)?.observacoes?.trim() ?? '';
+        const t = await bindings.SalvarObservacoesTicket(id, atual ? `${atual}
+${txt.trim()}` : txt.trim());
+        window.dispatchEvent(new CustomEvent('ticket-atualizado', { detail: t }));
+        ok++;
+      }
+      showToast(`Observação adicionada em ${ok} card${ok > 1 ? 's' : ''}.`);
+    } catch (e) {
+      showToast(String(e));
+    }
+    setSelecao(new Set());
+  }
+
+  async function excluirSelecionados() {
+    const ids = [...selecao];
+    if (ids.length === 0) return;
+    if (!window.confirm(`Excluir ${ids.length} card${ids.length > 1 ? 's' : ''} apaga também os acordos deles. Isso não pode ser desfeito.`)) return;
+    try {
+      for (const id of ids) await bindings.DeleteTicket(id);
+      setBoard((b) => {
+        const n: Board = {};
+        for (const [c, ts] of Object.entries(b)) n[c] = ts.filter((t) => !selecao.has(t.id));
+        return n;
+      });
+      showToast(`${ids.length} card${ids.length > 1 ? 's' : ''} excluído${ids.length > 1 ? 's' : ''}.`);
+    } catch (e) {
+      showToast(String(e));
+      await recarregarBoard();
+    }
+    setSelecao(new Set());
+  }
+
   async function criarColuna() {
     const nome = window.prompt('Nome da nova coluna (até 40 caracteres):');
     if (!nome || !nome.trim()) return;
@@ -896,6 +967,9 @@ export default function App() {
                     }}
                     onExcluir={excluir}
                     onAgendarVisita={setVisitaTicket}
+                    selecionado={(t) => selecao.has(t.id)}
+                    emSelecao={selecao.size > 0}
+                    onAlternarSelecao={alternarSelecao}
                     onNovoCard={novoCard}
                     onBuscar360={setBuscar360Coluna}
                     onRenomear={renomearColuna}
@@ -923,6 +997,51 @@ export default function App() {
           </button>
         </div>
       </DndContext>
+
+      {selecao.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[95] glass rounded-2xl shadow-xl px-3 py-2 flex flex-wrap items-center gap-2 text-sm max-w-[95vw]">
+          <span className="font-semibold text-slate-700 dark:text-slate-100 whitespace-nowrap">
+            {selecao.size} selecionado{selecao.size > 1 ? 's' : ''}
+          </span>
+          <select
+            value={destinoMassa}
+            onChange={(e) => setDestinoMassa(e.target.value)}
+            className="rounded-lg border border-slate-300/70 dark:border-slate-500/60 bg-white/80 dark:bg-slate-800/80 px-2 py-1 text-xs text-slate-700 dark:text-slate-100"
+          >
+            <option value="">Mover para…</option>
+            {colunas.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <button
+            className="rounded-lg px-2.5 py-1 text-xs font-medium bg-indigo-500/90 text-white hover:bg-indigo-500 disabled:opacity-40"
+            disabled={!destinoMassa}
+            onClick={moverSelecionados}
+          >
+            Mover
+          </button>
+          <button
+            className="rounded-lg px-2.5 py-1 text-xs font-medium bg-slate-500/15 text-slate-700 dark:text-slate-200 hover:bg-slate-500/25"
+            onClick={observacaoSelecionados}
+          >
+            🗒️ Observação
+          </button>
+          <button
+            className="rounded-lg px-2.5 py-1 text-xs font-medium bg-red-500/15 text-red-600 dark:text-red-300 hover:bg-red-500/25"
+            onClick={excluirSelecionados}
+          >
+            Excluir
+          </button>
+          <button
+            aria-label="Limpar seleção"
+            title="Limpar seleção"
+            className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-white"
+            onClick={() => { setSelecao(new Set()); setDestinoMassa(''); }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {aberto && (
         <NegotiationModal
