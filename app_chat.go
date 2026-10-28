@@ -511,7 +511,7 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		if err := a.DeleteTicket(id); err != nil {
 			return "", "", err
 		}
-		return fmt.Sprintf("Card %d (%s) apagado, junto com os acordos.", id, t.NomeCliente),
+		return fmt.Sprintf("Card %d (%s) apagado, junto com os acordos (estava em %q).", id, t.NomeCliente, t.ColunaAtual),
 			fmt.Sprintf("apagou o card %d (%s)", id, t.NomeCliente), nil
 
 	case "vincular_ticket":
@@ -1504,7 +1504,7 @@ func (a *App) executarIntencaoLocal(mensagem string) (*service.ChatResultado, bo
 	}
 	cards := make([]service.CardResumo, 0, len(ts))
 	for _, t := range ts {
-		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService})
+		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
 	}
 	card, err := service.ResolverCard(in.Alvo, cards)
 	if err != nil {
@@ -1512,12 +1512,27 @@ func (a *App) executarIntencaoLocal(mensagem string) (*service.ChatResultado, bo
 	}
 	switch {
 	case in.Apagar:
+		// "apague o card do João que está em Cobrança": confere a coluna
+		// dita antes de destruir — evita apagar card homônimo de outra
+		// coluna e responde onde o card realmente está.
+		if in.Coluna != "" {
+			colunas, err := a.colunas.List(a.ctx)
+			if err != nil {
+				return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error()}, true
+			}
+			if colunaDita, err := service.CasarColuna(in.Coluna, colunas); err == nil && colunaDita != card.ColunaAtual {
+				return &service.ChatResultado{
+					Resposta: fmt.Sprintf("O card %d (%s) está em %q, não em %q. Nada foi apagado — confira e repita se for esse mesmo.",
+						card.ID, card.NomeCliente, card.ColunaAtual, colunaDita),
+				}, true
+			}
+		}
 		if err := a.DeleteTicket(card.ID); err != nil {
 			return &service.ChatResultado{Resposta: "Falhou ao apagar: " + err.Error()}, true
 		}
 		return &service.ChatResultado{
-			Resposta: fmt.Sprintf("Card %d (%s) apagado, junto com os acordos dele.", card.ID, card.NomeCliente),
-			Acoes:    []service.AcaoDoAgente{{Ferramenta: "apagar_card", Resumo: fmt.Sprintf("apagou o card %d (%s) via comando local", card.ID, card.NomeCliente)}},
+			Resposta: fmt.Sprintf("Card %d (%s) apagado, junto com os acordos dele (estava em %q).", card.ID, card.NomeCliente, card.ColunaAtual),
+			Acoes:    []service.AcaoDoAgente{{Ferramenta: "apagar_card", Resumo: fmt.Sprintf("apagou o card %d (%s, em %s) via comando local", card.ID, card.NomeCliente, card.ColunaAtual)}},
 		}, true
 	default:
 		colunas, err := a.colunas.List(a.ctx)

@@ -16,6 +16,11 @@ func TestParseIntencaoCard(t *testing.T) {
 		{"elimine o cliente João", true, true, "João", ""},
 		{"remova o ticket do João", true, true, "do João", ""},
 		{"tire o card 12345", true, true, "12345", ""},
+		{"apague o card do João que está em Cobrança", true, true, "do João", "Cobrança"},
+		{"apague o card da Maria, tá na Visita Agendada", true, true, "da Maria", "Visita Agendada"},
+		{"exclua o card do João em Negociação.", true, true, "do João", "Negociação"},
+		// nome de cliente com "de" minúsculo não vira qualificador
+		{"apague o card da empresa de sondagem", true, true, "da empresa de sondagem", ""},
 		{"mova o card do João para Cobrança", true, false, "do João", "Cobrança"},
 		{"mover card #456 para a coluna Orçamento", true, false, "#456", "Orçamento"},
 		{"passe o card 123 pra Negociação", true, false, "123", "Negociação"},
@@ -116,9 +121,9 @@ func TestCasarColuna(t *testing.T) {
 
 func TestResolverCard(t *testing.T) {
 	cards := []CardResumo{
-		{1, "João da Silva", "123"},
-		{2, "Maria João", "456"},
-		{3, "Joaquim", ""},
+		{1, "João da Silva", "123", ""},
+		{2, "Maria João", "456", ""},
+		{3, "Joaquim", "", ""},
 	}
 	if c, err := ResolverCard("123", cards); err != nil || c.ID != 1 {
 		t.Errorf("por código: %+v err=%v", c, err)

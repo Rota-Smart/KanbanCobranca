@@ -16,7 +16,7 @@ import (
 type IntencaoLocal struct {
 	Apagar bool   // true = apagar card; false = mover
 	Alvo   string // nome, código service ou id do card
-	Coluna string // destino (só no mover)
+	Coluna string // mover: destino; apagar: onde o usuário disse que o card está
 }
 
 var (
@@ -24,13 +24,25 @@ var (
 		`(?i)^\s*(?:apag\w+|exclu\w+|remov\w+|delet\w+|elimin\w+|tire|tira|retir\w+)\s+(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|um\s+|uma\s+|esse\s+aqui\s+o\s+)?(?:card|cliente|ticket)\b(?:\s+d[oa]s?\s+cliente)?\s+(.+?)\s*[.!?]*$`)
 	reMoverCard = regexp.MustCompile(
 		`(?i)^\s*(?:mov\w+|arrast\w+|passe|passar|lev\w+|mand\w+|mud\w+|jog\w+|pux\w+|coloc\w+|coloque|coloq\w+|ponh\w+|põe|poe|pôr|por|deix\w+|mex\w+|encaix\w+)\s+(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|um\s+|uma\s+)?(?:card|cliente|ticket)\b(?:\s+d[oa]s?\s+cliente)?\s+(.+?)\s+(?:para|pro|pra|p\/|em|na|no|to)\s+(?:a\s+coluna\s+|coluna\s+|o\s+|a\s+)?(.+?)\s*[.!?]*$`)
+	// Qualificador de local no fim da frase ("que está em Cobrança",
+	// "tá na Cobrança", "em Cobrança", "da Cobrança") — a coluna citada
+	// serve para conferir onde o card realmente está antes de agir. O
+	// (?i:) é escopado: o nome da coluna exige inicial maiúscula, senão
+	// nomes de cliente com "de/em" viram falso qualificador.
+	reQualificadorColuna = regexp.MustCompile(
+		`^(.+?)\s+(?i:(?:que\s+(?:est[áa]|t[aá])\s+|t[aá]\s+)?(?:em|na|no|d[ao])\s+(?:a\s+coluna\s+|coluna\s+|o\s+|a\s+)?)([A-ZÂÉÍÓÚÃÕÇ].*?)\s*[.!?]*$`)
 )
 
 // ParseIntencaoCard reconhece "apagar card X" e "mover card X para Y" no
 // texto; ok=false quando não é um desses comandos.
 func ParseIntencaoCard(msg string) (IntencaoLocal, bool) {
 	if m := reApagarCard.FindStringSubmatch(msg); m != nil {
-		return IntencaoLocal{Apagar: true, Alvo: strings.TrimSpace(m[1])}, true
+		in := IntencaoLocal{Apagar: true, Alvo: strings.TrimSpace(m[1])}
+		if q := reQualificadorColuna.FindStringSubmatch(in.Alvo); q != nil {
+			in.Alvo = strings.TrimRight(strings.TrimSpace(q[1]), ",;")
+			in.Coluna = strings.TrimSpace(q[2])
+		}
+		return in, true
 	}
 	if m := reMoverCard.FindStringSubmatch(msg); m != nil {
 		return IntencaoLocal{Apagar: false, Alvo: strings.TrimSpace(m[1]), Coluna: strings.TrimSpace(m[2])}, true
@@ -43,6 +55,7 @@ type CardResumo struct {
 	ID          int64
 	NomeCliente string
 	CodService  string
+	ColunaAtual string
 }
 
 // ResolverCard casa o alvo com UM card: número puro ou "#n" = código service
