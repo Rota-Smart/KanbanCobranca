@@ -174,6 +174,11 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		if err := a.chats.AddMensagem(a.ctx, chatID, "user", mensagem, ""); err != nil {
 			return service.ChatResultado{}, friendly("EnviarChat", err)
 		}
+		// Caminhos de erro dos comandos locais devolvem Acoes nil, que vira
+		// null no JSON e derruba o frontend (res.acoes.length).
+		if local.Acoes == nil {
+			local.Acoes = []service.AcaoDoAgente{}
+		}
 		if err := a.gravarResposta(chatID, local); err != nil {
 			return service.ChatResultado{}, err
 		}
@@ -455,6 +460,44 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			msg += "\n⚠ " + e
 		}
 		return msg, fmt.Sprintf("moveu %d card(s) para %s", len(res.Movidos), res.Coluna), nil
+
+	case "agendar_visita":
+		id := argInt("ticketId")
+		if id <= 0 {
+			return "", "", fmt.Errorf("ticketId inválido")
+		}
+		if argStr("data") == "" {
+			return "", "", fmt.Errorf("data obrigatória (AAAA-MM-DD)")
+		}
+		atual, err := a.tickets.Get(ctx, id)
+		if err != nil {
+			return "", "", err
+		}
+		hora, turno := atual.VisitaHora, atual.VisitaTurno
+		if quando := argStr("quando"); quando != "" {
+			if len(quando) == 5 && quando[2] == ':' {
+				hora, turno = quando, ""
+			} else {
+				turno, hora = quando, ""
+			}
+		}
+		endereco := argStr("endereco")
+		if endereco == "" {
+			endereco = atual.VisitaEndereco
+		}
+		t, err := a.SalvarVisita(id, argStr("data"), turno, hora, endereco)
+		if err != nil {
+			return "", "", err
+		}
+		extra := ""
+		if t.VisitaHora != "" {
+			extra = " às " + t.VisitaHora
+		} else if t.VisitaTurno != "" {
+			extra = " (" + t.VisitaTurno + ")"
+		}
+		return fmt.Sprintf("Visita do card %d (%s) agendada para %s%s.",
+			t.ID, t.NomeCliente, t.VisitaData, extra),
+			fmt.Sprintf("agendou visita de %s para %s", t.NomeCliente, t.VisitaData), nil
 
 	case "apagar_card":
 		id := argInt("ticketId")

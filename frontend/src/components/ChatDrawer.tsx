@@ -195,8 +195,9 @@ export default function ChatDrawer(props: {
     setEnviando(true);
     try {
       const res = await App.EnviarChat(id, m);
-      setMsgs((ms) => [...ms.slice(0, -1), { papel: 'assistant', conteudo: res.resposta, acoes: res.acoes }]);
-      if (res.acoes.length > 0) props.onMutou();
+      const acoes = res.acoes ?? [];
+      setMsgs((ms) => [...ms.slice(0, -1), { papel: 'assistant', conteudo: res.resposta, acoes }]);
+      if (acoes.length > 0) props.onMutou();
       App.ListarChats().then((cs) => setChats(cs ?? [])); // reordena pela atividade + título auto
     } catch (e) {
       setMsgs((ms) => [...ms.slice(0, -1), { papel: 'assistant', conteudo: `⚠ ${String(e)}` }]);

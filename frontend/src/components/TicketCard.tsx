@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as bindings from '../../wailsjs/go/main/App';
 import type { Ticket } from '../wails-types';
 
@@ -111,8 +112,10 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
 
   // Menu de opções do card, compartilhado entre os modos min/resumido.
   // Fundo sólido (o glass ficava transparente), scroll interno e backdrop
-  // para fechar ao clicar fora.
-  const menuEl = menu && (
+  // para fechar ao clicar fora. Vai em <body> via portal: o backdrop-filter
+  // do .glass transforma o card no containing block do position:fixed e o
+  // overflow-hidden corta o menu (flicava e sumia).
+  const menuEl = menu && createPortal(
     <>
       <div
         className="fixed inset-0 z-[99]"
