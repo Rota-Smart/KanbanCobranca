@@ -227,8 +227,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           Excluir
         </button>
       </div>
-    </>
-  );
+    </>, document.body);
 
   if (modo === 'min') {
     return (
