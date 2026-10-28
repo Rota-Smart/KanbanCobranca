@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"rota-smart/internal/rota360"
@@ -96,6 +98,7 @@ func (a *App) VerificarTicketsFechados() (ResultadoVerificacao, error) {
 	unicos := map[string]*veredito{}
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 4)
+	var sessaoMorta atomic.Bool
 	for _, v := range vs {
 		if _, ja := unicos[v.Ticket360ID]; ja {
 			continue
@@ -109,10 +112,16 @@ func (a *App) VerificarTicketsFechados() (ResultadoVerificacao, error) {
 			defer func() { <-sem }()
 			det, err := c.DetalheTicket(ctx, uuid)
 			if err != nil {
-				// 404 = ticket saiu da fila: conta como fechado. Outros erros
-				// (rede/sessão) não movem card — vão para a lista de erros.
+				// 404 = ticket saiu da fila: conta como fechado. Sessão
+				// expirada aborta a varredura (as outras consultas também
+				// vão falhar). Outros erros (rede) não movem card — vão
+				// para a lista de erros.
 				if strings.Contains(strings.ToLower(fmt.Sprint(err)), "http 404") {
 					vd.fechado, vd.motivo = true, "saiu da fila de tickets"
+				} else if errors.Is(err, rota360.ErrSessaoExpirada) {
+					vd.err = err
+					sessaoMorta.Store(true)
+					cancel() // interrompe as consultas em andamento
 				} else {
 					vd.err = err
 				}
@@ -125,6 +134,9 @@ func (a *App) VerificarTicketsFechados() (ResultadoVerificacao, error) {
 		}(v.Ticket360ID, vd)
 	}
 	wg.Wait()
+	if sessaoMorta.Load() {
+		return res, fmt.Errorf("sessão do 360 expirada — nenhum ticket foi consultado; reconecte em Configurações e tente de novo")
+	}
 
 	// Card só se move quando TODOS os tickets vinculados estão fechados.
 	porCard := map[int64][]*veredito{}

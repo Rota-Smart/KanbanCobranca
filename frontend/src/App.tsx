@@ -470,7 +470,8 @@ export default function App() {
         showToast(`✅ ${r.verificados} ticket(s) conferido(s) — nenhum card para mover.${r.erros?.length ? ' ' + r.erros[0] : ''}`, 6000);
       } else {
         const nomes = r.movidos.map((m) => m.cliente || `card ${m.cardId}`).join(', ');
-        showToast(`✅ ${r.movidos.length} card(s) movido(s) para ${r.coluna}: ${nomes}`, 8000);
+        const falhas = r.erros?.length ? ` ⚠ ${r.erros.length} falha(s): ${r.erros[0]}` : '';
+        showToast(`✅ ${r.movidos.length} card(s) movido(s) para ${r.coluna}: ${nomes}${falhas}`, 8000);
         await recarregarBoard();
       }
     } catch (e) {
