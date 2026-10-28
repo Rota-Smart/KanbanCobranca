@@ -45,14 +45,10 @@ func (a *Avaliador) Avaliar(ctx context.Context, ticketID int64, codService stri
 		return nil, err
 	}
 
-	// Renegociação: histórico de cobranças no app + indícios no 360
-	// (documento de renegociação/confissão de dívida nos títulos, ou o
-	// padrão de boletos de renegociação — ver abaixo).
-	if n, err := a.clientes.ContaRenegociacoesTicket(ctx, ticketID); err == nil && n > 0 {
-		av.Renegociou = true
-		av.QtdRenegociacoes += n
-		av.Observacoes = append(av.Observacoes, fmt.Sprintf("Já possui %d acordo(s) registrado(s) no app.", n))
-	}
+	// Renegociação: SOMENTE indícios no 360 (padrão de boletos em curso —
+	// ver abaixo). Acordos salvos no app não contam: o PrepararCobranca
+	// grava acordo padrão ao entrar na Cobrança e propostas antigas geradas
+	// sob regras anteriores poluem o histórico (falso "renegociou").
 
 	if cliente != nil {
 		var dash struct {
@@ -179,10 +175,19 @@ func renegociacaoPorBoletos(faturas []rota360.Fatura360, mensalidadeCents int64,
 		return "Dois boletos em aberto e em atraso no mesmo mês — renegociação em andamento."
 	}
 
-	// 2) boleto futuro em aberto com valor diferente da mensalidade
-	if mensalidadeCents > 0 {
+	// 2) boleto futuro em aberto com valor diferente da mensalidade.
+	// Referência = valor de boleto que se REPETE no histórico (a mensalidade
+	// real): o valorTotal máximo dos produtos do snapshot pode divergir da
+	// mensalidade (acréscimos no cadastro), e um valor único — ex. o
+	// proporcional dos dias de uso na contratação — não pode mascarar a
+	// referência nem ser confundido com renegociação.
+	referencia := mensalidadeCents
+	if n := contagemMaxima(porMes); n >= 2 {
+		referencia = valorQueMaisRepete(porMes)
+	}
+	if referencia > 0 {
 		for _, f := range faturas {
-			if f.Vencimento.After(agora) && int64(math.Round(f.ValorDuplicata*100)) != mensalidadeCents {
+			if f.Vencimento.After(agora) && int64(math.Round(f.ValorDuplicata*100)) != referencia {
 				return "Boleto futuro em aberto com valor diferente da mensalidade — renegociação em andamento."
 			}
 		}
@@ -208,6 +213,43 @@ func renegociacaoPorBoletos(faturas []rota360.Fatura360, mensalidadeCents int64,
 	}
 
 	return ""
+}
+
+// contagemMaxima devolve quantas vezes o valor de boleto mais frequente
+// aparece somados os meses (1 = todos os boletos têm valores distintos).
+func contagemMaxima(porMes map[string][]int64) int {
+	contagem := map[int64]int{}
+	for _, valores := range porMes {
+		for _, v := range valores {
+			contagem[v]++
+		}
+	}
+	max := 0
+	for _, n := range contagem {
+		if n > max {
+			max = n
+		}
+	}
+	return max
+}
+
+// valorQueMaisRepete devolve o valor de boleto mais frequente no histórico
+// (a mensalidade real deduzida dos próprios boletos).
+func valorQueMaisRepete(porMes map[string][]int64) int64 {
+	contagem := map[int64]int{}
+	for _, valores := range porMes {
+		for _, v := range valores {
+			contagem[v]++
+		}
+	}
+	var melhor int64
+	nMelhor := 0
+	for v, n := range contagem {
+		if n > nMelhor || (n == nMelhor && v > melhor) {
+			melhor, nMelhor = v, n
+		}
+	}
+	return melhor
 }
 
 // ResumoUmaLinha formata a avaliação para injetar no prompt da IA.

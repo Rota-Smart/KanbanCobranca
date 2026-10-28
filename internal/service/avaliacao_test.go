@@ -165,6 +165,32 @@ func TestRenegociacaoPorBoletos(t *testing.T) {
 			mensalidade: 10000,
 			contem:      "",
 		},
+		{
+			// Caso real do cliente 27257: mensalidade real é 99, mas o
+			// valorTotal de algum produto diverge (120 aqui); o único boleto
+			// futuro é 99 = mensalidade; o proporcional da contratação é
+			// único e antigo. Não é renegociação.
+			nome: "mensalidade deduzida dos boletos: futuro igual não marca mesmo com produto divergente",
+			faturas: []rota360.Fatura360{
+				{Vencimento: d(time.March, 5), ValorDuplicata: 62.1},  // proporcional da contratação (único)
+				{Vencimento: d(time.August, 5), ValorDuplicata: 99},
+				{Vencimento: d(time.September, 5), ValorDuplicata: 99},
+				{Vencimento: d(time.October, 5), ValorDuplicata: 99},
+				{Vencimento: d(time.November, 10), ValorDuplicata: 99}, // futuro = mensalidade real
+			},
+			mensalidade: 12000, // produto com valorTotal divergente
+			contem:      "",
+		},
+		{
+			// Continua marcando quando o boleto futuro difere dos recorrentes.
+			nome: "futuro diferente do valor recorrente marca mesmo sem mensalidade",
+			faturas: []rota360.Fatura360{
+				{Vencimento: d(time.September, 5), ValorDuplicata: 99},
+				{Vencimento: d(time.November, 10), ValorDuplicata: 49.5},
+			},
+			mensalidade: 9900,
+			contem:      "futuro",
+		},
 	}
 	for _, c := range casos {
 		got := renegociacaoPorBoletos(c.faturas, c.mensalidade, agora)
@@ -216,7 +242,7 @@ func TestAvaliarBoletosRenegociacaoEmAndamento(t *testing.T) {
 
 // O acordo padrão que o PrepararCobranca grava (entrada 0) não é renegociação;
 // só acordo com entrada conta. Era o falso positivo do cliente 27257.
-func TestAvaliarAcordoPadraoNaoRenegociou(t *testing.T) {
+func TestAvaliarAcordoLocalNaoRenegociou(t *testing.T) {
 	av, clientes, cobrancas, tickets := avaliadorDeTeste(t)
 	ctx := context.Background()
 
@@ -243,7 +269,8 @@ func TestAvaliarAcordoPadraoNaoRenegociou(t *testing.T) {
 		t.Errorf("acordo padrão (entrada 0) não deveria marcar renegociou: %+v", avaliacao)
 	}
 
-	// Agora um acordo real de renegociação (com entrada) marca.
+	// Acordo salvo no app NUNCA marca renegociação — nem com entrada:
+	// renegociação vem só dos dados do 360 (regra do usuário, v1.21.3).
 	if _, err := cobrancas.SaveAtiva(ctx, &db.Cobranca{
 		TicketID: ticketID, TotalAbertoCents: 100000, EntradaCents: 40000, NumeroVezes: 12,
 		Status: "aceita", VersaoRegra: 1,
@@ -254,8 +281,8 @@ func TestAvaliarAcordoPadraoNaoRenegociou(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !avaliacao.Renegociou || avaliacao.QtdRenegociacoes != 1 {
-		t.Errorf("esperava renegociou=true qtd=1, veio %+v", avaliacao)
+	if avaliacao.Renegociou || avaliacao.QtdRenegociacoes != 0 {
+		t.Errorf("acordo salvo no app não deveria marcar renegociou: %+v", avaliacao)
 	}
 }
 
