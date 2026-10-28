@@ -16,12 +16,20 @@ const (
 // EntradaMinima devolve a entrada da Política v7: 20% do total na primeira
 // renegociação, 40% quando o cliente já tem renegociação anterior — sempre
 // arredondada pra cima pro múltiplo de R$ 50 mais próximo, sem passar do total.
+// É o valor que vem pré-preenchido no campo de entrada.
 func EntradaMinima(totalCents int64, jaRenegociou bool) int64 {
+	return Arredondar50Cima(EntradaMinimaExata(totalCents, jaRenegociou))
+}
+
+// EntradaMinimaExata devolve o percentual exato da Política v7 (20% ou 40%
+// do total, sem arredondamento) — é o que aparece como referência "mín.".
+// Em centavos o percentual é sempre inteiro (total*20/100), sem sobra.
+func EntradaMinimaExata(totalCents int64, jaRenegociou bool) int64 {
 	pct := int64(20)
 	if jaRenegociou {
 		pct = 40
 	}
-	e := Arredondar50Cima(totalCents * pct / 100)
+	e := totalCents * pct / 100
 	if e > totalCents {
 		e = totalCents
 	}

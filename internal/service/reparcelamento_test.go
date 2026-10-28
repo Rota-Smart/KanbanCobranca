@@ -70,6 +70,16 @@ func TestEntradaMinima(t *testing.T) {
 	if got := EntradaMinima(0, true); got != 0 {
 		t.Fatalf("total zero: %d", got)
 	}
+	// Referência "mín." exibida em cinza: percentual exato, sem arredondamento.
+	if got := EntradaMinimaExata(58400, false); got != 11680 { // 20% de 584,00
+		t.Fatalf("EntradaMinimaExata(58400, false) = %d, want 11680", got)
+	}
+	if got := EntradaMinimaExata(58400, true); got != 23360 { // 40% de 584,00
+		t.Fatalf("EntradaMinimaExata(58400, true) = %d, want 23360", got)
+	}
+	if got := EntradaMinimaExata(0, true); got != 0 {
+		t.Fatalf("total zero: %d", got)
+	}
 	if got := Arredondar50Cima(1); got != 5000 {
 		t.Fatalf("Arredondar50Cima(1) = %d", got)
 	}
