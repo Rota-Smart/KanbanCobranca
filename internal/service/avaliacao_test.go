@@ -12,7 +12,7 @@ import (
 	"rota-smart/internal/rota360"
 )
 
-func avaliadorDeTeste(t *testing.T) (*Avaliador, *db.Cliente360Repo) {
+func avaliadorDeTeste(t *testing.T) (*Avaliador, *db.Cliente360Repo, *db.CobrancaRepo, *db.TicketRepo) {
 	t.Helper()
 	database, err := db.Init(filepath.Join(t.TempDir(), "teste.db"))
 	if err != nil {
@@ -21,11 +21,12 @@ func avaliadorDeTeste(t *testing.T) (*Avaliador, *db.Cliente360Repo) {
 	t.Cleanup(func() { database.Close() })
 	clientes := db.NewCliente360Repo(database)
 	cobrancas := db.NewCobrancaRepo(database)
-	return NovoAvaliador(clientes, cobrancas, func() time.Time { return time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC) }), clientes
+	tickets := db.NewTicketRepo(database)
+	return NovoAvaliador(clientes, cobrancas, func() time.Time { return time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC) }), clientes, cobrancas, tickets
 }
 
 func TestAvaliarClienteAntigo(t *testing.T) {
-	av, clientes := avaliadorDeTeste(t)
+	av, clientes, _, _ := avaliadorDeTeste(t)
 	ctx := context.Background()
 
 	hist := map[string]any{
@@ -79,7 +80,7 @@ func TestAvaliarClienteAntigo(t *testing.T) {
 // Ticket de cobrança comum (o próprio da fila atual) NÃO é prova de
 // renegociação — era a fonte de falso positivo da regra antiga.
 func TestAvaliarCobrancaSimplesNaoRenegociou(t *testing.T) {
-	av, clientes := avaliadorDeTeste(t)
+	av, clientes, _, _ := avaliadorDeTeste(t)
 	ctx := context.Background()
 
 	hist := map[string]any{
@@ -180,7 +181,7 @@ func TestRenegociacaoPorBoletos(t *testing.T) {
 // em aberto marca renegociação pela avaliação completa (mensalidade vem
 // dos produtos).
 func TestAvaliarBoletosRenegociacaoEmAndamento(t *testing.T) {
-	av, clientes := avaliadorDeTeste(t)
+	av, clientes, _, _ := avaliadorDeTeste(t)
 	ctx := context.Background()
 
 	faturas := []map[string]any{
@@ -213,8 +214,53 @@ func TestAvaliarBoletosRenegociacaoEmAndamento(t *testing.T) {
 	}
 }
 
+// O acordo padrão que o PrepararCobranca grava (entrada 0) não é renegociação;
+// só acordo com entrada conta. Era o falso positivo do cliente 27257.
+func TestAvaliarAcordoPadraoNaoRenegociou(t *testing.T) {
+	av, clientes, cobrancas, tickets := avaliadorDeTeste(t)
+	ctx := context.Background()
+
+	if err := clientes.Upsert(ctx, &db.Cliente360{CodService: "27257", Nome: "W"}); err != nil {
+		t.Fatal(err)
+	}
+	// Ticket necessário pela FK de cobrancas.
+	ticketID, err := tickets.Save(ctx, &db.Ticket{NomeCliente: "W", CodService: "27257", ColunaAtual: "Cobrança"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Acordo padrão do PrepararCobranca: entrada 0, 12x.
+	if _, err := cobrancas.SaveAtiva(ctx, &db.Cobranca{
+		TicketID: ticketID, TotalAbertoCents: 100000, EntradaCents: 0, NumeroVezes: 12,
+		Status: "proposta", VersaoRegra: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	avaliacao, err := av.Avaliar(ctx, ticketID, "27257")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if avaliacao.Renegociou {
+		t.Errorf("acordo padrão (entrada 0) não deveria marcar renegociou: %+v", avaliacao)
+	}
+
+	// Agora um acordo real de renegociação (com entrada) marca.
+	if _, err := cobrancas.SaveAtiva(ctx, &db.Cobranca{
+		TicketID: ticketID, TotalAbertoCents: 100000, EntradaCents: 40000, NumeroVezes: 12,
+		Status: "aceita", VersaoRegra: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	avaliacao, err = av.Avaliar(ctx, ticketID, "27257")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !avaliacao.Renegociou || avaliacao.QtdRenegociacoes != 1 {
+		t.Errorf("esperava renegociou=true qtd=1, veio %+v", avaliacao)
+	}
+}
+
 func TestAvaliarClienteSemCache(t *testing.T) {
-	av, _ := avaliadorDeTeste(t)
+	av, _, _, _ := avaliadorDeTeste(t)
 	avaliacao, err := av.Avaliar(context.Background(), 1, "999")
 	if err != nil {
 		t.Fatal(err)

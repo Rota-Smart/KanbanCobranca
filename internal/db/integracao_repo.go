@@ -49,12 +49,15 @@ FROM clientes_360 WHERE cod_service = ?`, codService).Scan(
 	return c, nil
 }
 
-// HistoricoRenegociacoes devolve o número de cobranças anteriores do ticket
-// (acordos já criados = renegociação anterior). Usado pela avaliação.
+// ContaRenegociacoesTicket devolve o número de renegociações anteriores do
+// ticket. Só contam acordos com entrada: o acordo padrão que o
+// PrepararCobranca grava automaticamente (entrada 0) NÃO é renegociação —
+// contá-lo marcava todo cliente que passou pela coluna Cobrança como
+// "já renegociou" (falso positivo, ex. cliente 27257).
 func (r *Cliente360Repo) ContaRenegociacoesTicket(ctx context.Context, ticketID int64) (int, error) {
 	var n int
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM cobrancas WHERE ticket_id = ?`, ticketID).Scan(&n)
+		`SELECT COUNT(*) FROM cobrancas WHERE ticket_id = ? AND entrada_cents > 0`, ticketID).Scan(&n)
 	return n, err
 }
 
