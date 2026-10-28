@@ -3,7 +3,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as bindings from '../../wailsjs/go/main/App';
-import type { Ticket } from '../wails-types';
+import type { Comissao, Ticket } from '../wails-types';
+import { formatCents } from '../money';
 
 // Cores por tipo: faixa lateral + avatar, estilo card de pedido (delivery).
 const corPorTipo: Record<string, { faixa: string; avatar: string; pill: string }> = {
@@ -59,6 +60,10 @@ interface Props {
   onExcluir: (ticket: Ticket) => void;
   /** Abre o diálogo de agendamento de visita (coluna "Visita Agendada"). */
   onAgendarVisita?: (ticket: Ticket) => void;
+  /** Comissão do card (coluna Upgrade): mostra selo 💰/✅ e ações no menu. */
+  comissao?: Comissao | null;
+  onReceberComissao?: (ticket: Ticket) => void;
+  onEditarComissao?: (ticket: Ticket) => void;
   /** Seleção múltipla: card marcado, modo seleção ativo e alternância. */
   selecionado?: boolean;
   emSelecao?: boolean;
@@ -90,7 +95,7 @@ function CheckSelecao({ ticket, selecionado, onAlternar }: { ticket: Ticket; sel
 
 // Card estilo app de delivery: avatar com iniciais, faixa colorida do tipo,
 // código do pedido, endereço/telefone e badge de acordos.
-export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir, onAgendarVisita, selecionado = false, emSelecao = false, onAlternarSelecao }: Props) {
+export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir, onAgendarVisita, comissao, onReceberComissao, onEditarComissao, selecionado = false, emSelecao = false, onAlternarSelecao }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
   const [menu, setMenu] = useState<{ right: number; top: number } | null>(null);
   const [vinculando, setVinculando] = useState(false);
@@ -253,6 +258,28 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
         >
           {ticket.visitaData ? `Editar visita (${visitaResumo(ticket)})` : '📅 Agendar visita…'}
         </button>
+        {onEditarComissao && (
+          <button
+            className={itemMenu}
+            onClick={() => {
+              setMenu(null);
+              onEditarComissao(ticket);
+            }}
+          >
+            {comissao ? `💰 Comissão (${formatCents(comissao.comissaoCents)})…` : '💰 Comissão de upgrade…'}
+          </button>
+        )}
+        {comissao && !comissao.recebido && onReceberComissao && (
+          <button
+            className="block w-full text-left px-3 py-2 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+            onClick={() => {
+              setMenu(null);
+              onReceberComissao(ticket);
+            }}
+          >
+            ✅ Marcar comissão como recebida
+          </button>
+        )}
         <button
           className="block w-full text-left px-3 py-2 hover:bg-red-500/10 text-red-600 dark:text-red-400"
           onClick={() => {
@@ -305,6 +332,14 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           {qtdAcordos > 0 && (
             <span className="text-[11px] px-1.5 rounded-full font-medium bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200 shrink-0">
               ✓{qtdAcordos}
+            </span>
+          )}
+          {comissao && (
+            <span
+              className={`text-[11px] px-1.5 rounded-full font-medium shrink-0 ${comissao.recebido ? 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200' : 'bg-teal-100/80 text-teal-800 dark:bg-teal-500/20 dark:text-teal-200'}`}
+              title={comissao.recebido ? `Comissão recebida: ${formatCents(comissao.comissaoCents)}` : `Comissão a receber: ${formatCents(comissao.comissaoCents)}`}
+            >
+              {comissao.recebido ? '✅' : '💰'}
             </span>
           )}
           {(emSelecao || selecionado) && onAlternarSelecao && (
@@ -415,6 +450,20 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
                   }}
                 >
                   📅 {visitaResumo(ticket)}
+                </button>
+              )}
+              {comissao && onEditarComissao && (
+                <button
+                  className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${comissao.recebido ? 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200' : 'bg-teal-100/80 text-teal-800 dark:bg-teal-500/20 dark:text-teal-200'} hover:brightness-95`}
+                  title={comissao.recebido
+                    ? `Comissão recebida em ${comissao.recebidoEm} — clique para ver`
+                    : `Comissão a receber: ${formatCents(comissao.comissaoCents)} — clique para editar`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!comissao.recebido) onEditarComissao(ticket);
+                  }}
+                >
+                  {comissao.recebido ? '✅ Recebida' : `💰 ${formatCents(comissao.comissaoCents)}`}
                 </button>
               )}
             </div>

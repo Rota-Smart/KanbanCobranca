@@ -20,7 +20,30 @@ var migrations = []string{
 	migration010,
 	migration011,
 	migration012,
+	migration013,
 }
+
+// migration013: coluna "Upgrade" (sempre a última do board) e o comissio-
+// namento do card nela — valor do serviço (5% de comissão) e valor da parcela
+// do upgrade (75%), com observações, data de registro e a marcação de recebida
+// que alimenta o histórico de comissões.
+const migration013 = `
+CREATE TABLE comissoes (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id            INTEGER NOT NULL UNIQUE REFERENCES tickets(id) ON DELETE CASCADE,
+    valor_servico_cents  INTEGER NOT NULL DEFAULT 0 CHECK (valor_servico_cents >= 0),
+    valor_parcela_cents  INTEGER NOT NULL DEFAULT 0 CHECK (valor_parcela_cents >= 0),
+    comissao_cents       INTEGER NOT NULL DEFAULT 0 CHECK (comissao_cents >= 0),
+    observacoes          TEXT    NOT NULL DEFAULT '',
+    data_registro        TEXT    NOT NULL DEFAULT '',
+    recebido             INTEGER NOT NULL DEFAULT 0 CHECK (recebido IN (0,1)),
+    recebido_em          TEXT    NOT NULL DEFAULT '',
+    created_at           TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at           TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+INSERT OR IGNORE INTO kanban_columns (nome, posicao)
+    SELECT 'Upgrade', COALESCE(MAX(posicao), 0) + 1 FROM kanban_columns;
+`
 
 // migration012: estatísticas do assistente para a pré-busca aprender —
 // para cada classe de consulta (financeiro, os, equipamentos...), quantas

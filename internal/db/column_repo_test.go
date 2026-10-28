@@ -23,10 +23,10 @@ func TestColunasSeedEAddRemove(t *testing.T) {
 	colunas, tickets := abreTesteColunas(t)
 
 	cs, err := colunas.List(ctx)
-	if err != nil || len(cs) != 12 {
+	if err != nil || len(cs) != 13 {
 		t.Fatalf("seed: %v, %d colunas", err, len(cs))
 	}
-	if cs[0] != "Fazer contato" || cs[2] != "Visita Agendada" || cs[4] != "Cobrança" {
+	if cs[0] != "Fazer contato" || cs[2] != "Visita Agendada" || cs[4] != "Cobrança" || cs[12] != "Upgrade" {
 		t.Errorf("ordem da seed: %v", cs)
 	}
 

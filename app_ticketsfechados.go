@@ -62,11 +62,13 @@ func (a *App) VerificarTicketsFechados() (ResultadoVerificacao, error) {
 
 	res := ResultadoVerificacao{Movidos: []CardFechado{}, Erros: []string{}, Coluna: ColunaTicketFechado}
 
-	// Garante a coluna de destino (board é dinâmico).
+	// Garante a coluna de destino (board é dinâmico); o Upgrade permanece
+	// a última coluna mesmo se a Ticket Fechado for criada depois dele.
 	if ok, err := a.colunas.Existe(ctx, ColunaTicketFechado); err == nil && !ok {
 		if _, err := a.colunas.Add(ctx, ColunaTicketFechado); err != nil {
 			return res, fmt.Errorf("não consegui criar a coluna %s: %w", ColunaTicketFechado, err)
 		}
+		a.garantirUpgradeUltimo(ctx)
 	}
 
 	vs, err := a.vinculos.ListTodos(ctx)

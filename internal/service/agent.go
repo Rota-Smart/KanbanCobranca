@@ -21,7 +21,9 @@ const MaxIteracoesAgente = 4
 const systemAgente = `Você é o assistente do app Kanban de Cobrança da Rota Smart (desktop local) e age via ferramentas: buscar/importar clientes do 360, cards e colunas do Kanban, financeiro, orçamentos e tickets do helpdesk (pesquisar, ler, abrir, responder, mudar status). ` +
 	`Regras: execute a ação pedida em vez de só descrever; pedidos como "coloque/passe o cliente em/na/para <nome>" se referem a uma COLUNA do Kanban — use mover_card ou importar com esse nome na coluna (sem exigir a palavra "coluna"); ao adicionar cliente use a coluna indicada (padrão "Fazer contato"); nunca invente códigos, nomes ou valores — consulte as ferramentas, e consulte só os dados que faltarem para a tarefa; para melhorar texto de ticket, reescreva com redação profissional mantendo todos os dados técnicos, códigos e valores, e só envie com responder_ticket_360 se pedido explicitamente; para status, use o nome exato do detalhe_ticket_360. ` +
 	`Padrões: quando o usuário pedir para você manter um padrão daqui pra frente (ex.: "mantenha esse estilo nos próximos tickets", "sempre assine assim", "guarde essa regra"), destile o padrão em poucas frases e salve com salvar_padrao (nome curto, ex.: "estilo de tickets"); confirme o que salvou em uma linha. Se ele pedir para mudar um padrão existente, salve por cima com o mesmo nome; se pedir para esquecer, use apagar_padrao. ` +
-	`Responda em português do Brasil, curto e direto, confirmando o que fez com os dados obtidos.`
+	`Responda em português do Brasil, curto e direto, confirmando o que fez com os dados obtidos. ` +
+	`Coluna Upgrade (a última): para "mover para upgrade" use registrar_comissao — ela move o card e grava o comissionamento (serviço rende 5%, parcela do upgrade rende 75%); se o usuário não informar os valores, pergunte antes; "recebida" = comissao_recebida. ` +
+	`Detalhes: agendar_visita aceita quando=HH:MM ou Manhã/Tarde/Noite (o que falta mantém o atual); observacao_card tem modo substituir (padrão) ou acrescentar; registrar_comissao aceita dataRegistro AAAA-MM-DD e observacoes.`
 
 // Ferramentas disponíveis para o agente (formato tools da API OpenAI).
 func AgentTools() []map[string]any {
@@ -30,14 +32,11 @@ func AgentTools() []map[string]any {
 		if len(obrigatorios) > 0 {
 			params["required"] = obrigatorios
 		}
-		return map[string]any{
-			"type": "function",
-			"function": map[string]any{
-				"name":        nome,
-				"description": desc,
-				"parameters":  params,
-			},
+		fn := map[string]any{"name": nome, "parameters": params}
+		if desc != "" {
+			fn["description"] = desc
 		}
+		return map[string]any{"type": "function", "function": fn}
 	}
 	return []map[string]any{
 		tool("buscar_cliente_360",
@@ -49,108 +48,93 @@ func AgentTools() []map[string]any {
 				"codService": map[string]any{"type": "string"},
 				"coluna":     map[string]any{"type": "string"},
 			}, []string{"codService", "coluna"}),
-		tool("listar_colunas",
-			"Lista as colunas.",
-			map[string]any{}, nil),
-		tool("criar_coluna",
-			"Cria coluna no Kanban.",
+		tool("listar_colunas", "", map[string]any{}, nil),
+		tool("criar_coluna", "",
 			map[string]any{"nome": map[string]any{"type": "string"}}, []string{"nome"}),
-		tool("reordenar_colunas",
-			"'ordem' = lista completa (liste antes).",
+		tool("reordenar_colunas", "'ordem' = lista completa (liste antes).",
 			map[string]any{"ordem": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, []string{"ordem"}),
-		tool("financeiro_cliente",
-			"Saldo devedor e faturas atrasadas.",
+		tool("financeiro_cliente", "",
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
-		tool("equipamentos_cliente",
-			"Alarme, câmera, sensores e produtos do cliente.",
+		tool("equipamentos_cliente", "",
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
-		tool("atendimentos_cliente",
-			"O.S. do cliente: ativas, concluídas, canceladas.",
+		tool("atendimentos_cliente", "",
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
-		tool("pesquisar_tickets",
-			"Pesquisa tickets abertos por número ou título; use antes de detalhe/responder.",
+		tool("pesquisar_tickets", "Tickets abertos; antes de detalhe/responder.",
 			map[string]any{"query": map[string]any{"type": "string"}}, []string{"query"}),
-		tool("detalhe_ticket_360",
-			"Detalhe do ticket: título, status, descrição, interações.",
+		tool("detalhe_ticket_360", "Detalhe do ticket.",
 			map[string]any{"numero": map[string]any{"type": "string"}}, []string{"numero"}),
-		tool("abrir_ticket_360",
-			"Abre o ticket no navegador.",
+		tool("abrir_ticket_360", "Abre o ticket no navegador.",
 			map[string]any{"numero": map[string]any{"type": "string"}}, []string{"numero"}),
-		tool("responder_ticket_360",
-			"Publica resposta no ticket. Só com pedido explícito.",
+		tool("responder_ticket_360", "Responde o ticket (só pedido explícito).",
 			map[string]any{
 				"numero": map[string]any{"type": "string"},
 				"texto":  map[string]any{"type": "string"},
 			}, []string{"numero", "texto"}),
-		tool("alterar_status_ticket_360",
-			"Muda o status (nome exato do detalhe).",
+		tool("alterar_status_ticket_360", "Muda status (nome exato do detalhe).",
 			map[string]any{
 				"numero": map[string]any{"type": "string"},
 				"status": map[string]any{"type": "string"},
 			}, []string{"numero", "status"}),
-		tool("listar_tickets",
-			"Lista os cards.",
+		tool("listar_tickets", "",
 			map[string]any{"coluna": map[string]any{"type": "string"}}, nil),
-		tool("mover_card",
-			"Move o card; 'Cobrança' dispara fluxo automático.",
+		tool("mover_card", "Move o card; Cobrança dispara fluxo.",
 			map[string]any{
 				"ticketId": map[string]any{"type": "number"},
 				"coluna":   map[string]any{"type": "string"},
 			}, []string{"ticketId", "coluna"}),
-		tool("agendar_visita",
-			"Agenda visita do card. data=AAAA-MM-DD; quando=HH:MM ou Manhã/Tarde/Noite; faltante mantém atual.",
+		tool("agendar_visita", "Visita do card; data AAAA-MM-DD.",
 			map[string]any{
 				"ticketId": map[string]any{"type": "number"},
 				"data":     map[string]any{"type": "string"},
 				"quando":   map[string]any{"type": "string"},
 				"endereco": map[string]any{"type": "string"},
 			}, []string{"ticketId", "data"}),
-		tool("apagar_card",
-			"Apaga card e acordos (destrutivo).",
+		tool("apagar_card", "Apaga card e acordos (destrutivo).",
 			map[string]any{"ticketId": map[string]any{"type": "number"}}, []string{"ticketId"}),
-		tool("vincular_ticket",
-			"Vincula/desvincula ticket do 360 a um card.",
+		tool("vincular_ticket", "Vincula/desvincula ticket 360.",
 			map[string]any{
 				"ticketId": map[string]any{"type": "number"},
 				"numero":   map[string]any{"type": "string"},
 			}, []string{"ticketId"}),
-		tool("observacao_card",
-			"Grava observações internas do card.",
+		tool("observacao_card", "Observações do card (modo acrescentar/substituir).",
 			map[string]any{
 				"ticketId":    map[string]any{"type": "number"},
 				"observacoes": map[string]any{"type": "string"},
-				"modo":        map[string]any{"type": "string", "description": "'substituir' (padrão) ou 'acrescentar'"},
+				"modo":        map[string]any{"type": "string"},
 			}, []string{"ticketId", "observacoes"}),
-		tool("avaliar_cliente",
-			"Avalia o cliente do card.",
+		tool("avaliar_cliente", "",
 			map[string]any{"ticketId": map[string]any{"type": "number"}}, []string{"ticketId"}),
-		tool("gerar_proposta",
-			"Gera a proposta de renegociação.",
+		tool("gerar_proposta", "",
 			map[string]any{"ticketId": map[string]any{"type": "number"}}, []string{"ticketId"}),
-		tool("listar_tabela_orcamento",
-			"Tipos e preços da planilha; use antes de gerar_orcamento.",
+		tool("listar_tabela_orcamento", "Tabela de preços; antes de gerar_orcamento.",
 			map[string]any{}, nil),
-		tool("gerar_orcamento",
-			"Gera orçamento (tipo + quantidades).",
+		tool("gerar_orcamento", "Orçamento (tipo + quantidades).",
 			map[string]any{
 				"tipoSistema": map[string]any{"type": "string"},
 				"itens":       map[string]any{"type": "object"},
 				"ticketId":    map[string]any{"type": "number"},
 			}, []string{"tipoSistema", "itens"}),
-		tool("salvar_padrao",
-			"Salva padrão permanente em poucas frases.",
+		tool("salvar_padrao", "Salva padrão permanente.",
 			map[string]any{
 				"nome":     map[string]any{"type": "string"},
 				"conteudo": map[string]any{"type": "string"},
 			}, []string{"nome", "conteudo"}),
-		tool("listar_padroes",
-			"Lista os padrões.",
-			map[string]any{}, nil),
-		tool("apagar_padrao",
-			"Apaga padrão pelo nome.",
+		tool("listar_padroes", "", map[string]any{}, nil),
+		tool("apagar_padrao", "",
 			map[string]any{"nome": map[string]any{"type": "string"}}, []string{"nome"}),
-		tool("verificar_tickets_fechados",
-			"Move p/ Ticket Fechado cards com tickets resolvidos.",
+		tool("verificar_tickets_fechados", "",
+			map[string]any{}, nil),
+		tool("registrar_comissao", "Comissão na coluna Upgrade (move o card).",
+			map[string]any{
+				"ticketId":     map[string]any{"type": "number"},
+				"valorServico": map[string]any{"type": "string"},
+				"valorParcela": map[string]any{"type": "string"},
+				"observacoes":  map[string]any{"type": "string"},
+				"dataRegistro": map[string]any{"type": "string"},
+			}, []string{"ticketId", "valorServico", "valorParcela"}),
+		tool("comissao_recebida", "",
+			map[string]any{"ticketId": map[string]any{"type": "number"}}, []string{"ticketId"}),
+		tool("listar_comissoes", "",
 			map[string]any{}, nil),
 	}
 }

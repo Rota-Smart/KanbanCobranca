@@ -23,6 +23,23 @@ type Ticket struct {
 	VisitaEndereco  string `json:"visitaEndereco"`  // endereço da visita; base do link do Google Maps
 }
 
+// Comissao é o comissionamento de um card na coluna "Upgrade": o serviço
+// rende 5% e a parcela do upgrade rende 75%. comissao_cents é o snapshot
+// calculado na gravação; recebido=1 alimenta o histórico de comissões.
+type Comissao struct {
+	ID                int64  `json:"id"`
+	TicketID          int64  `json:"ticketId"`
+	ValorServicoCents int64  `json:"valorServicoCents"`
+	ValorParcelaCents int64  `json:"valorParcelaCents"`
+	ComissaoCents     int64  `json:"comissaoCents"`
+	Observacoes       string `json:"observacoes"`
+	DataRegistro      string `json:"dataRegistro"` // data da comissão (yyyy-mm-dd), definida pelo usuário
+	Recebido          bool   `json:"recebido"`
+	RecebidoEm        string `json:"recebidoEm"` // data em que foi marcado recebido
+	CreatedAt         string `json:"createdAt"`
+	UpdatedAt         string `json:"updatedAt"`
+}
+
 // Vinculo360 é um ticket do helpdesk 360 ligado a um card — um card pode ter
 // vários. O assunto alimenta a aba Cliente; o uuid abre o ticket no navegador.
 type Vinculo360 struct {

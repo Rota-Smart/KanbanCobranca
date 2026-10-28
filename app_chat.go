@@ -468,6 +468,9 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		if coluna == service.ColunaCobranca {
 			extra = " (fluxo de cobrança disparado no próximo acesso pelo usuário)"
 		}
+		if coluna == ColunaUpgrade {
+			extra = " (falta registrar os valores com registrar_comissao se ainda não registrou)"
+		}
 		return fmt.Sprintf("Card %d movido para %s%s.", id, coluna, extra),
 			fmt.Sprintf("moveu o card %d para %s", id, coluna), nil
 
@@ -493,6 +496,75 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			msg += "\n⚠ " + e
 		}
 		return msg, fmt.Sprintf("moveu %d card(s) para %s", len(res.Movidos), res.Coluna), nil
+
+	case "registrar_comissao":
+		id := argInt("ticketId")
+		if id <= 0 {
+			return "", "", fmt.Errorf("ticketId inválido")
+		}
+		servico, err := parseReaisParaCents(argStr("valorServico"))
+		if err != nil {
+			return "", "", fmt.Errorf("valorServico: %v", err)
+		}
+		parcela, err := parseReaisParaCents(argStr("valorParcela"))
+		if err != nil {
+			return "", "", fmt.Errorf("valorParcela: %v", err)
+		}
+		t, err := a.tickets.Get(ctx, id)
+		if err != nil {
+			return "", "", err
+		}
+		c, err := a.SalvarComissao(id, servico, parcela, argStr("observacoes"), argStr("dataRegistro"))
+		if err != nil {
+			return "", "", err
+		}
+		data := c.DataRegistro
+		if data == "" {
+			data = time.Now().Format("2006-01-02")
+		}
+		comServico := servico * db.ComissaoServicoPct / 100
+		comParcela := parcela * db.ComissaoParcelaPct / 100
+		return fmt.Sprintf("Card %d (%s) na coluna %s. Comissão registrada em %s: serviço R$ %.2f → %d%% = R$ %.2f; parcela R$ %.2f → %d%% = R$ %.2f. TOTAL R$ %.2f. Botão ✅ no card marca como recebida.",
+			id, t.NomeCliente, ColunaUpgrade, data,
+			float64(servico)/100, db.ComissaoServicoPct, float64(comServico)/100,
+			float64(parcela)/100, db.ComissaoParcelaPct, float64(comParcela)/100,
+			float64(c.ComissaoCents)/100),
+			fmt.Sprintf("registrou comissão de %s (R$ %.2f) na coluna Upgrade", t.NomeCliente, float64(c.ComissaoCents)/100), nil
+
+	case "comissao_recebida":
+		id := argInt("ticketId")
+		if id <= 0 {
+			return "", "", fmt.Errorf("ticketId inválido")
+		}
+		c, err := a.MarcarComissaoRecebida(id)
+		if err != nil {
+			return "", "", err
+		}
+		return fmt.Sprintf("Comissão do card %d marcada como RECEBIDA em %s (R$ %.2f) — está no histórico.",
+			id, c.RecebidoEm, float64(c.ComissaoCents)/100),
+			fmt.Sprintf("marcou comissão do card %d como recebida", id), nil
+
+	case "listar_comissoes":
+		cs, err := a.ListarComissoes()
+		if err != nil {
+			return "", "", err
+		}
+		if len(cs) == 0 {
+			return "Nenhuma comissão registrada.", "listou as comissões: nenhuma", nil
+		}
+		var pendTotal, recTotal int64
+		var sb strings.Builder
+		for _, c := range cs {
+			if c.Recebido {
+				recTotal += c.ComissaoCents
+				fmt.Fprintf(&sb, "✅ %s — R$ %.2f (recebida em %s)\n", c.DataRegistro, float64(c.ComissaoCents)/100, c.RecebidoEm)
+			} else {
+				pendTotal += c.ComissaoCents
+				fmt.Fprintf(&sb, "⏳ %s — R$ %.2f\n", c.DataRegistro, float64(c.ComissaoCents)/100)
+			}
+		}
+		sb.WriteString(fmt.Sprintf("Pendentes: R$ %.2f | Recebidas: R$ %.2f", float64(pendTotal)/100, float64(recTotal)/100))
+		return sb.String(), "listou as comissões", nil
 
 	case "agendar_visita":
 		id := argInt("ticketId")

@@ -19,7 +19,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useState } from 'react';
 import * as bindings from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
-import type { ResultadoCobranca, Ticket, Vinculo360 } from './wails-types';
+import type { Comissao, ResultadoCobranca, Ticket, Vinculo360 } from './wails-types';
 import BuscarCliente360Dialog from './components/BuscarCliente360Dialog';
 import BuscarTickets360Dialog from './components/BuscarTickets360Dialog';
 import ChatDrawer from './components/ChatDrawer';
@@ -29,6 +29,8 @@ import MovimentarTicketDialog from './components/MovimentarTicketDialog';
 import NegotiationModal from './components/NegotiationModal';
 import type { ModoCard } from './components/TicketCard';
 import VisitaModal from './components/VisitaModal';
+import { formatCents } from './money';
+import ComissaoModal from './components/ComissaoModal';
 import { boardFromTickets, moveCard, type Board } from './kanban';
 
 const fallbackColunas = ['Fazer contato'];
@@ -135,6 +137,11 @@ const colunaVisitaAgendada = 'Visita Agendada';
 const colunaTicketFechado = 'Ticket Fechado';
 const maxCardsFechadosVisiveis = 5;
 
+// colunaUpgrade: comissionamento — soltar o card nela abre o diálogo que
+// grava serviço (5% de comissão) + parcela do upgrade (75%); o botão ✅
+// manda para o histórico de comissões recebidas.
+const colunaUpgrade = 'Upgrade';
+
 // Linha do histórico da coluna Ticket Fechado (binding HistoricoTicketsFechados).
 interface FechadoHistorico {
   cardId: number;
@@ -183,6 +190,9 @@ export default function App() {
   const [aberto, setAberto] = useState<Ticket | null>(null);
   const [preCobranca, setPreCobranca] = useState<ResultadoCobranca | null>(null);
   const [visitaTicket, setVisitaTicket] = useState<Ticket | null>(null);
+  const [comissaoTicket, setComissaoTicket] = useState<Ticket | null>(null);
+  const [comissoes, setComissoes] = useState<Comissao[]>([]);
+  const [comissoesAberto, setComissoesAberto] = useState(false);
   const [buscar360Coluna, setBuscar360Coluna] = useState<string | null>(null);
   const [buscaTicketsAberta, setBuscaTicketsAberta] = useState(false);
   const [movimentaAberta, setMovimentaAberta] = useState(false);
@@ -313,6 +323,7 @@ export default function App() {
       });
     void carregarVinculos();
     void carregarHistoricoFechados();
+    void carregarComissoes();
   }, []);
 
   // Atalhos globais do Windows: Shift+F2 (ticket na tela → chat do Groq)
@@ -478,6 +489,9 @@ export default function App() {
       if (coluna === colunaVisitaAgendada) {
         abrirVisita(id, snapshot);
       }
+      if (coluna === colunaUpgrade) {
+        abrirComissao(id, snapshot);
+      }
     } catch (e) {
       setBoard(snapshot); // reverte a tela se o backend falhar
       showToast(String(e) || 'Não foi possível mover o card.');
@@ -495,6 +509,39 @@ export default function App() {
       }
     }
   }
+
+  // abrirComissao acha o card (em qualquer coluna do snapshot) e abre o
+  // diálogo de comissionamento da coluna Upgrade.
+  function abrirComissao(id: number, fonte: Board) {
+    for (const ts of Object.values(fonte)) {
+      const t = ts.find((x) => x.id === id);
+      if (t) {
+        setComissaoTicket(t);
+        return;
+      }
+    }
+  }
+
+  // receberComissao marca a comissão como recebida (vai para o histórico).
+  async function receberComissao(t: Ticket) {
+    try {
+      await bindings.MarcarComissaoRecebida(t.id);
+      await carregarComissoes();
+      showToast(`✅ Comissão de ${t.nomeCliente} recebida — no histórico.`);
+    } catch (e) {
+      showToast(String(e) || 'Não foi possível marcar como recebida.');
+    }
+  }
+
+  async function carregarComissoes() {
+    try {
+      setComissoes(await bindings.ListarComissoes());
+    } catch {
+      // silencioso: sem comissões exibidas
+    }
+  }
+
+  const comissoesPorTicket = Object.fromEntries(comissoes.map((c) => [c.ticketId, c]));
 
   // prepararCobranca roda o fluxo automático da coluna Cobrança e abre o
   // modal preenchido com a proposta gerada.
@@ -967,6 +1014,9 @@ ${txt.trim()}` : txt.trim());
                     }}
                     onExcluir={excluir}
                     onAgendarVisita={setVisitaTicket}
+                    comissoes={comissoesPorTicket}
+                    onReceberComissao={receberComissao}
+                    onEditarComissao={(t) => setComissaoTicket(t)}
                     selecionado={(t) => selecao.has(t.id)}
                     emSelecao={selecao.size > 0}
                     onAlternarSelecao={alternarSelecao}
@@ -982,6 +1032,13 @@ ${txt.trim()}` : txt.trim());
                           onClick={() => setHistoricoAberto(true)}
                         >
                           🗂 Histórico de fechados ({historicoFechados.length})
+                        </button>
+                      ) : c === colunaUpgrade && comissoes.some((x) => x.recebido) ? (
+                        <button
+                          className="mt-1 w-full text-xs text-teal-600 dark:text-teal-300 hover:text-teal-700 dark:hover:text-teal-200 py-1 rounded font-medium"
+                          onClick={() => setComissoesAberto(true)}
+                        >
+                          🧾 Comissões recebidas ({comissoes.filter((x) => x.recebido).length})
                         </button>
                       ) : undefined
                     }
@@ -1168,6 +1225,93 @@ ${txt.trim()}` : txt.trim());
           }}
           onFechar={() => setVisitaTicket(null)}
         />
+      )}
+
+      {comissaoTicket && (
+        <ComissaoModal
+          ticket={comissaoTicket}
+          comissao={comissoesPorTicket[comissaoTicket.id] ?? null}
+          onSalvo={(c) => {
+            void carregarComissoes();
+            // o card pode ter sido movido para Upgrade pelo backend
+            void recarregarBoard();
+            setComissaoTicket(null);
+            showToast(`💰 Comissão de ${formatCents(c.comissaoCents)} registrada na coluna Upgrade.`);
+          }}
+          onFechar={() => setComissaoTicket(null)}
+        />
+      )}
+
+      {comissoesAberto && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center p-4"
+          onClick={() => setComissoesAberto(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[26rem] max-w-full max-h-[70vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0">
+              <h3 className="font-semibold text-slate-800 dark:text-slate-100 text-sm">
+                🧾 Comissões — Upgrade
+              </h3>
+              <button
+                aria-label="Fechar histórico"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                onClick={() => setComissoesAberto(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="overflow-y-auto p-2 text-xs">
+              {(() => {
+                const recebidas = comissoes.filter((c) => c.recebido);
+                const pendentes = comissoes.filter((c) => !c.recebido);
+                const nomeDe = (id: number) =>
+                  Object.values(board).flat().find((t) => t.id === id)?.nomeCliente ?? `card ${id}`;
+                const totalRec = recebidas.reduce((acc, c) => acc + c.comissaoCents, 0);
+                const totalPend = pendentes.reduce((acc, c) => acc + c.comissaoCents, 0);
+                if (comissoes.length === 0) {
+                  return (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 p-3">
+                      Nenhuma comissão registrada ainda.
+                    </p>
+                  );
+                }
+                return (
+                  <>
+                    {pendentes.length > 0 && (
+                      <p className="px-2 pt-1 pb-0.5 font-semibold text-slate-500 dark:text-slate-400">
+                        A receber — {formatCents(totalPend)}
+                      </p>
+                    )}
+                    {pendentes.map((c) => (
+                      <div key={c.id} className="px-2 py-1.5 rounded hover:bg-slate-500/5 flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-slate-700 dark:text-slate-200" title={c.observacoes || nomeDe(c.ticketId)}>
+                          ⏳ {c.dataRegistro || '—'} · {nomeDe(c.ticketId)}
+                        </span>
+                        <span className="font-mono text-teal-700 dark:text-teal-300 shrink-0">
+                          {formatCents(c.comissaoCents)}
+                        </span>
+                      </div>
+                    ))}
+                    <p className="px-2 pt-2 pb-0.5 font-semibold text-slate-500 dark:text-slate-400">
+                      Recebidas — {formatCents(totalRec)}
+                    </p>
+                    {recebidas.map((c) => (
+                      <div key={c.id} className="px-2 py-1.5 rounded hover:bg-slate-500/5 flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-slate-500 dark:text-slate-400" title={c.observacoes || nomeDe(c.ticketId)}>
+                          ✅ {c.recebidoEm} · {nomeDe(c.ticketId)}
+                        </span>
+                        <span className="font-mono shrink-0">{formatCents(c.comissaoCents)}</span>
+                      </div>
+                    ))}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
       )}
 
       {configAberta && <Configuracoes onFechar={() => setConfigAberta(false)} onToast={showToast} />}

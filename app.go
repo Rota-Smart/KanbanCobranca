@@ -28,6 +28,7 @@ type App struct {
 	vinculos  *db.VinculoRepo
 	cobrancas *db.CobrancaRepo
 	colunas   *db.ColumnRepo
+	comissoes *db.ComissaoRepo
 	propostas *service.PropostaService
 
 	// Integração Rota 360 + Groq + parâmetros (wired em main; nil em testes antigos).
@@ -96,6 +97,7 @@ func NewApp(database *sql.DB, propostas *service.PropostaService) *App {
 		vinculos:  db.NewVinculoRepo(database),
 		cobrancas: db.NewCobrancaRepo(database),
 		colunas:   db.NewColumnRepo(database),
+		comissoes: db.NewComissaoRepo(database),
 		chats:     db.NewChatRepo(database),
 		padroes:   db.NewPadraoRepo(database),
 		stats:     db.NewAgenteStatsRepo(database),
@@ -128,6 +130,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.iniciarAtalhos()
 	a.garantirColunaOrcamento()
+	a.garantirUpgradeUltimo(a.ctx)
 }
 
 // friendly devolve erros de validação como estão; todo o resto vai para o
