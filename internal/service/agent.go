@@ -155,6 +155,34 @@ func AgentTools() []map[string]any {
 	}
 }
 
+// AgentToolsSem devolve as tools exceto as nomeadas — as ferramentas de
+// leitura cujos dados já foram pré-coletados saem do request: cada schema
+// removido economiza tokens em TODA rodada do loop.
+func AgentToolsSem(removidas []string) []map[string]any {
+	skip := make(map[string]bool, len(removidas))
+	for _, n := range removidas {
+		skip[n] = true
+	}
+	todas := AgentTools()
+	out := make([]map[string]any, 0, len(todas))
+	for _, t := range todas {
+		fn := t["function"].(map[string]any)
+		if !skip[fn["name"].(string)] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// OpcoesConversa carrega o que a pré-busca local produziu antes de chamar a
+// API: o bloco de dados do 360 já coletados (vai no system prompt) e as
+// ferramentas redundantes que devem sair do request. Nil = comportamento
+// antigo, sem pré-busca.
+type OpcoesConversa struct {
+	BlocoContexto        string
+	FerramentasRemovidas []string
+}
+
 // SystemComPadroes monta o system prompt com os padrões salvos embutidos —
 // eles valem para o loop com ferramentas e para o fast-path sem ferramentas.
 func SystemComPadroes(padroes string) string {
@@ -231,10 +259,25 @@ type MensagemDeChat struct {
 // progresso é chamado a cada ferramenta executada (para a UI).
 // padroes é o texto dos padrões salvos pelo usuário (vazio se não houver).
 func (g *GroqCliente) Conversar(ctx context.Context, historico []MensagemDeChat, mensagem string, padroes string, exec ToolExecutor, progresso func(AcaoDoAgente)) (*ChatResultado, error) {
+	return g.ConversarCom(ctx, historico, mensagem, padroes, exec, progresso, nil)
+}
+
+// ConversarCom é o Conversar com opções de pré-busca: o bloco de contexto
+// entra no system prompt e as tools removidas saem do request inteiro.
+func (g *GroqCliente) ConversarCom(ctx context.Context, historico []MensagemDeChat, mensagem string, padroes string, exec ToolExecutor, progresso func(AcaoDoAgente), ops *OpcoesConversa) (*ChatResultado, error) {
 	if g.chave() == "" {
 		return nil, ErrGroqSemChave
 	}
 	sistema := SystemComPadroes(padroes)
+	tools := AgentTools()
+	if ops != nil {
+		if ops.BlocoContexto != "" {
+			sistema += "\n\n" + ops.BlocoContexto
+		}
+		if len(ops.FerramentasRemovidas) > 0 {
+			tools = AgentToolsSem(ops.FerramentasRemovidas)
+		}
+	}
 	// Fast-path: mensagem que não precisa de ação sai em 1 requisição, sem
 	// os schemas das tools nem o loop.
 	compacto := historicoCompacto(historico)
@@ -259,7 +302,7 @@ func (g *GroqCliente) Conversar(ctx context.Context, historico []MensagemDeChat,
 
 	acoes := []AcaoDoAgente{}
 	for rodada := 0; rodada < MaxIteracoesAgente; rodada++ {
-		resp, err := g.chatComTools(ctx, msgs)
+		resp, err := g.chatUmaRodada(ctx, msgs, tools)
 		if err != nil {
 			return nil, err
 		}

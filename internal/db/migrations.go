@@ -19,7 +19,23 @@ var migrations = []string{
 	migration009,
 	migration010,
 	migration011,
+	migration012,
 }
+
+// migration012: estatísticas do assistente para a pré-busca aprender —
+// para cada classe de consulta (financeiro, os, equipamentos...), quantas
+// vezes o modelo acabou chamando cada ferramenta mesmo com o contexto
+// injetado. Fatias chamadas com frequência (>= 3) passam a vir junto na
+// pré-busca daquela classe, sem o usuário precisar pedir.
+const migration012 = `
+CREATE TABLE IF NOT EXISTS agente_stats (
+    classe        TEXT NOT NULL,
+    ferramenta    TEXT NOT NULL,
+    contagem      INTEGER NOT NULL DEFAULT 0,
+    atualizado_em TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    PRIMARY KEY (classe, ferramenta)
+);
+`
 
 // migration011: agendamento de visita do card — data, turno, horário e
 // endereço (sugerido do cadastro do cliente no 360, editável) e a coluna

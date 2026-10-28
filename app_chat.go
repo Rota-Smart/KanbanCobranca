@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -199,13 +200,39 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 
 	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
 	defer cancel()
-	res, err := a.groq.Conversar(ctx, historico, mensagem, a.textoPadroes(a.ctx), a, nil)
+
+	// Pré-busca: mensagem que pede dados do 360 sai com o contexto já
+	// coletado (1 requisição HTTP) e sem as tools de leitura no request.
+	// Sessão expirada/ausente PARA AQUI — a IA não é acionada.
+	pre, err := a.prepararPrebusca(ctx, mensagem)
+	if err != nil {
+		if errors.Is(err, rota360.ErrSessaoExpirada) {
+			return service.ChatResultado{}, errors.New("sessão do 360 expirada — o portal rejeitou o cookie. Reconecte-se em ⚙ Configurações; o assistente não foi acionado")
+		}
+		if errors.Is(err, rota360.ErrSemSessao) {
+			return service.ChatResultado{}, errors.New("sessão do 360 não configurada — conecte-se em ⚙ Configurações para o assistente consultar dados; o assistente não foi acionado")
+		}
+		return service.ChatResultado{}, friendly("EnviarChat", err)
+	}
+	if pre != nil {
+		a.muPrebusca.Lock()
+		a.cachePrebusca = pre.cache
+		a.muPrebusca.Unlock()
+		defer func() {
+			a.muPrebusca.Lock()
+			a.cachePrebusca = nil
+			a.muPrebusca.Unlock()
+		}()
+	}
+
+	res, err := a.groq.ConversarCom(ctx, historico, mensagem, a.textoPadroes(a.ctx), a, nil, pre.opcoes())
 	if err != nil {
 		if err == service.ErrGroqSemChave {
 			return service.ChatResultado{}, err
 		}
 		return service.ChatResultado{}, friendly("EnviarChat", err)
 	}
+	a.registrarStatsPrebusca(pre, res.Acoes)
 	if res.Acoes == nil {
 		res.Acoes = []service.AcaoDoAgente{}
 	}
@@ -302,6 +329,12 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 	}
 	argStr := func(k string) string { v, _ := args[k].(string); return strings.TrimSpace(v) }
 	argInt := func(k string) int64 { v, _ := args[k].(float64); return int64(v) }
+
+	// Ferramenta cuja fatia a pré-busca já injetou no contexto: responde do
+	// cache — zero HTTP e zero rodada extra de API.
+	if txt, ok := a.cacheServir(ferramenta); ok {
+		return txt, "respondeu do contexto pré-coletado (" + ferramenta + ")", nil
+	}
 
 	switch ferramenta {
 	case "buscar_cliente_360":
@@ -789,6 +822,12 @@ func (a *App) agentFinanceiro(ctx context.Context, cod string) (string, string, 
 	if err != nil {
 		return "", "", err
 	}
+	return textoFinanceiro360(cod, fin), fmt.Sprintf("consultou o financeiro do cliente %s", cod), nil
+}
+
+// textoFinanceiro360 formata a fatia financeira do dashboard (puro, sem
+// rede) — compartilhado entre a tool do agente e a pré-busca.
+func textoFinanceiro360(cod string, fin *rota360.Dashboard360) string {
 	dados := fin.Sources.InsideService.Data
 	f := dados.Financeiro
 	var sb strings.Builder
@@ -798,7 +837,7 @@ func (a *App) agentFinanceiro(ctx context.Context, cod string) (string, string, 
 		fmt.Fprintf(&sb, "Doc %s: R$ %.2f, venceu %s, %d dias de atraso (multa R$ %.2f, mora R$ %.2f)\n",
 			fat.NumeroDoc, fat.ValorDuplicata, fat.Vencimento.Format("02/01/2006"), fat.DiasAtraso, fat.MultaValor, fat.MoraValor)
 	}
-	return sb.String(), fmt.Sprintf("consultou o financeiro do cliente %s", cod), nil
+	return sb.String()
 }
 
 // agentEquipamentos devolve o que o cliente tem cadastrado (alarme, câmera,
@@ -827,11 +866,27 @@ func (a *App) agentAtendimentos(ctx context.Context, cod string) (string, string
 	if c == nil {
 		return "", "", rota360.ErrSemSessao
 	}
-	var sb strings.Builder
-	funil, errFunil := c.OSFunil(ctx, cod)
+	var (
+		funil *rota360.OSFunil360
+		fin   *rota360.Dashboard360
+	)
+	var errFunil error
+	funil, errFunil = c.OSFunil(ctx, cod)
 	if errFunil != nil {
 		slog.Warn("os-funil do cliente falhou", "cod", cod, "err", errFunil)
 	}
+	fin, errFin := c.FinanceiroCliente(ctx, cod)
+	if errFin != nil && errFunil != nil {
+		return "", "", errFunil
+	}
+	return textoAtendimentos360(cod, funil, fin),
+		fmt.Sprintf("consultou os atendimentos do cliente %s", cod), nil
+}
+
+// textoAtendimentos360 formata a fatia de O.S./atendimentos (puro, sem
+// rede) — compartilhado entre a tool do agente e a pré-busca.
+func textoAtendimentos360(cod string, funil *rota360.OSFunil360, fin *rota360.Dashboard360) string {
+	var sb strings.Builder
 	if funil != nil {
 		ct := funil.Contagem
 		fmt.Fprintf(&sb, "Ordens de serviço (histórico): %d concluída(s), %d cancelada(s), %d fechada(s) sem processamento, %d atendida(s) sem fechamento, %d sem atendimento.\n",
@@ -858,7 +913,7 @@ func (a *App) agentAtendimentos(ctx context.Context, cod string) (string, string
 	}
 	// O dashboard complementa com as OS em aberto do cadastro (quando o
 	// os-funil falhou, é a única visão de OS que sobra).
-	if fin, err := c.FinanceiroCliente(ctx, cod); err == nil {
+	if fin != nil {
 		dados := fin.Sources.InsideService.Data
 		if n := len(dados.OSAtivas); n > 0 {
 			sb.WriteString("\nOS ativas no cadastro:\n")
@@ -882,10 +937,8 @@ func (a *App) agentAtendimentos(ctx context.Context, cod string) (string, string
 				fmt.Fprintf(&sb, "- #%s %s [%s] (%s)\n", t.Number, t.Summary, t.Status.Name, t.CreatedAt)
 			}
 		}
-	} else if errFunil != nil {
-		return "", "", errFunil
 	}
-	return sb.String(), fmt.Sprintf("consultou os atendimentos do cliente %s", cod), nil
+	return sb.String()
 }
 
 // primeiraLinha devolve a primeira linha não vazia do texto.

@@ -38,6 +38,12 @@ type App struct {
 	avaliador  *service.Avaliador
 	chats      *db.ChatRepo
 	padroes    *db.PadraoRepo
+	stats      *db.AgenteStatsRepo // aprendizado da pré-busca (classe → ferramentas)
+
+	// Pré-busca de contexto do assistente: resultado da coleta local antes
+	// de chamar a IA; o ExecutarAgente serve daqui se o modelo pedir de novo.
+	muPrebusca    sync.Mutex
+	cachePrebusca map[string]string
 
 	muRota        sync.Mutex
 	rota          *rota360.Cliente // sessão ativa do 360; nil se desconectado
@@ -92,6 +98,7 @@ func NewApp(database *sql.DB, propostas *service.PropostaService) *App {
 		colunas:   db.NewColumnRepo(database),
 		chats:     db.NewChatRepo(database),
 		padroes:   db.NewPadraoRepo(database),
+		stats:     db.NewAgenteStatsRepo(database),
 		propostas: propostas,
 	}
 }
