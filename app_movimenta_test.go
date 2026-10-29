@@ -25,6 +25,16 @@ func TestMovimentarTicket360Validacao(t *testing.T) {
 	if _, err := a.MovimentarTicket360("12345", "Cobrança"); !errors.Is(err, rota360.ErrSemSessao) {
 		t.Fatalf("sem sessão no 360 deveria dar ErrSemSessao, veio %v", err)
 	}
+
+	// Colunas dinâmicas do board (ex.: Ticket Fechado) não estão na lista
+	// estática ColunasValidas — o /move "<cod> para ticket fechado" tem que
+	// passar da validação e falhar só por falta de sessão.
+	if _, err := a.colunas.Add(a.ctx, ColunaTicketFechado); err != nil {
+		t.Fatalf("criar coluna Ticket Fechado: %v", err)
+	}
+	if _, err := a.MovimentarTicket360("12345", ColunaTicketFechado); !errors.Is(err, rota360.ErrSemSessao) {
+		t.Fatalf("coluna dinâmica deveria ser aceita (ErrSemSessao), veio %v", err)
+	}
 }
 
 // TestComandoMoveLocal: o /move do chat roda sem IA — a variante de ticket sem

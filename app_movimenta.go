@@ -19,7 +19,9 @@ import (
 func (a *App) MovimentarTicket360(entrada, coluna string) (db.Ticket, error) {
 	entrada = strings.TrimSpace(entrada)
 	coluna = strings.TrimSpace(coluna)
-	if !service.ColunaValida(coluna) {
+	// Valida contra o board dinâmico (colunas criadas depois, ex.: Ticket
+	// Fechado, não estão na lista estática ColunasValidas).
+	if !a.colunaValida(coluna) {
 		return db.Ticket{}, service.ErrColunaInvalida
 	}
 	uuid, numero := dividirEntradaTicket(entrada)
