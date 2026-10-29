@@ -23,6 +23,10 @@ const (
 	// (ou pergunta genérica sobre o cliente) — traz as três.
 	ConsultaCliente ClasseConsulta = "cliente"
 	ConsultaTicket  ClasseConsulta = "ticket"
+	// ConsultaBoard: pedido agregado sobre o quadro ("todos os clientes da
+	// coluna X", "liste os cards em Cobrança") — o backend responde com dados
+	// LOCAIS do banco, sem tocar no 360.
+	ConsultaBoard ClasseConsulta = "board"
 )
 
 // Regexes de intenção. Acentos cobertos na mão (RE2 + \b é ASCII).
@@ -40,6 +44,37 @@ var reAlvoAspas = regexp.MustCompile(`["“'']([^"”'']{3,40})["”'']`)
 var reAlvoNome = regexp.MustCompile(`(?i)(?:do cliente|do card|da cliente|cliente|card)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’. ]{2,39})`)
 var reCorteNome = regexp.MustCompile(`(?i)^(.+?)\s+(?:tem|est[áa]|possui|quant[oa]s?|estando|que|no|na|em|e)\b`)
 
+// Board: agregação ("todos", "quais", "liste"...) sobre UMA coluna do quadro.
+// A palavra de agregação e a menção a "coluna" têm de coexistir — sem isso,
+// qualquer mensagem com "coluna" viraria consulta de quadro.
+var (
+	reAgregBoard = regexp.MustCompile(`(?i)\b(todos|todas|quais|liste|lista|listar|verifi(que|car)|confer(a|ir)|confira|quant[oa]s?)\b`)
+	reTemColuna  = regexp.MustCompile(`(?i)\bcoluna\b`)
+	// Nome depois de "coluna"/"da coluna"/"na coluna"; o corte descarta o que
+	// vem depois de conector ("coluna Cobrança e verifique...").
+	reAlvoColuna = regexp.MustCompile(`(?i)\b(?:d[ao]?\s+)?coluna\s+([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9'’.\- ]{1,39})`)
+	reCorteCol   = regexp.MustCompile(`(?i)^(.+?)\s+(?:e|que|para|pra|com|tem|est[áa]|possui|de)\b`)
+)
+
+// ExtrairColunaBoard devolve o nome da coluna citado numa frase de board
+// ("... da coluna Cobrança ..."). Vazio quando nenhuma coluna é nomeada —
+// o pedido então vale para o quadro inteiro.
+func ExtrairColunaBoard(m string) string {
+	mc := reAlvoColuna.FindStringSubmatch(m)
+	if mc == nil {
+		return ""
+	}
+	nome := mc[1]
+	if corte := reCorteCol.FindStringSubmatch(nome); corte != nil {
+		nome = corte[1]
+	}
+	nome = strings.TrimSpace(strings.TrimRight(nome, ".,;:!?"))
+	if len([]rune(nome)) < 2 {
+		return ""
+	}
+	return nome
+}
+
 // AlvoConsulta é o alvo identificado na mensagem.
 type AlvoConsulta struct {
 	Tipo  string // "ticket" | "cod" | "nome" | ""
@@ -48,7 +83,13 @@ type AlvoConsulta struct {
 
 // ClassificarConsulta devolve a(s) fatia(s) de dados que a mensagem pede.
 // Vazia quando não é consulta de dados do 360 (ação, reescrita, meta...).
+// Pedido agregado de board ("todos os clientes da coluna X") vence: é dado
+// LOCAL e um match simultâneo de financeiro ("...com renegociação") não pode
+// reduzir o escopo a um cliente só.
 func ClassificarConsulta(m string) ClasseConsulta {
+	if reAgregBoard.MatchString(m) && reTemColuna.MatchString(m) {
+		return ConsultaBoard
+	}
 	n, primeira := 0, ConsultaNenhuma
 	for _, c := range []struct {
 		re     *regexp.Regexp
@@ -115,6 +156,7 @@ var ferramentaPorFatia = map[ClasseConsulta][]string{
 	ConsultaEquipamentos: {"equipamentos_cliente"},
 	ConsultaCliente:      {"financeiro_cliente", "atendimentos_cliente", "equipamentos_cliente"},
 	ConsultaTicket:       {"detalhe_ticket_360"},
+	ConsultaBoard:        {"listar_tickets"},
 }
 
 // FerramentasFatia devolve as ferramentas de leitura cobertas pela classe.
@@ -125,10 +167,16 @@ func FerramentasFatia(c ClasseConsulta) []string {
 // FerramentasRemovidas monta a lista de tools a tirar do request: as fatias
 // já injetadas no contexto (redundantes) e, com alvo identificado, a busca
 // de clientes (o backend já resolveu o código) e a listagem de colunas.
+// Sem alvo explícito nada sai do request: o bloco pode ser sobre o último
+// ticket capturado, mas a pergunta pode alcançar outros clientes — a IA
+// precisa das ferramentas para o resto do quadro.
 func FerramentasRemovidas(classe ClasseConsulta, temAlvo bool) []string {
 	rem := map[string]bool{}
 	for _, f := range ferramentaPorFatia[classe] {
 		rem[f] = true
+	}
+	if !temAlvo && classe != ConsultaBoard {
+		return nil
 	}
 	if temAlvo && classe != ConsultaTicket {
 		rem["buscar_cliente_360"] = true

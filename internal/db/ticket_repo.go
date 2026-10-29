@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 )
 
 const ticketCols = `id, nome_cliente, tipo_ticket, numero_ticket, cod_service, endereco, telefone, coluna_atual, posicao, created_at, updated_at, ticket360_id, ticket360_numero, observacoes, visita_data, visita_turno, visita_hora, visita_endereco`
@@ -75,6 +76,27 @@ func (r *TicketRepo) Get(ctx context.Context, id int64) (*Ticket, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("buscar ticket %d: %w", id, err)
+	}
+	return &t, nil
+}
+
+// GetPorNumero360 devolve o card vinculado a esse número de ticket do 360,
+// ou nil se não houver — o fallback quando a IA passa o número do 360 no
+// lugar do id local do card.
+func (r *TicketRepo) GetPorNumero360(ctx context.Context, numero int64) (*Ticket, error) {
+	var t Ticket
+	err := r.db.QueryRowContext(ctx,
+		`SELECT `+ticketCols+` FROM tickets WHERE ticket360_numero = ? ORDER BY id DESC LIMIT 1`,
+		strconv.FormatInt(numero, 10),
+	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
+		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
+		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("buscar ticket por número 360: %w", err)
 	}
 	return &t, nil
 }
