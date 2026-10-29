@@ -73,7 +73,9 @@ func (p *PropostaService) Gerar(nomeCliente string, in ReparcelamentoInput, res 
 	err := tplProposta.Execute(&sb, propostaData{
 		Saudacao:     saudacao(p.agora()),
 		PrimeiroNome: primeiroNome(nomeCliente),
-		Mes:          mesesPT[p.agora().Month()],
+		// Mês de referência da proposta = o SEGUINTE ao atual (em
+		// outubro a proposta fala de novembro, e assim por diante).
+		Mes:          mesesPT[p.agora().AddDate(0, 1, 0).Month()],
 		TotalAberto:  in.TotalAbertoCents,
 		Entrada:      in.EntradaCents,
 		Saldo:        res.SaldoCents,
