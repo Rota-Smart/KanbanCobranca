@@ -16,6 +16,13 @@ func TestClassificarConsulta(t *testing.T) {
 		{"qual o saldo e as OS do cliente 1234?", ConsultaCliente},
 		{"me dá o resumo do cliente: faturas, equipamentos e OS", ConsultaCliente},
 		{"o que responderam no ticket 45231?", ConsultaTicket},
+		// Board: agregação + coluna vence mesmo com palavra de financeiro
+		// ("renegociação") na frase — o escopo é o quadro, não um cliente.
+		{"verifique todos os clientes da coluna cobrança e quais possuem renegociação", ConsultaBoard},
+		{"liste os cards da coluna Cobrança", ConsultaBoard},
+		{"quantos clientes na coluna Contato?", ConsultaBoard},
+		// "coluna" sozinho não basta; nem ação de mover.
+		{"qual a coluna do cliente 1234?", ConsultaNenhuma},
 		{"mova o card do João para Cobrança", ConsultaNenhuma},
 		{"melhore esse texto: ...", ConsultaNenhuma},
 		{"quais as ferramentas disponíveis?", ConsultaNenhuma},
@@ -63,12 +70,38 @@ func TestFerramentasRemovidas(t *testing.T) {
 		t.Errorf("fatias não pedidas não devem sair do request: %v", rem)
 	}
 
-	// Sem alvo: as tools de localização ficam (o modelo ainda precisa achar
-	// o cliente sozinho pelo fluxo antigo).
+	// Sem alvo: nada sai do request — o bloco pode ser sobre o último ticket
+	// capturado, mas a pergunta pode alcançar outros clientes.
 	rem = FerramentasRemovidas(ConsultaOS, false)
+	if rem != nil {
+		t.Errorf("sem alvo, nada deve sair do request; veio %v", rem)
+	}
+
+	// Board: a listagem de cards já veio mastigada no contexto; colunas e
+	// busca de cliente também são redundantes (a coluna já foi resolvida).
+	rem = FerramentasRemovidas(ConsultaBoard, true)
+	tem = map[string]bool{}
 	for _, f := range rem {
-		if f == "buscar_cliente_360" {
-			t.Errorf("sem alvo, buscar_cliente_360 deve continuar")
+		tem[f] = true
+	}
+	if !tem["listar_tickets"] || tem["financeiro_cliente"] {
+		t.Errorf("board deveria remover listar_tickets (só), veio %v", rem)
+	}
+}
+
+func TestExtrairColunaBoard(t *testing.T) {
+	casos := []struct {
+		msg  string
+		want string
+	}{
+		{"verifique todos os clientes da coluna cobrança e quais possuem renegociação", "cobrança"},
+		{"liste os cards da coluna Cobrança", "Cobrança"},
+		{"quantos clientes na coluna Ticket Fechado?", "Ticket Fechado"},
+		{"olhe todos os cards do quadro", ""},
+	}
+	for _, c := range casos {
+		if got := ExtrairColunaBoard(c.msg); got != c.want {
+			t.Errorf("ExtrairColunaBoard(%q) = %q; quero %q", c.msg, got, c.want)
 		}
 	}
 }

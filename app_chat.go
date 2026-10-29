@@ -332,6 +332,16 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 	}
 	argStr := func(k string) string { v, _ := args[k].(string); return strings.TrimSpace(v) }
 	argInt := func(k string) int64 { v, _ := args[k].(float64); return int64(v) }
+	cardID := func() (int64, error) {
+		id := argInt("cardId")
+		if id <= 0 {
+			id = argInt("ticketId")
+		}
+		if id <= 0 {
+			return 0, fmt.Errorf("cardId é obrigatório")
+		}
+		return a.resolverCardID(id)
+	}
 
 	// Ferramenta cuja fatia a pré-busca já injetou no contexto: responde do
 	// cache — zero HTTP e zero rodada extra de API.
@@ -460,9 +470,13 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		return a.agentListarTickets(ctx, argStr("coluna"))
 
 	case "mover_card":
-		id, coluna := argInt("ticketId"), argStr("coluna")
-		if id <= 0 || coluna == "" {
-			return "", "", fmt.Errorf("ticketId e coluna são obrigatórios")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
+		}
+		coluna := argStr("coluna")
+		if coluna == "" {
+			return "", "", fmt.Errorf("coluna é obrigatória")
 		}
 		if err := a.MoveTicket(id, coluna, a.contagemColuna(coluna)); err != nil {
 			return "", "", err
@@ -501,9 +515,9 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		return msg, fmt.Sprintf("moveu %d card(s) para %s", len(res.Movidos), res.Coluna), nil
 
 	case "registrar_comissao":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		servico, err := parseReaisParaCents(argStr("valorServico"))
 		if err != nil {
@@ -535,9 +549,9 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			fmt.Sprintf("registrou comissão de %s (R$ %.2f) na coluna Upgrade", t.NomeCliente, float64(c.ComissaoCents)/100), nil
 
 	case "comissao_recebida":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		c, err := a.MarcarComissaoRecebida(id)
 		if err != nil {
@@ -570,9 +584,9 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		return sb.String(), "listou as comissões", nil
 
 	case "agendar_visita":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		if argStr("data") == "" {
 			return "", "", fmt.Errorf("data obrigatória (AAAA-MM-DD)")
@@ -608,9 +622,9 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			fmt.Sprintf("agendou visita de %s para %s", t.NomeCliente, t.VisitaData), nil
 
 	case "apagar_card":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		t, err := a.tickets.Get(ctx, id)
 		if err != nil {
@@ -623,9 +637,9 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			fmt.Sprintf("apagou o card %d (%s)", id, t.NomeCliente), nil
 
 	case "vincular_ticket":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		t, aviso, err := a.vincularTicket360(id, argStr("numero"))
 		if err != nil {
@@ -643,10 +657,10 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			fmt.Sprintf("vinculou o ticket #%s ao card %d (%s)", t.Ticket360Numero, t.ID, t.NomeCliente), nil
 
 	case "observacao_card":
-		id := argInt("ticketId")
 		obs := argStr("observacoes")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		if argStr("modo") == "acrescentar" && obs != "" {
 			t, err := a.tickets.Get(ctx, id)
@@ -668,16 +682,16 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			fmt.Sprintf("salvou as observações internas do card %d", id), nil
 
 	case "avaliar_cliente":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		return a.agentAvaliar(ctx, id)
 
 	case "gerar_proposta":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		return a.agentProposta(ctx, id)
 
@@ -727,7 +741,7 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			return "", "", err
 		}
 		cliente := ""
-		if id := argInt("ticketId"); id > 0 {
+		if id, err := cardID(); err == nil {
 			if t, err := a.tickets.Get(a.ctx, id); err == nil {
 				cliente = t.NomeCliente
 			}
@@ -1436,10 +1450,23 @@ func (a *App) agentListarTickets(ctx context.Context, coluna string) (string, st
 	if err != nil {
 		return "", "", err
 	}
+	// Filtro tolerante: a IA pode citar "cobrança" para a coluna "Cobrança"
+	// (ou qualquer variação de caixa/acento) — quem casa é o CasarColuna.
+	var alvo string
+	if coluna != "" {
+		if colunas, err := a.colunas.List(a.ctx); err == nil {
+			if casada, err := service.CasarColuna(coluna, colunas); err == nil {
+				alvo = casada
+			}
+		}
+		if alvo == "" {
+			alvo = coluna
+		}
+	}
 	var sb strings.Builder
 	n, escritas := 0, 0
 	for _, t := range ts {
-		if coluna != "" && t.ColunaAtual != coluna {
+		if alvo != "" && t.ColunaAtual != alvo {
 			continue
 		}
 		n++
@@ -1468,6 +1495,25 @@ func (a *App) agentListarTickets(ctx context.Context, coluna string) (string, st
 // runes) e o resultado inteiro passa pelo cap de tool result — melhor 20
 // linhas inteiras do que o corte cego no meio da lista.
 const maxCardsNoResultado = 20
+
+// resolverCardID aceita o id local do card OU o número do ticket do 360: se
+// o id não existe na tabela, tenta casar pelo ticket360_numero — o deslize
+// mais comum da IA é passar o número do 360 no lugar do id local.
+func (a *App) resolverCardID(id int64) (int64, error) {
+	if _, err := a.tickets.Get(a.ctx, id); err == nil {
+		return id, nil
+	} else if !errors.Is(err, db.ErrTicketNaoEncontrado) {
+		return 0, friendly("resolverCardID", err)
+	}
+	t, err := a.tickets.GetPorNumero360(a.ctx, id)
+	if err != nil {
+		return 0, friendly("resolverCardID", err)
+	}
+	if t == nil {
+		return 0, fmt.Errorf("nenhum card com id %d nem ticket 360 #%d — use listar_tickets para ver os ids", id, id)
+	}
+	return t.ID, nil
+}
 
 func mapaSe(cond bool, s string) string {
 	if cond {
