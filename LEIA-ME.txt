@@ -185,3 +185,10 @@ Repositório: github.com/luisboneta/banco-de-dados (privado).
    sessão do 360 estiver expirada, o aviso aparece na hora (a IA nem é
    acionada). Com o uso, o app aprende o que você costuma pedir junto
    (ex.: OS + financeiro) e já traz tudo de uma vez nas próximas vezes.
+
+24. ASSISTENTE ENTENDE O QUADRO INTEIRO (v1.24.1): pedidos como "verifique
+   todos os clientes da coluna Cobrança e quais têm renegociação" agora são
+   respondidos com os dados locais do app (cards, renegociações, cobrança
+   ativa), sem erro de "nenhum cliente". E o "mover" não falha mais com
+   "ticket não existe": a IA usa o id do card e, se citar o número do ticket
+   do 360, o app resolve sozinho.
