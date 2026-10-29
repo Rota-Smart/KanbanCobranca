@@ -1,0 +1,15 @@
+#!/bin/sh
+# Hook pre-push: publica a release em background quando a main é empurrada.
+# Não bloqueia o push nem come CPU: o build roda em processo destacado em prioridade /low.
+# Versão vem do próprio repo (const VersaoApp na main) e compara com versao.txt da release.
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ] && [ "$local_sha" != "0000000000000000000000000000000000000000" ]; then
+    ver=$(git show "$local_sha":internal/atualizacao/atualizacao.go 2>/dev/null | grep -o 'VersaoApp = "[^"]*"' | cut -d '"' -f2)
+    pub=$(git show release:versao.txt 2>/dev/null)
+    if [ -n "$ver" ] && [ "$ver" != "$pub" ]; then
+      echo "publicar: v$ver pendente (release tem $pub) — build em background, log em ~/publicar-rotasuite.log"
+      cmd //c start "RotaSuite-Publicar" //low //min powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\Rota Dev\\scripts\\publicar.ps1" -Versao "$ver" -Commit "$local_sha"
+    fi
+  fi
+done
+exit 0
