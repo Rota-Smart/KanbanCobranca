@@ -144,3 +144,72 @@ func TestResolverCard(t *testing.T) {
 		t.Error("sem match deveria falhar")
 	}
 }
+
+func TestParseComandoApagar(t *testing.T) {
+	cases := []struct {
+		msg    string
+		quer   bool
+		card   string
+		coluna string
+	}{
+		{"/apagar", true, "", ""},
+		{"/apagar João", true, "João", ""},
+		{"/apagar João em Cobrança", true, "João", "Cobrança"},
+		{"/apagar #24755 na Cobrança.", true, "#24755", "Cobrança"},
+		{"/apague o card do João da Silva", true, "card do João da Silva", ""},
+		{"/excluir 12345", true, "12345", ""},
+		{"/delete João em Cobrança em Negociando", true, "João em Cobrança", "Negociando"},
+		{"/remova.", true, "", ""},
+		{"apague o card do João", false, "", ""},  // fluxo antigo, sem barra
+		{"/move 12345 para Cobrança", false, "", ""}, // outro comando
+		{"", false, "", ""},
+	}
+	for _, tc := range cases {
+		cmd, ok := ParseComandoApagar(tc.msg)
+		if ok != tc.quer {
+			t.Errorf("%q: ok=%v, quer %v", tc.msg, ok, tc.quer)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		if cmd.Card != tc.card || cmd.Coluna != tc.coluna {
+			t.Errorf("%q: veio %+v, quer card=%q coluna=%q", tc.msg, cmd, tc.card, tc.coluna)
+		}
+	}
+}
+
+func TestResolverCardNoTexto(t *testing.T) {
+	cards := []CardResumo{
+		{ID: 1, NomeCliente: "Resolute Distribuidora", CodService: "24755"},
+		{ID: 2, NomeCliente: "Mercado Bom Preço", CodService: "11223"},
+		{ID: 3, NomeCliente: "João Batista", CodService: "9988"},
+	}
+	casos := []struct {
+		texto string
+		quer  int64
+	}{
+		{"qual o financeiro do 24755?", 1},
+		{"o card #1 está atrasado", 1},
+		{"vamos mover o Resolute Distribuidora", 1},
+		{"clientes: Mercado Bom Preço e outros", 2},
+		{"falei do Batista ontem", 3},                       // pedaço único do nome
+		{"a cliente Rejane reclamou", 0},                    // nada casa
+		{"os dois clientes 24755 e 11223", 1},               // dois códigos: o primeiro citado vence
+	}
+	for _, tc := range casos {
+		card, ok := ResolverCardNoTexto(tc.texto, cards)
+		if tc.quer == 0 {
+			if ok {
+				t.Errorf("%q: casou %+v, queria ambíguo/nao", tc.texto, card)
+			}
+			continue
+		}
+		if !ok || card.ID != tc.quer {
+			t.Errorf("%q: veio %+v (ok=%v), quer card %d", tc.texto, card, ok, tc.quer)
+		}
+	}
+	if card, ok := ResolverCardNoTexto("os dois clientes 24755 e 11223", cards); !ok || card.ID != 1 {
+		t.Errorf("dois códigos: quer card 1 (primeiro citado), veio %+v ok=%v", card, ok)
+	}
+}

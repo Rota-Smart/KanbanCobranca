@@ -31,6 +31,7 @@ function textoFormatado(s: string): React.ReactNode[] {
 // dica que aparece quando o usuário começa a digitar "/".
 const comandosBarra: { cmd: string; exemplo: string }[] = [
   { cmd: '/move', exemplo: '/move 12345 para Cobrança' },
+  { cmd: '/apagar', exemplo: '/apagar' },
   { cmd: '/vincular', exemplo: '/vincular' },
 ];
 
@@ -273,8 +274,8 @@ export default function ChatDrawer(props: {
             <div>
               <h2 className="text-lg font-semibold dark:text-slate-100">Assistente (Groq)</h2>
               <p className="text-xs text-slate-500">
-                Peça: “adicione o cliente 24755 em Cobrança”, “/move 12345 para Cobrança”, “crie a
-                coluna Renegociação”, “qual o financeiro do 20690?”…
+                Peça: “adicione o cliente 24755 em Cobrança”, “/move cobrança” (usa o cliente da conversa),
+                “/apagar”, “crie a coluna Renegociação”, “qual o financeiro do 20690?”…
               </p>
             </div>
             <button aria-label="Fechar chat" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
@@ -290,6 +291,8 @@ export default function ChatDrawer(props: {
                 <br />• “Crie uma coluna chamada Renegociação”
                 <br />• “Financeiro do 24755” e depois “adicione em Cobrança e gere a proposta”
                 <br />• “/move 12345 para Cobrança” — move um ticket do 360 pro board (igual ao Shift+F6)
+                <br />• “/move cobrança” — move pra coluna o cliente que está em discussão aqui no chat
+                <br />• “/apagar” — apaga o card do cliente em discussão; “/apagar João em Cobrança” confere a coluna antes
                 <br />• “/vincular” — liga cada card sem ticket ao ticket mais recente do cliente na fila do 360
               </p>
             )}

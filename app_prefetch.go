@@ -50,6 +50,11 @@ func (a *App) prepararPrebusca(ctx context.Context, msg string) (*prebusca, erro
 	if classe == service.ConsultaNenhuma {
 		return nil, nil
 	}
+	// Board é 100% banco local: independe de sessão do 360 e roda antes do
+	// check de conexão.
+	if classe == service.ConsultaBoard {
+		return a.prebuscaBoard(msg), nil
+	}
 
 	c := a.rotaAtual()
 	if c == nil {
@@ -77,7 +82,9 @@ func (a *App) prepararPrebusca(ctx context.Context, msg string) (*prebusca, erro
 		return a.prebuscaTicket(ctx, c, alvo.Valor, classe)
 	default:
 		// Sem alvo explícito (follow-up tipo "e o financeiro?"): usa o último
-		// ticket capturado pelo Shift+F2, se houver.
+		// ticket capturado pelo Shift+F2, se houver — mas como CHUTE
+		// declarado: o bloco vem rotulado e NADA sai do request, porque a
+		// pergunta pode ser sobre outros clientes ou o board inteiro.
 		cod = strings.TrimSpace(a.ultimoTicketTela().CodService)
 		if cod == "" {
 			return nil, nil
@@ -133,7 +140,11 @@ func (a *App) prepararPrebusca(ctx context.Context, msg string) (*prebusca, erro
 
 	p := &prebusca{classe: classe, cache: map[string]string{}}
 	var sb strings.Builder
-	sb.WriteString("Contexto pré-coletado pelo app direto do 360 (dado oficial e atual — NÃO chame ferramentas para buscar de novo o que está aqui; use para responder):\n")
+	cabecalho := "Contexto pré-coletado pelo app direto do 360 (dado oficial e atual — NÃO chame ferramentas para buscar de novo o que está aqui; use para responder):\n"
+	if alvo.Tipo == "" {
+		cabecalho = fmt.Sprintf("Contexto pré-coletado pelo app direto do 360, do ÚLTIMO ticket capturado (cliente código service %s). Se a pergunta for sobre OUTRO cliente ou sobre o quadro em geral, ignore este bloco e use as ferramentas:\n", cod)
+	}
+	sb.WriteString(cabecalho)
 	if ferramentas["financeiro_cliente"] && fin != nil {
 		txt := textoFinanceiro360(cod, fin)
 		sb.WriteString("\n" + txt)
@@ -156,7 +167,7 @@ func (a *App) prepararPrebusca(ctx context.Context, msg string) (*prebusca, erro
 		sb.WriteString("\n" + bloco)
 	}
 	p.bloco = strings.TrimRight(sb.String(), "\n")
-	p.removidas = service.FerramentasRemovidas(classe, alvo.Tipo != "" || cod != "")
+	p.removidas = service.FerramentasRemovidas(classe, alvo.Tipo != "")
 	if cod != "" {
 		p.cache["buscar_cliente_360"] = fmt.Sprintf("Alvo já identificado pela pré-busca: cliente %s (código service %s). Não é preciso buscar de novo.", nomeDoCliente(fin, cod), cod)
 	}
@@ -209,6 +220,71 @@ func (a *App) prebuscaTicket(ctx context.Context, c *rota360.Cliente, numero str
 	return p, nil
 }
 
+// prebuscaBoard mastiga pedidos agregados sobre o quadro: lista os cards da
+// coluna pedida (ou do quadro inteiro) direto do banco local e já anexa o
+// que a IA ia perguntar de volta — renegociações e cobrança ativa de cada
+// card. Zero rede, zero rodada extra de API: a ferramenta listar_tickets
+// sai do request e é servida do cache.
+func (a *App) prebuscaBoard(msg string) *prebusca {
+	ts, err := a.tickets.List(a.ctx)
+	if err != nil {
+		slog.Warn("pré-busca board: listagem falhou", "err", err)
+		return nil
+	}
+	colunas, _ := a.colunas.List(a.ctx)
+
+	coluna := service.ExtrairColunaBoard(msg)
+	var alvo string
+	if coluna != "" {
+		if casada, err := service.CasarColuna(coluna, colunas); err == nil {
+			alvo = casada
+		} else {
+			slog.Warn("pré-busca board: coluna não casada", "citada", coluna)
+		}
+	}
+
+	var sb strings.Builder
+	if alvo != "" {
+		fmt.Fprintf(&sb, "Cards da coluna %q pré-coletados do banco local (dado oficial — NÃO chame listar_tickets para repetir isto):\n", alvo)
+	} else {
+		sb.WriteString("Todos os cards do quadro pré-coletados do banco local (dado oficial — NÃO chame listar_tickets para repetir isto):\n")
+	}
+	n := 0
+	for _, t := range ts {
+		if alvo != "" && t.ColunaAtual != alvo {
+			continue
+		}
+		n++
+		fmt.Fprintf(&sb, "- card id %d | %s | coluna %q", t.ID, t.NomeCliente, t.ColunaAtual)
+		if t.CodService != "" {
+			fmt.Fprintf(&sb, " | cod %s", t.CodService)
+		}
+		if t.Ticket360Numero != "" {
+			fmt.Fprintf(&sb, " | ticket 360 #%s", t.Ticket360Numero)
+		}
+		if reneg, err := a.clientes.ContaRenegociacoesTicket(a.ctx, t.ID); err == nil && reneg > 0 {
+			fmt.Fprintf(&sb, " | %d renegociação(ões)", reneg)
+		}
+		if cob, err := a.cobrancas.GetAtiva(a.ctx, t.ID); err == nil && cob != nil {
+			fmt.Fprintf(&sb, " | cobrança ativa: aberto R$ %.2f", float64(cob.TotalAbertoCents)/100)
+		}
+		sb.WriteString("\n")
+	}
+	if n == 0 {
+		if alvo != "" {
+			sb.WriteString("(nenhum card nesta coluna)\n")
+		} else {
+			sb.WriteString("(quadro vazio)\n")
+		}
+	}
+
+	p := &prebusca{classe: service.ConsultaBoard, cache: map[string]string{}}
+	p.bloco = strings.TrimRight(sb.String(), "\n")
+	p.removidas = service.FerramentasRemovidas(service.ConsultaBoard, true)
+	p.cache["listar_tickets"] = p.bloco
+	return p
+}
+
 // blocoCardsCliente verifica no banco LOCAL (sem rede, antes da IA) se o
 // cliente já tem card no Kanban e devolve o bloco de contexto correspondente.
 // Vazio só se o banco falhar — a resposta "sem card" também é informação
@@ -229,7 +305,7 @@ func (a *App) blocoCardsCliente(cod string) string {
 		return fmt.Sprintf("Cards no sistema: o cliente (código %s) NÃO tem card no Kanban local.", cod)
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Cards no sistema (%d card(s) do cliente no Kanban local):\n", len(encontrados))
+	fmt.Fprintf(&sb, "Cards no sistema (%d card(s) do cliente no Kanban local; card id é o identificador para mover_card/apagar_card/etc.):\n", len(encontrados))
 	for _, t := range encontrados {
 		detalhe := t.NomeCliente
 		if t.Ticket360Numero != "" {
@@ -238,7 +314,7 @@ func (a *App) blocoCardsCliente(cod string) string {
 		if t.Observacoes != "" {
 			detalhe += " | obs: " + limitarTexto(t.Observacoes, 200)
 		}
-		fmt.Fprintf(&sb, "- coluna %q | %s | atualizado em %s\n", t.ColunaAtual, detalhe, t.UpdatedAt)
+		fmt.Fprintf(&sb, "- card id %d | coluna %q | %s | atualizado em %s\n", t.ID, t.ColunaAtual, detalhe, t.UpdatedAt)
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }

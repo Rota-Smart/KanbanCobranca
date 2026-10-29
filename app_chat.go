@@ -161,12 +161,15 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 
 	// Comandos rígidos executados localmente, sem chamar a API — funcionam
 	// até sem chave de IA configurada. "/vincular" (varredura de vínculos)
-	// vem primeiro; "/move" (ticket do 360 ou card) depois; "apague o card
-	// do João" / "mova o card 123 para Cobrança" por último. Frases fora do
-	// molde caem no fluxo normal do agente.
+	// vem primeiro; "/move" (ticket do 360 ou card) e "/apagar" depois;
+	// "apague o card do João" / "mova o card 123 para Cobrança" por último.
+	// Frases fora do molde caem no fluxo normal do agente.
 	local, reconhecido := a.executarComandoVincular(mensagem)
 	if !reconhecido {
-		local, reconhecido = a.executarComandoMove(mensagem)
+		local, reconhecido = a.executarComandoMove(mensagem, chatID)
+	}
+	if !reconhecido {
+		local, reconhecido = a.executarComandoApagar(mensagem, chatID)
 	}
 	if !reconhecido {
 		local, reconhecido = a.executarIntencaoLocal(mensagem)
@@ -329,6 +332,16 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 	}
 	argStr := func(k string) string { v, _ := args[k].(string); return strings.TrimSpace(v) }
 	argInt := func(k string) int64 { v, _ := args[k].(float64); return int64(v) }
+	cardID := func() (int64, error) {
+		id := argInt("cardId")
+		if id <= 0 {
+			id = argInt("ticketId")
+		}
+		if id <= 0 {
+			return 0, fmt.Errorf("cardId é obrigatório")
+		}
+		return a.resolverCardID(id)
+	}
 
 	// Ferramenta cuja fatia a pré-busca já injetou no contexto: responde do
 	// cache — zero HTTP e zero rodada extra de API.
@@ -457,9 +470,13 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		return a.agentListarTickets(ctx, argStr("coluna"))
 
 	case "mover_card":
-		id, coluna := argInt("ticketId"), argStr("coluna")
-		if id <= 0 || coluna == "" {
-			return "", "", fmt.Errorf("ticketId e coluna são obrigatórios")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
+		}
+		coluna := argStr("coluna")
+		if coluna == "" {
+			return "", "", fmt.Errorf("coluna é obrigatória")
 		}
 		if err := a.MoveTicket(id, coluna, a.contagemColuna(coluna)); err != nil {
 			return "", "", err
@@ -498,9 +515,9 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		return msg, fmt.Sprintf("moveu %d card(s) para %s", len(res.Movidos), res.Coluna), nil
 
 	case "registrar_comissao":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		servico, err := parseReaisParaCents(argStr("valorServico"))
 		if err != nil {
@@ -532,9 +549,9 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			fmt.Sprintf("registrou comissão de %s (R$ %.2f) na coluna Upgrade", t.NomeCliente, float64(c.ComissaoCents)/100), nil
 
 	case "comissao_recebida":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		c, err := a.MarcarComissaoRecebida(id)
 		if err != nil {
@@ -567,9 +584,9 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		return sb.String(), "listou as comissões", nil
 
 	case "agendar_visita":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		if argStr("data") == "" {
 			return "", "", fmt.Errorf("data obrigatória (AAAA-MM-DD)")
@@ -605,9 +622,9 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			fmt.Sprintf("agendou visita de %s para %s", t.NomeCliente, t.VisitaData), nil
 
 	case "apagar_card":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		t, err := a.tickets.Get(ctx, id)
 		if err != nil {
@@ -620,9 +637,9 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			fmt.Sprintf("apagou o card %d (%s)", id, t.NomeCliente), nil
 
 	case "vincular_ticket":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		t, aviso, err := a.vincularTicket360(id, argStr("numero"))
 		if err != nil {
@@ -640,10 +657,10 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			fmt.Sprintf("vinculou o ticket #%s ao card %d (%s)", t.Ticket360Numero, t.ID, t.NomeCliente), nil
 
 	case "observacao_card":
-		id := argInt("ticketId")
 		obs := argStr("observacoes")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		if argStr("modo") == "acrescentar" && obs != "" {
 			t, err := a.tickets.Get(ctx, id)
@@ -665,16 +682,16 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			fmt.Sprintf("salvou as observações internas do card %d", id), nil
 
 	case "avaliar_cliente":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		return a.agentAvaliar(ctx, id)
 
 	case "gerar_proposta":
-		id := argInt("ticketId")
-		if id <= 0 {
-			return "", "", fmt.Errorf("ticketId inválido")
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
 		}
 		return a.agentProposta(ctx, id)
 
@@ -724,7 +741,7 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			return "", "", err
 		}
 		cliente := ""
-		if id := argInt("ticketId"); id > 0 {
+		if id, err := cardID(); err == nil {
 			if t, err := a.tickets.Get(a.ctx, id); err == nil {
 				cliente = t.NomeCliente
 			}
@@ -1433,10 +1450,23 @@ func (a *App) agentListarTickets(ctx context.Context, coluna string) (string, st
 	if err != nil {
 		return "", "", err
 	}
+	// Filtro tolerante: a IA pode citar "cobrança" para a coluna "Cobrança"
+	// (ou qualquer variação de caixa/acento) — quem casa é o CasarColuna.
+	var alvo string
+	if coluna != "" {
+		if colunas, err := a.colunas.List(a.ctx); err == nil {
+			if casada, err := service.CasarColuna(coluna, colunas); err == nil {
+				alvo = casada
+			}
+		}
+		if alvo == "" {
+			alvo = coluna
+		}
+	}
 	var sb strings.Builder
 	n, escritas := 0, 0
 	for _, t := range ts {
-		if coluna != "" && t.ColunaAtual != coluna {
+		if alvo != "" && t.ColunaAtual != alvo {
 			continue
 		}
 		n++
@@ -1465,6 +1495,25 @@ func (a *App) agentListarTickets(ctx context.Context, coluna string) (string, st
 // runes) e o resultado inteiro passa pelo cap de tool result — melhor 20
 // linhas inteiras do que o corte cego no meio da lista.
 const maxCardsNoResultado = 20
+
+// resolverCardID aceita o id local do card OU o número do ticket do 360: se
+// o id não existe na tabela, tenta casar pelo ticket360_numero — o deslize
+// mais comum da IA é passar o número do 360 no lugar do id local.
+func (a *App) resolverCardID(id int64) (int64, error) {
+	if _, err := a.tickets.Get(a.ctx, id); err == nil {
+		return id, nil
+	} else if !errors.Is(err, db.ErrTicketNaoEncontrado) {
+		return 0, friendly("resolverCardID", err)
+	}
+	t, err := a.tickets.GetPorNumero360(a.ctx, id)
+	if err != nil {
+		return 0, friendly("resolverCardID", err)
+	}
+	if t == nil {
+		return 0, fmt.Errorf("nenhum card com id %d nem ticket 360 #%d — use listar_tickets para ver os ids", id, id)
+	}
+	return t.ID, nil
+}
 
 func mapaSe(cond bool, s string) string {
 	if cond {
@@ -1615,6 +1664,95 @@ func (a *App) executarComandoVincular(mensagem string) (*service.ChatResultado, 
 	}, true
 }
 
+// cardDoContextoChat acha o cliente "em discussão" na conversa: varre as
+// mensagens persistidas do chat (mais recentes primeiro) procurando um código
+// service/id citado ou um nome que case com UM card do board. É o que permite
+// "/move cobrança" e "/apagar" sem dizer o cliente.
+func (a *App) cardDoContextoChat(chatID int64) (service.CardResumo, bool) {
+	if a.chats == nil || a.tickets == nil {
+		return service.CardResumo{}, false
+	}
+	ms, err := a.chats.Mensagens(a.ctx, chatID)
+	if err != nil || len(ms) == 0 {
+		return service.CardResumo{}, false
+	}
+	ts, err := a.tickets.List(a.ctx)
+	if err != nil {
+		return service.CardResumo{}, false
+	}
+	cards := make([]service.CardResumo, 0, len(ts))
+	for _, t := range ts {
+		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
+	}
+	for i := len(ms) - 1; i >= 0; i-- {
+		if card, ok := service.ResolverCardNoTexto(ms[i].Conteudo, cards); ok {
+			return card, true
+		}
+	}
+	return service.CardResumo{}, false
+}
+
+// executarComandoApagar roda o "/apagar" do chat (sem IA): com cliente no
+// comando apaga o card dele; sem cliente, apaga o card do cliente em
+// discussão no chat. O qualificador opcional "em X" serve de conferência —
+// se o card não estiver na coluna dita, nada é apagado. ok=false quando não
+// é o comando.
+func (a *App) executarComandoApagar(mensagem string, chatID int64) (*service.ChatResultado, bool) {
+	cmd, ok := service.ParseComandoApagar(mensagem)
+	if !ok {
+		return nil, false
+	}
+	alvo := cmd.Card
+	if alvo == "" {
+		card, ok := a.cardDoContextoChat(chatID)
+		if !ok {
+			return &service.ChatResultado{
+				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga: /apagar <cliente> (ou cite o código service antes).",
+				Acoes:    []service.AcaoDoAgente{},
+			}, true
+		}
+		alvo = card.NomeCliente
+	}
+	ts, err := a.tickets.List(a.ctx)
+	if err != nil {
+		return &service.ChatResultado{Resposta: "Não consegui listar os cards: " + err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	cards := make([]service.CardResumo, 0, len(ts))
+	for _, t := range ts {
+		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
+	}
+	card, err := service.ResolverCard(alvo, cards)
+	if err != nil {
+		return &service.ChatResultado{Resposta: err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	return a.apagarCardResolvido(card, cmd.Coluna), true
+}
+
+// apagarCardResolvido apaga o card já identificado, conferindo antes a coluna
+// dita ("em X") quando houver — evita apagar card homônimo de outra coluna.
+func (a *App) apagarCardResolvido(card service.CardResumo, colunaDita string) *service.ChatResultado {
+	if colunaDita != "" {
+		colunas, err := a.colunas.List(a.ctx)
+		if err != nil {
+			return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error(), Acoes: []service.AcaoDoAgente{}}
+		}
+		if coluna, err := service.CasarColuna(colunaDita, colunas); err == nil && coluna != card.ColunaAtual {
+			return &service.ChatResultado{
+				Resposta: fmt.Sprintf("O card %d (%s) está em %q, não em %q. Nada foi apagado — confira e repita se for esse mesmo.",
+					card.ID, card.NomeCliente, card.ColunaAtual, coluna),
+				Acoes: []service.AcaoDoAgente{},
+			}
+		}
+	}
+	if err := a.DeleteTicket(card.ID); err != nil {
+		return &service.ChatResultado{Resposta: "Falhou ao apagar: " + err.Error(), Acoes: []service.AcaoDoAgente{}}
+	}
+	return &service.ChatResultado{
+		Resposta: fmt.Sprintf("Card %d (%s) apagado, junto com os acordos dele (estava em %q).", card.ID, card.NomeCliente, card.ColunaAtual),
+		Acoes:    []service.AcaoDoAgente{{Ferramenta: "apagar_card", Resumo: fmt.Sprintf("apagou o card %d (%s, em %s) via comando local", card.ID, card.NomeCliente, card.ColunaAtual)}},
+	}
+}
+
 // executarIntencaoLocal reconhece comandos rígidos de card no texto e os
 // executa direto (reconhecimento local de intenção, sem API). ok=false
 // devolve a mensagem ao fluxo normal do agente.
@@ -1640,25 +1778,7 @@ func (a *App) executarIntencaoLocal(mensagem string) (*service.ChatResultado, bo
 		// "apague o card do João que está em Cobrança": confere a coluna
 		// dita antes de destruir — evita apagar card homônimo de outra
 		// coluna e responde onde o card realmente está.
-		if in.Coluna != "" {
-			colunas, err := a.colunas.List(a.ctx)
-			if err != nil {
-				return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error()}, true
-			}
-			if colunaDita, err := service.CasarColuna(in.Coluna, colunas); err == nil && colunaDita != card.ColunaAtual {
-				return &service.ChatResultado{
-					Resposta: fmt.Sprintf("O card %d (%s) está em %q, não em %q. Nada foi apagado — confira e repita se for esse mesmo.",
-						card.ID, card.NomeCliente, card.ColunaAtual, colunaDita),
-				}, true
-			}
-		}
-		if err := a.DeleteTicket(card.ID); err != nil {
-			return &service.ChatResultado{Resposta: "Falhou ao apagar: " + err.Error()}, true
-		}
-		return &service.ChatResultado{
-			Resposta: fmt.Sprintf("Card %d (%s) apagado, junto com os acordos dele (estava em %q).", card.ID, card.NomeCliente, card.ColunaAtual),
-			Acoes:    []service.AcaoDoAgente{{Ferramenta: "apagar_card", Resumo: fmt.Sprintf("apagou o card %d (%s, em %s) via comando local", card.ID, card.NomeCliente, card.ColunaAtual)}},
-		}, true
+		return a.apagarCardResolvido(card, in.Coluna), true
 	default:
 		colunas, err := a.colunas.List(a.ctx)
 		if err != nil {

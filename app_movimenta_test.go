@@ -37,11 +37,11 @@ func TestComandoMoveLocal(t *testing.T) {
 		t.Fatalf("SaveTicket: %v", err)
 	}
 
-	if _, ok := a.executarComandoMove("mova o card do João para Cobrança"); ok {
+	if _, ok := a.executarComandoMove("mova o card do João para Cobrança", 0); ok {
 		t.Fatal("frase sem barra não é comando /move")
 	}
 
-	res, ok := a.executarComandoMove("/move")
+	res, ok := a.executarComandoMove("/move", 0)
 	if !ok || res.Acoes == nil || len(res.Acoes) != 0 {
 		t.Fatalf("/move sozinho deveria ser reconhecido com resposta de uso; ok=%v acoes=%v", ok, res.Acoes)
 	}
@@ -49,13 +49,13 @@ func TestComandoMoveLocal(t *testing.T) {
 		t.Fatalf("resposta de uso inesperada: %q", res.Resposta)
 	}
 
-	if _, ok := a.executarComandoMove("/move 99999 para Fazer contato"); !ok {
+	if _, ok := a.executarComandoMove("/move 99999 para Fazer contato", 0); !ok {
 		t.Fatal("/move com ticket deveria ser reconhecido mesmo sem sessão no 360")
 	}
 	// (o resultado do ticket sem sessão vem na resposta; ErrSemSessao é
 	// tratado em TestMovimentarTicket360Validacao)
 
-	res, ok = a.executarComandoMove("/move Maria Souza para Negociando")
+	res, ok = a.executarComandoMove("/move Maria Souza para Negociando", 0)
 	if !ok {
 		t.Fatal("/move com card deveria ser reconhecido")
 	}
@@ -70,8 +70,72 @@ func TestComandoMoveLocal(t *testing.T) {
 		t.Fatalf("card deveria ter ido para Negociando, está em %q", t2.ColunaAtual)
 	}
 
-	res, ok = a.executarComandoMove("/move Maria Souza para coluna inexistente")
+	res, ok = a.executarComandoMove("/move Maria Souza para coluna inexistente", 0)
 	if !ok || !strings.Contains(res.Resposta, "nenhuma coluna") {
 		t.Fatalf("coluna inexistente deveria listar as colunas, veio %q", res.Resposta)
+	}
+}
+
+// TestComandoComContextoDoChat: "/move cobrança" e "/apagar" sem cliente usam
+// o cliente citado por último nas mensagens da conversa.
+func TestComandoComContextoDoChat(t *testing.T) {
+	a := newTestApp(t)
+	salvo, err := a.SaveTicket(exemploTicket())
+	if err != nil {
+		t.Fatalf("SaveTicket: %v", err)
+	}
+	criarChat := func(titulo string) int64 {
+		t.Helper()
+		id, err := a.chats.Create(a.ctx, titulo)
+		if err != nil {
+			t.Fatalf("Create chat: %v", err)
+		}
+		return id
+	}
+	chat1 := criarChat("contexto 1")
+	if err := a.chats.AddMensagem(a.ctx, chat1, "user", "qual o financeiro da Maria Souza?", ""); err != nil {
+		t.Fatalf("AddMensagem: %v", err)
+	}
+
+	res, ok := a.executarComandoMove("/move cobrança", chat1)
+	if !ok || len(res.Acoes) != 1 || res.Acoes[0].Ferramenta != "mover_card" {
+		t.Fatalf("/move cobrança deveria mover via contexto: ok=%v acoes=%v resp=%q", ok, res.Acoes, res.Resposta)
+	}
+	t2, _ := a.tickets.Get(a.ctx, salvo.ID)
+	if t2.ColunaAtual != "Cobrança" {
+		t.Fatalf("card deveria estar em Cobrança, está em %q", t2.ColunaAtual)
+	}
+
+	// conversa sem nenhum cliente citado: erro claro, nada sai do lugar
+	chat2 := criarChat("contexto 2")
+	if err := a.chats.AddMensagem(a.ctx, chat2, "user", "bom dia", ""); err != nil {
+		t.Fatalf("AddMensagem: %v", err)
+	}
+	res, ok = a.executarComandoApagar("/apagar", chat2)
+	if !ok || !strings.Contains(res.Resposta, "Não identifiquei o cliente") {
+		t.Fatalf("/apagar sem contexto deveria pedir o cliente, veio %q (ok=%v)", res.Resposta, ok)
+	}
+
+	// /apagar com contexto apaga o card do cliente em discussão
+	chat3 := criarChat("contexto 3")
+	if err := a.chats.AddMensagem(a.ctx, chat3, "user", "vamos resolver o Maria Souza", ""); err != nil {
+		t.Fatalf("AddMensagem: %v", err)
+	}
+	res, ok = a.executarComandoApagar("/apagar", chat3)
+	if !ok || len(res.Acoes) != 1 || res.Acoes[0].Ferramenta != "apagar_card" {
+		t.Fatalf("/apagar deveria apagar via contexto: ok=%v acoes=%v resp=%q", ok, res.Acoes, res.Resposta)
+	}
+	if _, err := a.tickets.Get(a.ctx, salvo.ID); err == nil {
+		t.Fatal("card deveria ter sido apagado")
+	}
+
+	// /apagar João em Coluna-errada: confere antes e não apaga
+	tk, _ := a.SaveTicket(exemploTicket())
+	res, ok = a.executarComandoApagar("/apagar Maria Souza em Negociando", chat3)
+	if !ok || !strings.Contains(res.Resposta, "Nada foi apagado") {
+		t.Fatalf("coluna divergente deveria bloquear, veio %q (ok=%v)", res.Resposta, ok)
+	}
+	if _, err := a.tickets.Get(a.ctx, tk.ID); err != nil {
+		t.Fatal("card não deveria ter sido apagado")
 	}
 }

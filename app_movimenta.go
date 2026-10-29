@@ -77,18 +77,48 @@ func (a *App) MovimentarTicket360(entrada, coluna string) (db.Ticket, error) {
 // executarComandoMove reconhece o comando "/move" do chat e executa direto,
 // sem IA: com nº/uuid/URL de ticket roda o mesmo fluxo do Shift+F6 (busca no
 // 360, move o card do cliente ou importa um novo e vincula); com nome/código
-// move um card que já existe. ok=false quando não é o comando (o texto segue
-// para o fluxo normal do agente).
-func (a *App) executarComandoMove(mensagem string) (*service.ChatResultado, bool) {
+// move um card que já existe; "/move cobrança" (só a coluna) move o cliente
+// que está em discussão no chat — a.msg usa as mensagens recentes da conversa
+// para achar o card citado por último. ok=false quando não é o comando (o
+// texto segue para o fluxo normal do agente).
+func (a *App) executarComandoMove(mensagem string, chatID int64) (*service.ChatResultado, bool) {
 	cmd, ok := service.ParseComandoMove(mensagem)
 	if !ok {
 		return nil, false
 	}
 	colunas := a.colunasAtivas()
+	// "/move cobrança" sem cliente: o corpo é a coluna de destino e o cliente
+	// vem do contexto do chat.
+	if cmd.Ticket == "" && cmd.Card != "" && cmd.Coluna == "" {
+		if coluna, err := service.CasarColuna(cmd.Card, colunas); err == nil {
+			cmd.Coluna, cmd.Card = coluna, ""
+		}
+	}
+	if cmd.Ticket == "" && cmd.Card == "" && cmd.Coluna != "" {
+		coluna, err := service.CasarColuna(cmd.Coluna, colunas)
+		if err != nil {
+			return &service.ChatResultado{Resposta: err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+		}
+		card, ok := a.cardDoContextoChat(chatID)
+		if !ok {
+			return &service.ChatResultado{
+				Resposta: fmt.Sprintf("Não identifiquei o cliente em discussão nesta conversa. Diga: /move <cliente> para %s (ou cite o código service antes).", coluna),
+				Acoes:    []service.AcaoDoAgente{},
+			}, true
+		}
+		if err := a.MoveTicket(card.ID, coluna, a.contagemColuna(coluna)); err != nil {
+			return &service.ChatResultado{Resposta: "Falhou ao mover: " + err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+		}
+		return &service.ChatResultado{
+			Resposta: fmt.Sprintf("✅ Card %d (%s) movido para **%s** (cliente do contexto do chat).", card.ID, card.NomeCliente, coluna),
+			Acoes: []service.AcaoDoAgente{{Ferramenta: "mover_card",
+				Resumo: fmt.Sprintf("moveu o card %d (%s) para %s via /move sem cliente", card.ID, card.NomeCliente, coluna)}},
+		}, true
+	}
 	if cmd.Ticket == "" && cmd.Card == "" {
 		return &service.ChatResultado{
 			Resposta: fmt.Sprintf(
-				"Uso: /move <nº do ticket> para <coluna> — ex.: /move 12345 para Cobrança (mesma ação do Shift+F6; aceita nº, uuid ou URL do ticket). Também move um card existente: /move João para Cobrança.\nColunas: %s.",
+				"Uso: /move <nº do ticket> para <coluna> — ex.: /move 12345 para Cobrança (mesma ação do Shift+F6; aceita nº, uuid ou URL do ticket). Também move um card existente: /move João para Cobrança. Sem cliente, move quem está em discussão na conversa: /move cobrança.\nColunas: %s.",
 				strings.Join(colunas, ", ")), Acoes: []service.AcaoDoAgente{},
 		}, true
 	}
