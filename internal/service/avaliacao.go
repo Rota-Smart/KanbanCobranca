@@ -145,27 +145,45 @@ func faturasDoCache(cli *db.Cliente360) []rota360.Fatura360 {
 //   - boleto com vencimento FUTURO em aberto com valor diferente da mensalidade;
 //   - mês atual ou mês anterior com 2 boletos de valores diferentes.
 //
+// Boletos com selo Mensalidade no 360 (categoria "mensalidade" do ERP) são a
+// cobrança recorrente do contrato: mesmo com valor diferente — proporcional,
+// acréscimo, reajuste — são só variação do valor da mensalidade. Saem de
+// TODAS as regras e, quando presentes, definem sozinhos a referência.
+//
 // Um único mês passado (nem atual/anterior, nem em atraso) com dois valores
 // é cobrança pontual e não conta. Tudo pago = renegociação quitada, que
 // também não conta.
 func renegociacaoPorBoletos(faturas []rota360.Fatura360, mensalidadeCents int64, agora time.Time) string {
 	inicioJanela := agora.AddDate(-1, 0, 0)
-	porMes := map[string][]int64{}  // mês AAAA-MM → valores em centavos (em aberto)
-	atrasoPorMes := map[string]int{} // mês → quantos boletos em aberto já venceram
+	porMes := map[string][]int64{}   // mês AAAA-MM → valores em centavos (em aberto, fora mensalidade)
+	atrasoPorMes := map[string]int{} // mês → quantos boletos em aberto já venceram (total, com mensalidade)
+	atrasoMensal := map[string]int{} // mês → desses, quantos são só variação da mensalidade
+	var mensalidadeValores []int64   // valores das parcelas com selo Mensalidade
 	for _, f := range faturas {
 		if f.Vencimento.IsZero() || f.ValorDuplicata <= 0 {
 			continue
 		}
-		mes := f.Vencimento.Format("2006-01")
-		porMes[mes] = append(porMes[mes], int64(math.Round(f.ValorDuplicata*100)))
+		valor := int64(math.Round(f.ValorDuplicata * 100))
+		mensal := rota360.CategoriaEhMensalidade(f.Categoria)
+		if mensal {
+			mensalidadeValores = append(mensalidadeValores, valor)
+		} else {
+			mes := f.Vencimento.Format("2006-01")
+			porMes[mes] = append(porMes[mes], valor)
+		}
 		if f.Vencimento.Before(agora) {
+			mes := f.Vencimento.Format("2006-01")
 			atrasoPorMes[mes]++
+			if mensal {
+				atrasoMensal[mes]++
+			}
 		}
 	}
 
 	// 1) dois boletos em aberto e em atraso no mesmo mês, nos últimos 12 meses
+	// (exceto quando TODOS os do mês são variação da mensalidade).
 	for mes, n := range atrasoPorMes {
-		if n < 2 {
+		if n < 2 || n == atrasoMensal[mes] {
 			continue
 		}
 		if dataMes, err := time.Parse("2006-01", mes); err != nil ||
@@ -176,18 +194,19 @@ func renegociacaoPorBoletos(faturas []rota360.Fatura360, mensalidadeCents int64,
 	}
 
 	// 2) boleto futuro em aberto com valor diferente da mensalidade.
-	// Referência = valor de boleto que se REPETE no histórico (a mensalidade
-	// real): o valorTotal máximo dos produtos do snapshot pode divergir da
-	// mensalidade (acréscimos no cadastro), e um valor único — ex. o
-	// proporcional dos dias de uso na contratação — não pode mascarar a
-	// referência nem ser confundido com renegociação.
+	// Referência: 1º os valores das parcelas com selo Mensalidade (a fonte
+	// mais confiável — o ERP diz o que é a mensalidade); 2º o valor que se
+	// REPETE no histórico; 3º o valorTotal máximo dos produtos do snapshot.
 	referencia := mensalidadeCents
-	if n := contagemMaxima(porMes); n >= 2 {
+	if len(mensalidadeValores) > 0 {
+		referencia = valorQueMaisRepeteValores(mensalidadeValores)
+	} else if n := contagemMaxima(porMes); n >= 2 {
 		referencia = valorQueMaisRepete(porMes)
 	}
 	if referencia > 0 {
 		for _, f := range faturas {
-			if f.Vencimento.After(agora) && int64(math.Round(f.ValorDuplicata*100)) != referencia {
+			if f.Vencimento.After(agora) && !rota360.CategoriaEhMensalidade(f.Categoria) &&
+				int64(math.Round(f.ValorDuplicata*100)) != referencia {
 				return "Boleto futuro em aberto com valor diferente da mensalidade — renegociação em andamento."
 			}
 		}
@@ -236,11 +255,20 @@ func contagemMaxima(porMes map[string][]int64) int {
 // valorQueMaisRepete devolve o valor de boleto mais frequente no histórico
 // (a mensalidade real deduzida dos próprios boletos).
 func valorQueMaisRepete(porMes map[string][]int64) int64 {
+	var valores []int64
+	for _, vs := range porMes {
+		valores = append(valores, vs...)
+	}
+	return valorQueMaisRepeteValores(valores)
+}
+
+// valorQueMaisRepeteValores devolve o valor mais frequente da lista
+// (empate = valor maior). É o mesmo critério de valorQueMaisRepete, mas para
+// uma lista plana — usado para deduzir a mensalidade das parcelas com selo.
+func valorQueMaisRepeteValores(valores []int64) int64 {
 	contagem := map[int64]int{}
-	for _, valores := range porMes {
-		for _, v := range valores {
-			contagem[v]++
-		}
+	for _, v := range valores {
+		contagem[v]++
 	}
 	var melhor int64
 	nMelhor := 0

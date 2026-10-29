@@ -136,7 +136,52 @@ type Fatura360 struct {
 	DiasAtraso     int       `json:"DiasAtraso"`
 	Situacao       string    `json:"Situacao"`
 	BoletoLinha    string    `json:"BoletoLinhaDigitavel"`
+	// Categoria é a classificação que o ERP do 360 dá à cobrança — é o que
+	// vira selo na tela de financeiro do portal ("Mensalidade", "Boleto
+	// agrupado", "Avulso", "Gerado por OS"...). Vazia = o ERP não classificou.
+	Categoria string `json:"categoria"`
 }
+
+// CategoriaEhMensalidade diz se a categoria do ERP indica a cobrança
+// recorrente do contrato — o mesmo selo "Mensalidade" da tela de financeiro.
+// Parcela com esse selo, mesmo com valor diferente (proporcional, acréscimo,
+// reajuste), é só variação do valor da mensalidade: nunca parcela de
+// renegociação. Os apelidos espelham o dicionário do próprio portal.
+func CategoriaEhMensalidade(categoria string) bool {
+	s := slugCategoria(categoria)
+	switch s {
+	case "mensalidade", "mensal", "recorrente":
+		return true
+	}
+	return strings.Contains(s, "mensal") // ex. "boleto_mensal", "mes_mensalidade" ("bimestral" não casa)
+}
+
+// slugCategoria normaliza a categoria como o portal faz: minúsculas, sem
+// acento, separadores viram "_".
+func slugCategoria(s string) string {
+	s = semAcento.Replace(strings.ToLower(s))
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	return strings.Trim(b.String(), "_")
+}
+
+// semAcento troca as letras acentuadas latinas mais comuns pela base.
+var semAcento = strings.NewReplacer(
+	"á", "a", "à", "a", "â", "a", "ã", "a", "ä", "a", "å", "a",
+	"é", "e", "è", "e", "ê", "e", "ë", "e",
+	"í", "i", "ì", "i", "î", "i", "ï", "i",
+	"ó", "o", "ò", "o", "ô", "o", "õ", "o", "ö", "o",
+	"ú", "u", "ù", "u", "û", "u", "ü", "u",
+	"ç", "c", "ñ", "n",
+)
 
 // Financeiro360 resume o bloco financeiro do dashboard.
 type Financeiro360 struct {

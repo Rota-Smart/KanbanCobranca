@@ -191,6 +191,59 @@ func TestRenegociacaoPorBoletos(t *testing.T) {
 			mensalidade: 9900,
 			contem:      "futuro",
 		},
+		{
+			// Selo Mensalidade: mesmo variando o preço, é variação da
+			// mensalidade — não marca renegociação (nem pela regra do futuro,
+			// nem pela dos dois valores no mês).
+			nome: "parcela com selo Mensalidade e valor diferente não é renegociação",
+			faturas: []rota360.Fatura360{
+				{Vencimento: d(time.September, 5), ValorDuplicata: 99, Categoria: "Mensalidade"},
+				{Vencimento: d(time.November, 10), ValorDuplicata: 137.4, Categoria: "Mensalidade"}, // futuro variado
+			},
+			mensalidade: 9900,
+			contem:      "",
+		},
+		{
+			// O selo Mensalidade vira a referência: mensalidade real 89,8
+			// (selo), renegociação futura de agrupado com valor diferente marca.
+			nome: "referência vem do selo Mensalidade e agrupado diferente marca",
+			faturas: []rota360.Fatura360{
+				{Vencimento: d(time.August, 5), ValorDuplicata: 89.8, Categoria: "Mensalidade"},
+				{Vencimento: d(time.September, 5), ValorDuplicata: 89.8, Categoria: "mensalidade"},
+				{Vencimento: d(time.November, 10), ValorDuplicata: 135, Categoria: "Boleto Agrupado"},
+			},
+			mensalidade: 12000, // produto divergente; selo manda
+			contem:      "futuro",
+		},
+		{
+			// Duas mensalidades em atraso no mesmo mês = variação da mensalidade
+			// atrasada, não renegociação. Com o agrupado junto, marca.
+			nome: "duas mensalidades em atraso no mesmo mês não marcam; agrupado marca",
+			faturas: []rota360.Fatura360{
+				{Vencimento: d(time.August, 5), ValorDuplicata: 99, Categoria: "Mensalidade"},
+				{Vencimento: d(time.August, 20), ValorDuplicata: 137.4, Categoria: "Mensalidade"},
+			},
+			contem: "",
+		},
+		{
+			nome: "mensalidade em atraso + agrupado em atraso no mesmo mês marcam",
+			faturas: []rota360.Fatura360{
+				{Vencimento: d(time.August, 5), ValorDuplicata: 99, Categoria: "Mensalidade"},
+				{Vencimento: d(time.August, 20), ValorDuplicata: 135, Categoria: "Boleto agrupado"},
+			},
+			contem: "atraso",
+		},
+		{
+			// Categoria fora do dicionário conhecido (ex. avulso) NÃO é
+			// mensalidade: comporta-se como hoje (futuro diferente da
+			// referência marca).
+			nome: "categoria avulso não é mensalidade e futuro diferente marca",
+			faturas: []rota360.Fatura360{
+				{Vencimento: d(time.September, 5), ValorDuplicata: 99, Categoria: "Mensalidade"},
+				{Vencimento: d(time.November, 10), ValorDuplicata: 57.6, Categoria: "avulso"},
+			},
+			contem: "futuro",
+		},
 	}
 	for _, c := range casos {
 		got := renegociacaoPorBoletos(c.faturas, c.mensalidade, agora)
