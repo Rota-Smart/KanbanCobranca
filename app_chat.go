@@ -161,12 +161,15 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 
 	// Comandos rígidos executados localmente, sem chamar a API — funcionam
 	// até sem chave de IA configurada. "/vincular" (varredura de vínculos)
-	// vem primeiro; "/move" (ticket do 360 ou card) depois; "apague o card
-	// do João" / "mova o card 123 para Cobrança" por último. Frases fora do
-	// molde caem no fluxo normal do agente.
+	// vem primeiro; "/move" (ticket do 360 ou card) e "/apagar" depois;
+	// "apague o card do João" / "mova o card 123 para Cobrança" por último.
+	// Frases fora do molde caem no fluxo normal do agente.
 	local, reconhecido := a.executarComandoVincular(mensagem)
 	if !reconhecido {
-		local, reconhecido = a.executarComandoMove(mensagem)
+		local, reconhecido = a.executarComandoMove(mensagem, chatID)
+	}
+	if !reconhecido {
+		local, reconhecido = a.executarComandoApagar(mensagem, chatID)
 	}
 	if !reconhecido {
 		local, reconhecido = a.executarIntencaoLocal(mensagem)
@@ -1615,6 +1618,95 @@ func (a *App) executarComandoVincular(mensagem string) (*service.ChatResultado, 
 	}, true
 }
 
+// cardDoContextoChat acha o cliente "em discussão" na conversa: varre as
+// mensagens persistidas do chat (mais recentes primeiro) procurando um código
+// service/id citado ou um nome que case com UM card do board. É o que permite
+// "/move cobrança" e "/apagar" sem dizer o cliente.
+func (a *App) cardDoContextoChat(chatID int64) (service.CardResumo, bool) {
+	if a.chats == nil || a.tickets == nil {
+		return service.CardResumo{}, false
+	}
+	ms, err := a.chats.Mensagens(a.ctx, chatID)
+	if err != nil || len(ms) == 0 {
+		return service.CardResumo{}, false
+	}
+	ts, err := a.tickets.List(a.ctx)
+	if err != nil {
+		return service.CardResumo{}, false
+	}
+	cards := make([]service.CardResumo, 0, len(ts))
+	for _, t := range ts {
+		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
+	}
+	for i := len(ms) - 1; i >= 0; i-- {
+		if card, ok := service.ResolverCardNoTexto(ms[i].Conteudo, cards); ok {
+			return card, true
+		}
+	}
+	return service.CardResumo{}, false
+}
+
+// executarComandoApagar roda o "/apagar" do chat (sem IA): com cliente no
+// comando apaga o card dele; sem cliente, apaga o card do cliente em
+// discussão no chat. O qualificador opcional "em X" serve de conferência —
+// se o card não estiver na coluna dita, nada é apagado. ok=false quando não
+// é o comando.
+func (a *App) executarComandoApagar(mensagem string, chatID int64) (*service.ChatResultado, bool) {
+	cmd, ok := service.ParseComandoApagar(mensagem)
+	if !ok {
+		return nil, false
+	}
+	alvo := cmd.Card
+	if alvo == "" {
+		card, ok := a.cardDoContextoChat(chatID)
+		if !ok {
+			return &service.ChatResultado{
+				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga: /apagar <cliente> (ou cite o código service antes).",
+				Acoes:    []service.AcaoDoAgente{},
+			}, true
+		}
+		alvo = card.NomeCliente
+	}
+	ts, err := a.tickets.List(a.ctx)
+	if err != nil {
+		return &service.ChatResultado{Resposta: "Não consegui listar os cards: " + err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	cards := make([]service.CardResumo, 0, len(ts))
+	for _, t := range ts {
+		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
+	}
+	card, err := service.ResolverCard(alvo, cards)
+	if err != nil {
+		return &service.ChatResultado{Resposta: err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	return a.apagarCardResolvido(card, cmd.Coluna), true
+}
+
+// apagarCardResolvido apaga o card já identificado, conferindo antes a coluna
+// dita ("em X") quando houver — evita apagar card homônimo de outra coluna.
+func (a *App) apagarCardResolvido(card service.CardResumo, colunaDita string) *service.ChatResultado {
+	if colunaDita != "" {
+		colunas, err := a.colunas.List(a.ctx)
+		if err != nil {
+			return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error(), Acoes: []service.AcaoDoAgente{}}
+		}
+		if coluna, err := service.CasarColuna(colunaDita, colunas); err == nil && coluna != card.ColunaAtual {
+			return &service.ChatResultado{
+				Resposta: fmt.Sprintf("O card %d (%s) está em %q, não em %q. Nada foi apagado — confira e repita se for esse mesmo.",
+					card.ID, card.NomeCliente, card.ColunaAtual, coluna),
+				Acoes: []service.AcaoDoAgente{},
+			}
+		}
+	}
+	if err := a.DeleteTicket(card.ID); err != nil {
+		return &service.ChatResultado{Resposta: "Falhou ao apagar: " + err.Error(), Acoes: []service.AcaoDoAgente{}}
+	}
+	return &service.ChatResultado{
+		Resposta: fmt.Sprintf("Card %d (%s) apagado, junto com os acordos dele (estava em %q).", card.ID, card.NomeCliente, card.ColunaAtual),
+		Acoes:    []service.AcaoDoAgente{{Ferramenta: "apagar_card", Resumo: fmt.Sprintf("apagou o card %d (%s, em %s) via comando local", card.ID, card.NomeCliente, card.ColunaAtual)}},
+	}
+}
+
 // executarIntencaoLocal reconhece comandos rígidos de card no texto e os
 // executa direto (reconhecimento local de intenção, sem API). ok=false
 // devolve a mensagem ao fluxo normal do agente.
@@ -1640,25 +1732,7 @@ func (a *App) executarIntencaoLocal(mensagem string) (*service.ChatResultado, bo
 		// "apague o card do João que está em Cobrança": confere a coluna
 		// dita antes de destruir — evita apagar card homônimo de outra
 		// coluna e responde onde o card realmente está.
-		if in.Coluna != "" {
-			colunas, err := a.colunas.List(a.ctx)
-			if err != nil {
-				return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error()}, true
-			}
-			if colunaDita, err := service.CasarColuna(in.Coluna, colunas); err == nil && colunaDita != card.ColunaAtual {
-				return &service.ChatResultado{
-					Resposta: fmt.Sprintf("O card %d (%s) está em %q, não em %q. Nada foi apagado — confira e repita se for esse mesmo.",
-						card.ID, card.NomeCliente, card.ColunaAtual, colunaDita),
-				}, true
-			}
-		}
-		if err := a.DeleteTicket(card.ID); err != nil {
-			return &service.ChatResultado{Resposta: "Falhou ao apagar: " + err.Error()}, true
-		}
-		return &service.ChatResultado{
-			Resposta: fmt.Sprintf("Card %d (%s) apagado, junto com os acordos dele (estava em %q).", card.ID, card.NomeCliente, card.ColunaAtual),
-			Acoes:    []service.AcaoDoAgente{{Ferramenta: "apagar_card", Resumo: fmt.Sprintf("apagou o card %d (%s, em %s) via comando local", card.ID, card.NomeCliente, card.ColunaAtual)}},
-		}, true
+		return a.apagarCardResolvido(card, in.Coluna), true
 	default:
 		colunas, err := a.colunas.List(a.ctx)
 		if err != nil {

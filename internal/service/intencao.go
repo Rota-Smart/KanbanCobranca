@@ -132,6 +132,120 @@ func NormalizarTexto(s string) string {
 	return normalizar(s)
 }
 
+// ---- Comando /apagar do chat ----
+
+// ComandoApagar é o "/apagar ..." reconhecido no texto do chat: Card é o nome
+// (pedaço) ou código do card — vazio quando o comando veio sem alvo (aí quem
+// resolve é o contexto do chat); Coluna é o qualificador opcional "em X" que
+// serve só para conferir onde o card está antes de destruir.
+type ComandoApagar struct {
+	Card   string
+	Coluna string
+}
+
+var comandosApagar = []string{
+	"/apagar", "/apague", "/apaga", "/excluir", "/exclua", "/exclui",
+	"/delete", "/deletar", "/deleta", "/remover", "/remova", "/remove",
+}
+
+// reConectorLocal acha o "em/na/no" (com artigo/coluna opcional) que separa o
+// alvo do qualificador de coluna; o último vence.
+var reConectorLocal = regexp.MustCompile(`(?i)\s+(?:em|na|no)\s+(?:a\s+coluna\s+|coluna\s+|o\s+|a\s+)?`)
+
+// ParseComandoApagar reconhece o comando /apagar (e variantes) no texto:
+// "/apagar João", "/apagar #12345 em Cobrança" ou "/apagar" sozinho — sem
+// alvo, o cliente é quem está em discussão no chat. ok=false quando o texto
+// não começa com o comando (cai no fluxo normal do chat).
+func ParseComandoApagar(msg string) (ComandoApagar, bool) {
+	campos := strings.Fields(strings.TrimSpace(msg))
+	if len(campos) == 0 {
+		return ComandoApagar{}, false
+	}
+	palavra := strings.ToLower(strings.Trim(campos[0], ".,!?;:"))
+	ehComando := false
+	for _, c := range comandosApagar {
+		if palavra == c {
+			ehComando = true
+			break
+		}
+	}
+	if !ehComando {
+		return ComandoApagar{}, false
+	}
+	corpo := limparBordas(strings.TrimSpace(msg[len(campos[0]):]))
+	if locs := reConectorLocal.FindAllStringIndex(corpo, -1); len(locs) > 0 {
+		loc := locs[len(locs)-1]
+		return ComandoApagar{
+			Card:   limparBordas(corpo[:loc[0]]),
+			Coluna: limparBordas(corpo[loc[1]:]),
+		}, true
+	}
+	return ComandoApagar{Card: corpo}, true
+}
+
+// ---- Cliente citado num texto livre (contexto do chat) ----
+
+// reNumeroCard acha códigos service/ids citados no texto: "#1" curto com
+// cerilha, ou número de 3+ dígitos solto ("24755") — soltos curtos demais
+// ("3 dias") casariam id de card por coincidência.
+var reNumeroCard = regexp.MustCompile(`#(\d{1,10})\b|(?:^|[\s(])(\d{3,10})\b`)
+
+// ResolverCardNoTexto acha, num texto livre (uma mensagem do chat), UM card
+// citado — é assim que "/move cobrança" descobre o cliente em discussão.
+// Primeiro por código service/id citado no texto; depois por nome completo;
+// por fim por um pedaço do nome (≥4 letras, palavra inteira) que case com um
+// único card. ok=false quando nada casa ou o casamento é ambíguo — agir no
+// card errado é pior que pedir de novo.
+func ResolverCardNoTexto(texto string, cards []CardResumo) (CardResumo, bool) {
+	for _, m := range reNumeroCard.FindAllStringSubmatch(texto, -1) {
+		n := m[1]
+		if n == "" {
+			n = m[2]
+		}
+		for _, c := range cards {
+			if c.CodService == n || strconv.FormatInt(c.ID, 10) == n {
+				return c, true
+			}
+		}
+	}
+	textoN := " " + normalizar(texto) + " "
+	var porNome, porPedaço []CardResumo
+	for _, c := range cards {
+		nome := normalizar(c.NomeCliente)
+		if nome != "" && strings.Contains(textoN, " "+nome) {
+			porNome = append(porNome, c)
+			continue
+		}
+		for _, tk := range strings.Fields(nome) {
+			if len(tk) < 4 || pedaçoComum(tk) {
+				continue
+			}
+			if strings.Contains(textoN, " "+tk+" ") {
+				porPedaço = append(porPedaço, c)
+				break
+			}
+		}
+	}
+	if len(porNome) == 1 {
+		return porNome[0], true
+	}
+	if len(porPedaço) == 1 {
+		return porPedaço[0], true
+	}
+	return CardResumo{}, false
+}
+
+// pedaçoComum filtra tokens que aparecem em qualquer nome/razão social e não
+// identificam ninguém sozinhos.
+func pedaçoComum(tk string) bool {
+	switch tk {
+	case "ltda", "me", "eireli", "comercio", "empresa", "servicos", "sistema",
+		"sistemas", "silva", "santos":
+		return true
+	}
+	return false
+}
+
 // ---- Comando /move do chat ----
 
 // ComandoMove é o "/move ..." reconhecido no texto do chat: com Ticket preen-
