@@ -170,3 +170,18 @@ Os dados agora podem ficar iguais em vários PCs via GitHub:
 
 Se os dois PCs mudarem ao mesmo tempo, o app pergunta qual lado vence.
 Repositório: github.com/luisboneta/banco-de-dados (privado).
+
+22. AÇÕES EM MASSA (v1.21.0): selecione vários cards de uma vez (menu ⋯ do
+   card > "Selecionar", ou o checkbox que aparece assim que a seleção começa)
+   e use a barra no pé da tela para mover todos para uma coluna, adicionar a
+   mesma observação em todos (acrescenta à que já existe) ou excluir todos
+   (com confirmação — apaga também os acordos).
+
+23. ASSISTENTE MAIS RÁPIDO E MAIS BARATO (v1.22.0): quando você pede dados do
+   360 no chat (financeiro, OS, equipamentos, ticket), o app agora PESQUISA
+   SOZINHO no 360 antes de chamar a IA — uma única consulta, com os dados
+   oficiais já prontos — e a IA só redige a resposta. Pede menos, responde
+   ~3x mais rápido e gasta uma fração dos tokens do plano gratuito. Se a
+   sessão do 360 estiver expirada, o aviso aparece na hora (a IA nem é
+   acionada). Com o uso, o app aprende o que você costuma pedir junto
+   (ex.: OS + financeiro) e já traz tudo de uma vez nas próximas vezes.
