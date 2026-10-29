@@ -142,7 +142,10 @@ func faturasDoCache(cli *db.Cliente360) []rota360.Fatura360 {
 // renegociacaoPorBoletos aplica as regras de renegociação em andamento sobre
 // as faturas em aberto e devolve o motivo ("" = não é renegociação):
 //   - algum mês nos últimos 12 meses com 2 boletos EM ATRASO no mesmo mês;
-//   - boleto com vencimento FUTURO em aberto com valor diferente da mensalidade;
+//   - boleto com vencimento FUTURO em aberto com valor diferente da
+//     mensalidade — só quando há evidência de parcelamento (≥2 boletos
+//     futuros em aberto ou o valor divergente se repetindo); um único
+//     futuro divergente é variação da mensalidade;
 //   - mês atual ou mês anterior com 2 boletos de valores diferentes.
 //
 // Boletos com selo Mensalidade no 360 (categoria "mensalidade" do ERP) são a
@@ -193,7 +196,14 @@ func renegociacaoPorBoletos(faturas []rota360.Fatura360, mensalidadeCents int64,
 		return "Dois boletos em aberto e em atraso no mesmo mês — renegociação em andamento."
 	}
 
-	// 2) boleto futuro em aberto com valor diferente da mensalidade.
+	// 2) boleto futuro em aberto com valor diferente da mensalidade — MAS
+	// só quando há evidência de parcelamento em curso: um ÚNICO boleto
+	// futuro divergente é variação da mensalidade (desconto, proporcional,
+	// reajuste — caso real do 14535: série de 144 atrasada e o futuro de
+	// novembro em 129). O dashboard360 não devolve a categoria do ERP
+	// (sempre vazia — conferido ao vivo), então o padrão é o único sinal.
+	// Evidência: ≥2 boletos futuros em aberto (parcela de acordo) ou o
+	// valor divergente se repetindo entre os boletos em aberto.
 	// Referência: 1º os valores das parcelas com selo Mensalidade (a fonte
 	// mais confiável — o ERP diz o que é a mensalidade); 2º o valor que se
 	// REPETE no histórico; 3º o valorTotal máximo dos produtos do snapshot.
@@ -204,11 +214,30 @@ func renegociacaoPorBoletos(faturas []rota360.Fatura360, mensalidadeCents int64,
 		referencia = valorQueMaisRepete(porMes)
 	}
 	if referencia > 0 {
+		futuros := 0
+		divergente := int64(0)
 		for _, f := range faturas {
-			if f.Vencimento.After(agora) && !rota360.CategoriaEhMensalidade(f.Categoria) &&
-				int64(math.Round(f.ValorDuplicata*100)) != referencia {
-				return "Boleto futuro em aberto com valor diferente da mensalidade — renegociação em andamento."
+			if !f.Vencimento.After(agora) || rota360.CategoriaEhMensalidade(f.Categoria) {
+				continue
 			}
+			valor := int64(math.Round(f.ValorDuplicata * 100))
+			futuros++
+			if valor != referencia {
+				divergente = valor
+			}
+		}
+		repetidos := 0
+		if divergente > 0 {
+			for _, valores := range porMes {
+				for _, v := range valores {
+					if v == divergente {
+						repetidos++
+					}
+				}
+			}
+		}
+		if divergente > 0 && (futuros >= 2 || repetidos >= 2) {
+			return "Boleto futuro em aberto com valor diferente da mensalidade — renegociação em andamento."
 		}
 	}
 

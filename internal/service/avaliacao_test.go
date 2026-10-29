@@ -134,10 +134,15 @@ func TestRenegociacaoPorBoletos(t *testing.T) {
 			contem: "atraso",
 		},
 		{
-			nome:        "boleto futuro com valor diferente da mensalidade",
-			faturas:     []rota360.Fatura360{{Vencimento: d(time.November, 10), ValorDuplicata: 57.6}},
+			// Caso real do 14535: um ÚNICO boleto futuro divergente é
+			// variação da mensalidade (desconto/proporcional) — o
+			// dashboard360 não manda categoria, então o padrão decide.
+			nome: "único boleto futuro divergente é variação da mensalidade",
+			faturas: []rota360.Fatura360{
+				{Vencimento: d(time.November, 10), ValorDuplicata: 57.6},
+			},
 			mensalidade: 10000,
-			contem:      "futuro",
+			contem:      "",
 		},
 		{
 			nome: "mês atual e anterior com dois valores",
@@ -182,14 +187,28 @@ func TestRenegociacaoPorBoletos(t *testing.T) {
 			contem:      "",
 		},
 		{
-			// Continua marcando quando o boleto futuro difere dos recorrentes.
-			nome: "futuro diferente do valor recorrente marca mesmo sem mensalidade",
+			// Parcelamento em curso (caso real do 24044): vários boletos
+			// futuros e um divergente da referência — marca.
+			nome: "futuros divergentes com parcelamento marcam mesmo sem mensalidade",
+			faturas: []rota360.Fatura360{
+				{Vencimento: d(time.August, 5), ValorDuplicata: 99},
+				{Vencimento: d(time.September, 5), ValorDuplicata: 99},
+				{Vencimento: d(time.November, 10), ValorDuplicata: 49.5},
+				{Vencimento: d(time.December, 10), ValorDuplicata: 49.5},
+			},
+			mensalidade: 9900,
+			contem:      "futuro",
+		},
+		{
+			// Um único futuro divergente sem parcelamento atrás é variação
+			// da mensalidade, não renegociação.
+			nome: "futuro único diferente do valor recorrente não marca",
 			faturas: []rota360.Fatura360{
 				{Vencimento: d(time.September, 5), ValorDuplicata: 99},
 				{Vencimento: d(time.November, 10), ValorDuplicata: 49.5},
 			},
 			mensalidade: 9900,
-			contem:      "futuro",
+			contem:      "",
 		},
 		{
 			// Selo Mensalidade: mesmo variando o preço, é variação da
@@ -205,12 +224,14 @@ func TestRenegociacaoPorBoletos(t *testing.T) {
 		},
 		{
 			// O selo Mensalidade vira a referência: mensalidade real 89,8
-			// (selo), renegociação futura de agrupado com valor diferente marca.
-			nome: "referência vem do selo Mensalidade e agrupado diferente marca",
+			// (selo); renegociação futura de agrupado com parcelamento
+			// (≥2 boletos futuros) e valor diferente marca.
+			nome: "referência vem do selo Mensalidade e agrupados divergentes marcam",
 			faturas: []rota360.Fatura360{
 				{Vencimento: d(time.August, 5), ValorDuplicata: 89.8, Categoria: "Mensalidade"},
 				{Vencimento: d(time.September, 5), ValorDuplicata: 89.8, Categoria: "mensalidade"},
 				{Vencimento: d(time.November, 10), ValorDuplicata: 135, Categoria: "Boleto Agrupado"},
+				{Vencimento: d(time.December, 10), ValorDuplicata: 135, Categoria: "Boleto Agrupado"},
 			},
 			mensalidade: 12000, // produto divergente; selo manda
 			contem:      "futuro",
@@ -235,12 +256,12 @@ func TestRenegociacaoPorBoletos(t *testing.T) {
 		},
 		{
 			// Categoria fora do dicionário conhecido (ex. avulso) NÃO é
-			// mensalidade: comporta-se como hoje (futuro diferente da
-			// referência marca).
-			nome: "categoria avulso não é mensalidade e futuro diferente marca",
+			// mensalidade: com parcelamento em curso (≥2 futuros), marca.
+			nome: "categoria avulso não é mensalidade e futuros diferentes marcam",
 			faturas: []rota360.Fatura360{
 				{Vencimento: d(time.September, 5), ValorDuplicata: 99, Categoria: "Mensalidade"},
 				{Vencimento: d(time.November, 10), ValorDuplicata: 57.6, Categoria: "avulso"},
+				{Vencimento: d(time.December, 10), ValorDuplicata: 57.6, Categoria: "avulso"},
 			},
 			contem: "futuro",
 		},

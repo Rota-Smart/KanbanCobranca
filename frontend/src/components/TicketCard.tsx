@@ -1,6 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as bindings from '../../wailsjs/go/main/App';
 import type { Comissao, Ticket } from '../wails-types';
@@ -111,6 +111,17 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
     setMenu((m) => (m ? null : { right: window.innerWidth - r.right, top: r.bottom + 4 }));
   }
 
+  const menuBox = useRef<HTMLDivElement | null>(null);
+  // Menu perto do rodapé abriria cortado pela janela: depois de medir,
+  // sobe o suficiente para caber inteiro.
+  useEffect(() => {
+    const el = menuBox.current;
+    if (menu && el) {
+      const t = Math.min(menu.top, window.innerHeight - el.offsetHeight - 8);
+      if (t > 8 && t !== menu.top) setMenu({ ...menu, top: t });
+    }
+  }, [menu]);
+
   // Impede que o pointerdown no botão ative o drag do card (dnd-kit), o que
   // engolia o clique e nunca deixava o menu abrir.
   function pararDrag(e: React.PointerEvent) {
@@ -163,6 +174,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
         }}
       />
       <div
+        ref={menuBox}
         className="fixed z-[100] rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-600/60 shadow-xl overflow-y-auto max-h-[60vh] min-w-[13rem]"
         style={{ right: menu.right, top: menu.top }}
         onPointerDown={(e) => e.stopPropagation()}

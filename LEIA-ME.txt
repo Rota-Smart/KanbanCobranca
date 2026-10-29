@@ -192,3 +192,9 @@ Repositório: github.com/luisboneta/banco-de-dados (privado).
    ativa), sem erro de "nenhum cliente". E o "mover" não falha mais com
    "ticket não existe": a IA usa o id do card e, se citar o número do ticket
    do 360, o app resolve sozinho.
+
+25. TICKET FECHADO NO TOPO (v1.27.0): ao arrastar um card para a coluna
+   Ticket Fechado, ele entra sempre NO TOPO da coluna (independente de onde
+   você soltar), e o histórico recarrega na hora — o card mais antigo da
+   lista visível sai e continua acessível pelo botão "🗂 Histórico de
+   fechados" no rodapé da coluna.

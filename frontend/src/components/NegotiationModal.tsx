@@ -132,6 +132,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
   const [valorAtual, setValorAtual] = useState<number | null>(null);
   const [consultando, setConsultando] = useState(false);
   const [valorAtualErro, setValorAtualErro] = useState('');
+  const [mostraPcts, setMostraPcts] = useState(false);
   const [cortesiaQtd, setCortesiaQtd] = useState(1);
   const [cortesiaMeses, setCortesiaMeses] = useState(3);
   const [obsDraft, setObsDraft] = useState(ticket.observacoes ?? '');
@@ -615,6 +616,53 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
               onBlur={() => blurMoeda(setTotal)(total)}
               erro={erros.total}
             />
+            <div className="flex flex-col gap-1">
+              <button
+                className="self-start px-2.5 py-1 rounded-lg text-xs font-medium border border-slate-300/50 text-slate-600 hover:bg-slate-500/10 dark:text-slate-300"
+                title="Calcula 20% e 40% do total em aberto (Política v7); clique num valor para preencher a Entrada"
+                onClick={() => setMostraPcts((v) => !v)}
+              >
+                🧮 {mostraPcts ? 'Esconder' : 'Calcular'} 20% / 40% da dívida
+              </button>
+              {mostraPcts && (() => {
+                const t = parseCents(total) ?? 0;
+                if (t <= 0) {
+                  return (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 px-1">
+                      Informe o valor total em aberto para calcular.
+                    </p>
+                  );
+                }
+                const pct = (p: number) => Math.round((t * p) / 100);
+                const mult50 = (cents: number) => Math.ceil(cents / 5000) * 5000;
+                const item = (rotulo: string, exato: number, pratico: number) => (
+                  <div key={rotulo} className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 w-10">{rotulo}</span>
+                    <button
+                      className="px-2 py-0.5 rounded-lg text-xs border border-slate-300/50 text-slate-700 hover:bg-sky-500/10 dark:text-slate-200"
+                      title="Clique para preencher a Entrada com este valor"
+                      onClick={() => { setEntrada(formatCents(exato)); setSuja(true); }}
+                    >
+                      exato: {formatCents(exato)}
+                    </button>
+                    <button
+                      className="px-2 py-0.5 rounded-lg text-xs border border-slate-300/50 text-slate-700 hover:bg-sky-500/10 dark:text-slate-200"
+                      title="Múltiplo de R$ 50 pra cima (padrão das entradas) — clique para preencher a Entrada"
+                      onClick={() => { setEntrada(formatCents(pratico)); setSuja(true); }}
+                    >
+                      múltiplo de 50: {formatCents(pratico)}
+                    </button>
+                  </div>
+                );
+                return (
+                  <div className="flex flex-col gap-1 bg-white/50 dark:bg-white/5 rounded-lg px-2.5 py-2">
+                    {item('20%', pct(20), mult50(pct(20)))}
+                    {item('40%', pct(40), mult50(pct(40)))}
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500">Clique num valor para preencher a Entrada.</span>
+                  </div>
+                );
+              })()}
+            </div>
             <CampoMoeda
               label="Entrada"
               value={entrada}
@@ -666,16 +714,8 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
                 <span className="text-right">{formatCents(calc.parceladoCents)}</span>
                 <span className="text-slate-500">Parcela base</span>
                 <span className="text-right">{formatCents(parseCents(base) ?? 0)}</span>
-                <span className="text-slate-500">Parcela mensal da renegociação</span>
-                <span className="text-right font-medium">{formatCents(calc.finalCents)}</span>
                 <span className="text-slate-500">Parcela base + renegociação</span>
-                <span className="text-right font-semibold">{formatCents((parseCents(base) ?? 0) + calc.finalCents)}</span>
-                {calc.ultimaParcelaCents !== calc.parceladoCents && (
-                  <>
-                    <span className="text-slate-500">Última parcela</span>
-                    <span className="text-right">{formatCents(calc.ultimaFinalCents)}</span>
-                  </>
-                )}
+                <span className="text-right font-semibold">{formatCents(calc.finalCents)}</span>
               </div>
             )}
             {calcErro && <p className="text-xs text-red-600">{calcErro}</p>}

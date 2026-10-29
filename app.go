@@ -73,6 +73,13 @@ func (a *App) WireIntegracao(config *db.ConfigRepo, parametros *db.ParametroRepo
 	a.clientes = clientes
 	a.groq = groq
 	a.avaliador = avaliador
+	// Prompt de polimento da proposta: o que o usuário salvou (config
+	// prompt_polir, editável pelo assistente) sobrepõe o padrão.
+	if groq != nil {
+		groq.PromptPolirInjetavel = func() string {
+			return a.configGet(context.Background(), "prompt_polir")
+		}
+	}
 }
 
 // configGet lê uma chave da tabela config; vazia se não houver wiring.
@@ -417,6 +424,32 @@ func (a *App) GenerateProposal(ticketID int64, in service.ReparcelamentoInput, p
 // HasAI diz ao frontend se o botão "Polir com IA" deve aparecer.
 func (a *App) HasAI() bool {
 	return a.groq != nil && a.groq.TemChave()
+}
+
+// PromptPolirAtual devolve o prompt de polimento da proposta: o salvo pelo
+// usuário ou o padrão. Para as Configurações e para o assistente (ler).
+func (a *App) PromptPolirAtual() string {
+	if v := strings.TrimSpace(a.configGet(a.ctx, "prompt_polir")); v != "" {
+		return v
+	}
+	return service.PromptPolirPadrao()
+}
+
+// SalvarPromptPolir grava o prompt de polimento da proposta (config
+// prompt_polir). Texto vazio restaura o padrão.
+func (a *App) SalvarPromptPolir(texto string) error {
+	if a.config == nil {
+		return fmt.Errorf("configuração indisponível")
+	}
+	texto = strings.TrimSpace(texto)
+	if texto == "" || texto == service.PromptPolirPadrao() {
+		// padrão = apaga o override (mantém um único lugar com a verdade)
+		return a.config.Set(a.ctx, "prompt_polir", "")
+	}
+	if len(texto) > 8000 {
+		return fmt.Errorf("prompt muito longo (máx. 8000 caracteres)")
+	}
+	return a.config.Set(a.ctx, "prompt_polir", texto)
 }
 
 // ExportBackup abre o diálogo de salvar e grava uma cópia consistente

@@ -757,6 +757,29 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		return fmt.Sprintf("Padrão %q salvo: %s", nome, conteudo),
 			fmt.Sprintf("salvou o padrão %q", nome), nil
 
+	case "editar_prompt_proposta":
+		acao := strings.ToLower(strings.TrimSpace(argStr("acao")))
+		if acao == "ler" || acao == "" {
+			atual := a.PromptPolirAtual()
+			resumo := atual
+			if len(resumo) > 400 {
+				resumo = resumo[:400] + "…"
+			}
+			return resumo, "leu o prompt da proposta", nil
+		}
+		if acao != "salvar" && acao != "salvo" {
+			return "", "", fmt.Errorf("acao inválida: %q (use ler ou salvar)", acao)
+		}
+		texto := strings.TrimSpace(argStr("texto"))
+		if texto == "" {
+			return "", "", fmt.Errorf("informe o texto completo do novo prompt em 'texto'")
+		}
+		if err := a.SalvarPromptPolir(texto); err != nil {
+			return "", "", err
+		}
+		return fmt.Sprintf("Prompt da proposta salvo (%d caracteres). Vale já para as próximas propostas.", len(texto)),
+			"salvou o prompt da proposta", nil
+
 	case "listar_padroes":
 		ps, err := a.padroes.List(ctx)
 		if err != nil {

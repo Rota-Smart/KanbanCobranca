@@ -42,7 +42,7 @@ Referente ao total em aberto, contando com o mês de {{.Mes}} (R$ {{brl .TotalAb
 Com isso o acordo fica quitado e a mensalidade volta ao normal de R$ {{brl .ParcelaBase}}.{{else}}{{if .TemEntrada}}• Entrada: R$ {{brl .Entrada}}
 {{end}}• Parcelamento: *{{.Vezes}}*x de R$ {{brl .Parcelado}}
 
-Nesses meses, a parcela ficará em R$ {{brl .Final}} (parcela + renegociação), retornando aos R$ {{brl .ParcelaBase}} normais depois.{{if .TemResto}} A última parcela do acordo fica em R$ {{brl .UltimaFinal}}.{{end}}{{end}}
+Nesses meses, a parcela ficará em R$ {{brl .Final}} (parcela + renegociação), retornando aos R$ {{brl .ParcelaBase}} normais depois.{{end}}
 
 Posso formalizar para você?
 `))

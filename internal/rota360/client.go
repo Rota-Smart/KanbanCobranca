@@ -269,6 +269,10 @@ type Dashboard360 struct {
 }
 
 // FinanceiroCliente busca o dashboard completo do cliente por código service.
+// O dashboard360 não classifica as faturas (categoria vem vazia — conferido
+// ao vivo), então o selo "Mensalidade" do portal é completado pelo endpoint
+// dedicado /api/cliente/<cod>/faturas, casando por NumeroDoc. Falha aí é
+// silenciosa: as faturas seguem sem categoria, como antes.
 func (c *Cliente) FinanceiroCliente(ctx context.Context, codService string) (*Dashboard360, error) {
 	if _, err := strconv.ParseInt(codService, 10, 64); err != nil {
 		return nil, fmt.Errorf("código service inválido: %s", codService)
@@ -277,7 +281,31 @@ func (c *Cliente) FinanceiroCliente(ctx context.Context, codService string) (*Da
 	if err := c.get(ctx, "/api/cliente/"+codService+"/dashboard360", &d); err != nil {
 		return nil, err
 	}
+	c.enriquecerCategorias(ctx, codService, d.Sources.InsideService.Data.FaturasAbertas)
 	return &d, nil
+}
+
+// enriquecerCategorias copia a categoria do endpoint /faturas para as
+// faturas do dashboard (o dashboard não manda o selo do ERP).
+func (c *Cliente) enriquecerCategorias(ctx context.Context, codService string, faturas []Fatura360) {
+	if len(faturas) == 0 {
+		return
+	}
+	var det []Fatura360
+	if err := c.get(ctx, "/api/cliente/"+codService+"/faturas", &det); err != nil {
+		return
+	}
+	porDoc := make(map[string]string, len(det))
+	for _, f := range det {
+		if f.Categoria != "" {
+			porDoc[f.NumeroDoc] = f.Categoria
+		}
+	}
+	for i := range faturas {
+		if faturas[i].Categoria == "" {
+			faturas[i].Categoria = porDoc[faturas[i].NumeroDoc]
+		}
+	}
 }
 
 // ---- Tickets da fila (/api/helpdesk/tickets) ----
