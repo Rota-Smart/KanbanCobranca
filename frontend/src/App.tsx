@@ -623,7 +623,9 @@ export default function App() {
     if (!destino) return;
     const origem = Object.keys(board).find((c) => board[c].some((t) => t.id === id));
     if (origem && origem !== destino) {
-      setBoard(moveCard(board, id, destino, board[destino].length));
+      // Ticket Fechado mostra o card no topo já durante o arrasto.
+      const pos = destino === colunaTicketFechado ? 0 : board[destino].length;
+      setBoard(moveCard(board, id, destino, pos));
     }
   }
 
@@ -634,6 +636,16 @@ export default function App() {
     const origem = Object.keys(board).find((c) => board[c].some((t) => t.id === id));
     if (!origem) return;
     const destino = colunaDe(over.id) ?? origem;
+    // Ticket Fechado: entra sempre no topo (o mais antigo da lista visível
+    // sai pelo botão de histórico, que mostra só os últimos movidos).
+    if (destino === colunaTicketFechado) {
+      const snapshot = board;
+      const novo = moveCard(board, id, destino, 0);
+      setBoard(novo);
+      persistMove(id, destino, 0, snapshot);
+      void carregarHistoricoFechados();
+      return;
+    }
     // Coluna com ordenação ativa (data/A-Z): a ordem exibida não é a posição
     // salva, então arrastar dentro dela só anexa ao fim — sem reordenar no meio.
     if (ordenacaoDe(destino).modo !== 'manual') {
