@@ -447,7 +447,8 @@ func CasarColuna(texto string, colunas []string) (string, error) {
 // IntencaoAbrir é o pedido de abrir/verificar o card de um cliente, ticket ou
 // código: "abra o cliente X", "abra o card do X", "o ticket 123 tem card?".
 type IntencaoAbrir struct {
-	Alvo string // nome, código service, id do card ou nº do ticket 360
+	Alvo     string // nome, código service, id do card ou nº do ticket 360
+	Contexto bool   // alvo é pronome ("esse cliente", "ele"): quem resolve é o contexto da conversa
 }
 
 // reAbrirCard: verbo de abertura + palavra-chave obrigatória (card/cliente/
@@ -457,21 +458,75 @@ var reAbrirCard = regexp.MustCompile(
 
 // reTemCard: "verifique se o cliente X tem card", "o ticket 123 tem card?".
 var reTemCard = regexp.MustCompile(
-	`(?i)^\s*(?:(?:verifi\w+|confer\w+|confira|veja|checa|checar|olha|olhe)\s+)?(?:se\s+)?(?:o\s+|a\s+)?(?:(?:card|cliente|ticket)\b(?:\s+d[oa]s?\s+(?:cliente\s+)?)?\s+)?(.+?)\s+tem\s+(?:um\s+)?cards?\s*[.!?]*$`)
+	`(?i)^\s*(?:(?:verifi\w+|confer\w+|confira|veja|checa|checar|olha|olhe)\s+)?(?:se\s+)?(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+)?(?:(?:card|cliente|ticket)\b(?:\s+d[oa]s?\s+(?:cliente\s+)?)?\s+)?(.+?)\s+(?:tem|possui|poss\w+|existe)\s+(?:um\s+|algum\s+)?cards?\s*(?:abertos?|em\s+aberto)?\s*[.!?]*$`)
+
+// reContextoCard reconhece a pergunta SEM nome: "esse cliente possui card
+// aberto?", "ele tem card?", "o cliente tem card?". Tem de vir antes das
+// regexes gerais, senão o pronome vira alvo.
+var reContextoCard = regexp.MustCompile(
+	`(?i)^\s*(?:(?:verifi\w+|confer\w+|confira|veja|checa|checar|olha|olhe)\s+)?(?:se\s+)?(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|ele\s+|ela\s+)?(?:card\s+|cliente\s+|ticket\s+)?(?:d[oa]\s+)?(?:cliente\s+)?(?:tem|possui|poss\w+|existe)\s+(?:um\s+|algum\s+)?cards?\s*(?:abertos?|em\s+aberto)?\s*[.!?]*$`)
 
 // ParseIntencaoAbrir reconhece os pedidos de abrir/verificar card no texto;
 // ok=false quando não é um deles.
 func ParseIntencaoAbrir(msg string) (IntencaoAbrir, bool) {
+	if reContextoCard.MatchString(msg) {
+		return IntencaoAbrir{Contexto: true}, true
+	}
 	for _, re := range []*regexp.Regexp{reAbrirCard, reTemCard} {
 		if m := re.FindStringSubmatch(msg); m != nil {
 			alvo := strings.TrimSpace(m[1])
 			// "abra o card do cliente João" → "cliente João" vira "João".
 			alvo = strings.TrimPrefix(alvo, "cliente ")
 			alvo = limparBordas(alvo)
-			if alvo != "" {
-				return IntencaoAbrir{Alvo: alvo}, true
+			if alvo == "" {
+				continue
 			}
+			// Pronome em vez de nome: quem sabe de quem se fala é o
+			// contexto da conversa (executarIntencaoAbrir resolve).
+			switch normalizar(alvo) {
+			case "esse cliente", "este cliente", "aquele cliente", "o cliente", "a cliente",
+				"ele", "ela", "desse cliente", "deste cliente", "esse card", "este card":
+				return IntencaoAbrir{Contexto: true}, true
+			}
+			return IntencaoAbrir{Alvo: alvo}, true
 		}
 	}
 	return IntencaoAbrir{}, false
+}
+
+// ---- Mover pelo contexto do chat: "coloque em cobrança" ----
+
+// reMoverContexto reconhece mover SEM citar o nome: "coloque em cobrança",
+// "põe o cliente em Cobrança", "mova pra Negociando". A coluna vem do texto;
+// o cliente é o que está em discussão na conversa.
+var reMoverContexto = regexp.MustCompile(
+	`(?i)^\s*(?:mov\w+|arrast\w+|passe|passar|lev\w+|mand\w+|mud\w+|jog\w+|pux\w+|coloc\w+|coloque|coloq\w+|ponh\w+|p[õo]e|pôr|por|deix\w+|mex\w+)\s+(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|um\s+|uma\s+)?(?:card\s+|cliente\s+|ticket\s+)?(?:d[oa]\s+)?(?:cliente\s+)?(?:em|na|no)\s+(?:a\s+coluna\s+|coluna\s+|o\s+|a\s+)?(.+?)\s*[.!?]*$`)
+
+// ParseIntencaoMoverContexto devolve a coluna pedida quando a mensagem move
+// o cliente do contexto sem citar nome. ok=false quando citar nome (ou não
+// for mover) — aí quem resolve é ParseIntencaoCard.
+func ParseIntencaoMoverContexto(msg string) (string, bool) {
+	m := reMoverContexto.FindStringSubmatch(msg)
+	if m == nil {
+		return "", false
+	}
+	return limparBordas(m[1]), true
+}
+
+// ---- Sufixo "… e abra o card" ----
+
+// reAbraNoFim captura um "e abra o card" pendurado no fim de outro comando
+// ("coloque o cliente João em Cobrança e abra o card"): quem pede executa a
+// ação E abre o card no final.
+var reAbraNoFim = regexp.MustCompile(
+	`(?i)[,;]?\s*(?:e\s+|e\s+depois\s+|depois\s+)?abr[ae]r?\s+(?:o\s+|esse\s+|este\s+)?cards?\s*[.!?]*\s*$`)
+
+// TirarAbraNoFim tira o "e abra o card" do fim da mensagem e sinaliza que o
+// card da ação deve ser aberto ao terminar. ok=false quando não há sufixo.
+func TirarAbraNoFim(msg string) (string, bool) {
+	loc := reAbraNoFim.FindStringIndex(msg)
+	if loc == nil {
+		return msg, false
+	}
+	return strings.TrimSpace(msg[:loc[0]]), true
 }

@@ -249,3 +249,23 @@ func TestParseIntencaoAbrir(t *testing.T) {
 		}
 	}
 }
+
+func TestParseIntencaoAbrirContexto(t *testing.T) {
+	for _, msg := range []string{
+		"esse cliente possui card aberto?",
+		"ele tem card?",
+		"o cliente tem card?",
+		"verifique se este cliente tem card aberto",
+		"a cliente tem algum card?",
+	} {
+		in, ok := ParseIntencaoAbrir(msg)
+		if !ok || !in.Contexto {
+			t.Errorf("ParseIntencaoAbrir(%q): ok=%v contexto=%v; queria contexto", msg, ok, in.Contexto)
+		}
+	}
+	// nome explícito NÃO é contexto
+	in, ok := ParseIntencaoAbrir("o cliente João tem card?")
+	if !ok || in.Contexto || in.Alvo != "João" {
+		t.Errorf("o cliente João tem card? deveria ser alvo João, veio %+v (ok=%v)", in, ok)
+	}
+}

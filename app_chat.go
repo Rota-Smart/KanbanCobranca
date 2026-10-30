@@ -175,10 +175,10 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		local, reconhecido = a.executarComandoRealizada(mensagem, chatID)
 	}
 	if !reconhecido {
-		local, reconhecido = a.executarIntencaoAbrir(mensagem)
+		local, reconhecido = a.executarIntencaoAbrir(mensagem, chatID)
 	}
 	if !reconhecido {
-		local, reconhecido = a.executarIntencaoLocal(mensagem)
+		local, reconhecido = a.executarIntencaoLocal(mensagem, chatID)
 	}
 	if reconhecido {
 		if err := a.chats.AddMensagem(a.ctx, chatID, "user", mensagem, ""); err != nil {
@@ -561,10 +561,10 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		comServico := servico * db.ComissaoServicoPct / 100
 		comParcela := parcela * db.ComissaoParcelaPct / 100
 		return fmt.Sprintf("Card %d (%s) na coluna %s. Comissão registrada em %s: serviço R$ %.2f → %d%% = R$ %.2f; parcela R$ %.2f → %d%% = R$ %.2f. TOTAL R$ %.2f. Botão ✅ no card marca como recebida.",
-			id, t.NomeCliente, ColunaUpgrade, data,
-			float64(servico)/100, db.ComissaoServicoPct, float64(comServico)/100,
-			float64(parcela)/100, db.ComissaoParcelaPct, float64(comParcela)/100,
-			float64(c.ComissaoCents)/100),
+				id, t.NomeCliente, ColunaUpgrade, data,
+				float64(servico)/100, db.ComissaoServicoPct, float64(comServico)/100,
+				float64(parcela)/100, db.ComissaoParcelaPct, float64(comParcela)/100,
+				float64(c.ComissaoCents)/100),
 			fmt.Sprintf("registrou comissão de %s (R$ %.2f) na coluna Upgrade", t.NomeCliente, float64(c.ComissaoCents)/100), nil
 
 	case "comissao_recebida":
@@ -577,7 +577,7 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			return "", "", err
 		}
 		return fmt.Sprintf("Comissão do card %d marcada como RECEBIDA em %s (R$ %.2f) — está no histórico.",
-			id, c.RecebidoEm, float64(c.ComissaoCents)/100),
+				id, c.RecebidoEm, float64(c.ComissaoCents)/100),
 			fmt.Sprintf("marcou comissão do card %d como recebida", id), nil
 
 	case "listar_comissoes":
@@ -616,7 +616,7 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			detalhe += " via " + canal
 		}
 		return fmt.Sprintf("Tentativa de contato%s registrada no card %d (%s). Total: %d tentativa(s); última em %s.",
-			detalhe, t.ID, t.NomeCliente, t.Tentativas, t.UltimaTentativa),
+				detalhe, t.ID, t.NomeCliente, t.Tentativas, t.UltimaTentativa),
 			fmt.Sprintf("registrou tentativa de contato de %s (total %d)", t.NomeCliente, t.Tentativas), nil
 
 	case "agendar_visita":
@@ -654,7 +654,7 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 			extra = " (" + t.VisitaTurno + ")"
 		}
 		return fmt.Sprintf("Visita do card %d (%s) agendada para %s%s.",
-			t.ID, t.NomeCliente, t.VisitaData, extra),
+				t.ID, t.NomeCliente, t.VisitaData, extra),
 			fmt.Sprintf("agendou visita de %s para %s", t.NomeCliente, t.VisitaData), nil
 
 	case "apagar_card":
@@ -1856,9 +1856,29 @@ func (a *App) apagarCardResolvido(card service.CardResumo, colunaDita string) *s
 }
 
 // executarIntencaoLocal reconhece comandos rígidos de card no texto e os
-// executa direto (reconhecimento local de intenção, sem API). ok=false
-// devolve a mensagem ao fluxo normal do agente.
-func (a *App) executarIntencaoLocal(mensagem string) (*service.ChatResultado, bool) {
+// executa direto (reconhecimento local de intenção, sem API). Cobre também o
+// cliente do contexto da conversa ("coloque em cobrança"), a criação do card
+// quando ele não existe (importa do 360 pelo nome) e o sufixo "… e abra o
+// card", que abre o card ao final da ação. ok=false devolve a mensagem ao
+// fluxo normal do agente.
+func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.ChatResultado, bool) {
+	abrirNoFim := false
+	if resto, ok := service.TirarAbraNoFim(mensagem); ok && strings.TrimSpace(resto) != "" {
+		mensagem, abrirNoFim = resto, true
+	}
+
+	// "coloque em cobrança" sem nome: o cliente é o da conversa.
+	if colunaDita, ok := service.ParseIntencaoMoverContexto(mensagem); ok {
+		card, achou := a.cardDoContextoChat(chatID)
+		if !achou {
+			return &service.ChatResultado{
+				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"coloque o cliente João em Cobrança\".",
+				Acoes:    []service.AcaoDoAgente{},
+			}, true
+		}
+		return a.moverCardResolvido(card, colunaDita, abrirNoFim), true
+	}
+
 	in, ok := service.ParseIntencaoCard(mensagem)
 	if !ok {
 		return nil, false
@@ -1872,16 +1892,23 @@ func (a *App) executarIntencaoLocal(mensagem string) (*service.ChatResultado, bo
 		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
 	}
 	card, err := service.ResolverCard(in.Alvo, cards)
-	if err != nil {
-		return &service.ChatResultado{Resposta: err.Error()}, true
-	}
 	switch {
-	case in.Apagar:
-		// "apague o card do João que está em Cobrança": confere a coluna
-		// dita antes de destruir — evita apagar card homônimo de outra
-		// coluna e responde onde o card realmente está.
-		return a.apagarCardResolvido(card, in.Coluna), true
+	case err == nil:
+		switch {
+		case in.Apagar:
+			// "apague o card do João que está em Cobrança": confere a coluna
+			// dita antes de destruir — evita apagar card homônimo de outra
+			// coluna e responde onde o card realmente está.
+			return a.apagarCardResolvido(card, in.Coluna), true
+		default:
+			return a.moverCardResolvido(card, in.Coluna, abrirNoFim), true
+		}
+	case in.Apagar || !strings.Contains(err.Error(), "nenhum card"):
+		// apagar sem card (ou ambiguidade) nunca cria nada; erro sobe.
+		return &service.ChatResultado{Resposta: err.Error()}, true
 	default:
+		// Mover quem não tem card: importa o cliente do 360 direto na
+		// coluna pedida (sem IA; precisa de sessão no 360).
 		colunas, err := a.colunas.List(a.ctx)
 		if err != nil {
 			return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error()}, true
@@ -1890,13 +1917,54 @@ func (a *App) executarIntencaoLocal(mensagem string) (*service.ChatResultado, bo
 		if err != nil {
 			return &service.ChatResultado{Resposta: err.Error()}, true
 		}
-		in.Coluna = coluna
-		if err := a.MoveTicket(card.ID, in.Coluna, a.contagemColuna(in.Coluna)); err != nil {
-			return &service.ChatResultado{Resposta: "Falhou ao mover: " + err.Error()}, true
+		c := a.rotaAtual()
+		if c == nil {
+			return &service.ChatResultado{
+				Resposta: fmt.Sprintf("Nenhum card com %q no nome e não consegui criar: sem sessão no 360. Conecte-se em ⚙ Configurações.", in.Alvo),
+				Acoes:    []service.AcaoDoAgente{},
+			}, true
+		}
+		cod, err := a.codDoNome(a.ctx, c, in.Alvo)
+		if err != nil {
+			return &service.ChatResultado{
+				Resposta: fmt.Sprintf("Nenhum card com %q no nome e não achei o cliente no 360: %v", in.Alvo, err),
+				Acoes:    []service.AcaoDoAgente{},
+			}, true
+		}
+		t, err := a.agentImportarCliente(a.ctx, cod, coluna)
+		if err != nil {
+			return &service.ChatResultado{Resposta: "Falhou ao criar o card: " + err.Error()}, true
+		}
+		if abrirNoFim {
+			a.emitirAbrirCard(t.ID)
 		}
 		return &service.ChatResultado{
-			Resposta: fmt.Sprintf("Card %d (%s) movido para %s.", card.ID, card.NomeCliente, in.Coluna),
-			Acoes:    []service.AcaoDoAgente{{Ferramenta: "mover_card", Resumo: fmt.Sprintf("moveu o card %d (%s) para %s via comando local", card.ID, card.NomeCliente, in.Coluna)}},
+			Resposta: fmt.Sprintf("O cliente não tinha card: criei o card %d (%s, código %s) direto em %s.", t.ID, t.NomeCliente, t.CodService, t.ColunaAtual),
+			Acoes: []service.AcaoDoAgente{{Ferramenta: "importar_cliente",
+				Resumo: fmt.Sprintf("criou o card %d (%s) em %s via comando local", t.ID, t.NomeCliente, t.ColunaAtual)}},
 		}, true
+	}
+}
+
+// moverCardResolvido move o card já identificado para a coluna pedida
+// (CasarColuna resolve o nome) e, com abrirNoFim, abre o card no final.
+func (a *App) moverCardResolvido(card service.CardResumo, colunaDita string, abrirNoFim bool) *service.ChatResultado {
+	colunas, err := a.colunas.List(a.ctx)
+	if err != nil {
+		return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error()}
+	}
+	coluna, err := service.CasarColuna(colunaDita, colunas)
+	if err != nil {
+		return &service.ChatResultado{Resposta: err.Error()}
+	}
+	if err := a.MoveTicket(card.ID, coluna, a.contagemColuna(coluna)); err != nil {
+		return &service.ChatResultado{Resposta: "Falhou ao mover: " + err.Error()}
+	}
+	if abrirNoFim {
+		a.emitirAbrirCard(card.ID)
+	}
+	return &service.ChatResultado{
+		Resposta: fmt.Sprintf("Card %d (%s) movido para %s.", card.ID, card.NomeCliente, coluna),
+		Acoes:    []service.AcaoDoAgente{{Ferramenta: "mover_card", Resumo: fmt.Sprintf("moveu o card %d (%s) para %s via comando local", card.ID, card.NomeCliente, coluna)}},
 	}
 }

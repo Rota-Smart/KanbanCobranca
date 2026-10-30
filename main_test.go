@@ -321,25 +321,77 @@ func TestAbrirCardPorChat(t *testing.T) {
 	}
 
 	// por nome
-	res, ok := a.executarIntencaoAbrir("abra o card do cliente Maria")
+	res, ok := a.executarIntencaoAbrir("abra o card do cliente Maria", 0)
 	if !ok || !strings.Contains(res.Resposta, "Maria Souza") {
 		t.Fatalf("abra por nome: ok=%v resposta=%q", ok, res.Resposta)
 	}
 	// por código service
-	if res, ok := a.executarIntencaoAbrir("abra o cliente 24755"); !ok || !strings.Contains(res.Resposta, "Maria Souza") {
+	if res, ok := a.executarIntencaoAbrir("abra o cliente 24755", 0); !ok || !strings.Contains(res.Resposta, "Maria Souza") {
 		t.Fatalf("abra por código: resposta=%q", res.Resposta)
 	}
 	// por número do ticket 360
-	if res, ok := a.executarIntencaoAbrir("o ticket 99887 tem card?"); !ok || !strings.Contains(res.Resposta, "Maria Souza") {
+	if res, ok := a.executarIntencaoAbrir("o ticket 99887 tem card?", 0); !ok || !strings.Contains(res.Resposta, "Maria Souza") {
 		t.Fatalf("ticket 360: resposta=%q", res.Resposta)
 	}
 	// sem card
-	res, ok = a.executarIntencaoAbrir("abra o cliente Inexistente")
+	res, ok = a.executarIntencaoAbrir("abra o cliente Inexistente", 0)
 	if !ok || !strings.Contains(res.Resposta, "Nenhum card") {
 		t.Fatalf("sem card: resposta=%q", res.Resposta)
 	}
 	// não é o comando
-	if _, ok := a.executarIntencaoAbrir("qual o financeiro do João?"); ok {
+	if _, ok := a.executarIntencaoAbrir("qual o financeiro do João?", 0); ok {
 		t.Fatalf("não devia reconhecer consulta comum")
+	}
+}
+
+func TestAbrirContextoEMoverContexto(t *testing.T) {
+	a := newTestApp(t)
+	tk, err := a.SaveTicket(db.Ticket{NomeCliente: "Maria Souza", TipoTicket: "Outro", ColunaAtual: "Fazer contato"})
+	if err != nil {
+		t.Fatalf("SaveTicket: %v", err)
+	}
+	chat, err := a.CriarChat()
+	if err != nil {
+		t.Fatalf("CriarChat: %v", err)
+	}
+	if err := a.chats.AddMensagem(a.ctx, chat.ID, "user", "estou falando do cliente Maria Souza", ""); err != nil {
+		t.Fatalf("AddMensagem: %v", err)
+	}
+
+	// "esse cliente possui card aberto?" → contexto da conversa acha Maria.
+	res, ok := a.executarIntencaoAbrir("esse cliente possui card aberto?", chat.ID)
+	if !ok || !strings.Contains(res.Resposta, "Maria Souza") {
+		t.Fatalf("contexto abrir: ok=%v resposta=%q", ok, res.Resposta)
+	}
+
+	// "coloque em cobrança" → move o card do contexto.
+	res, ok = a.executarIntencaoLocal("coloque em cobrança", chat.ID)
+	if !ok || !strings.Contains(res.Resposta, "Cobrança") {
+		t.Fatalf("contexto mover: ok=%v resposta=%q", ok, res.Resposta)
+	}
+	if t2, _ := a.tickets.Get(a.ctx, tk.ID); t2.ColunaAtual != "Cobrança" {
+		t.Fatalf("card deveria estar em Cobrança, está em %q", t2.ColunaAtual)
+	}
+
+	// "coloque em cobrança" sem contexto → pede o nome, não vai pra IA.
+	chat2, _ := a.CriarChat()
+	res, ok = a.executarIntencaoLocal("coloque em cobrança", chat2.ID)
+	if !ok || !strings.Contains(res.Resposta, "Não identifiquei") {
+		t.Fatalf("sem contexto deveria pedir nome; resposta=%q", res.Resposta)
+	}
+
+	// sufixo "e abra o card": move (mesma coluna, já está lá não — move de volta) e sinaliza
+	res, ok = a.executarIntencaoLocal("coloque o cliente Maria Souza em Fazer contato e abra o card", chat.ID)
+	if !ok || !strings.Contains(res.Resposta, "Fazer contato") {
+		t.Fatalf("sufixo abrir: ok=%v resposta=%q", ok, res.Resposta)
+	}
+	if t2, _ := a.tickets.Get(a.ctx, tk.ID); t2.ColunaAtual != "Fazer contato" {
+		t.Fatalf("card deveria voltar para Fazer contato, está em %q", t2.ColunaAtual)
+	}
+
+	// apagar NUNCA cria: cliente inexistente com sufixo → erro claro
+	res, ok = a.executarIntencaoLocal("apague o card do Fulano de Tal", chat.ID)
+	if !ok || !strings.Contains(res.Resposta, "nenhum card") {
+		t.Fatalf("apagar inexistente: ok=%v resposta=%q", ok, res.Resposta)
 	}
 }

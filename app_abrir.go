@@ -19,10 +19,26 @@ const evAbrirCard = "chat:abrir-card"
 
 // executarIntencaoAbrir roda o pedido de abrir/verificar card. ok=false
 // devolve a mensagem ao fluxo normal do chat.
-func (a *App) executarIntencaoAbrir(mensagem string) (*service.ChatResultado, bool) {
+func (a *App) executarIntencaoAbrir(mensagem string, chatID int64) (*service.ChatResultado, bool) {
 	in, ok := service.ParseIntencaoAbrir(mensagem)
 	if !ok {
 		return nil, false
+	}
+	// "esse cliente possui card aberto?": o alvo é o cliente em discussão
+	// na conversa (mesma memória do /apagar e do /realizada).
+	if in.Contexto {
+		card, achou := a.cardDoContextoChat(chatID)
+		if !achou {
+			return &service.ChatResultado{
+				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"o card do João tem card?\".",
+				Acoes:    []service.AcaoDoAgente{},
+			}, true
+		}
+		return &service.ChatResultado{
+			Resposta: fmt.Sprintf("Sim — Card #%d — %s (coluna %s)", card.ID, card.NomeCliente, card.ColunaAtual),
+			Acoes: []service.AcaoDoAgente{{Ferramenta: "abrir_card",
+				Resumo: fmt.Sprintf("verificou o card %d (%s, coluna %s) via comando local", card.ID, card.NomeCliente, card.ColunaAtual)}},
+		}, true
 	}
 	ts, err := a.tickets.List(a.ctx)
 	if err != nil {
@@ -36,14 +52,19 @@ func (a *App) executarIntencaoAbrir(mensagem string) (*service.ChatResultado, bo
 		// Vários matches: a resposta lista os cards; abrir nenhum.
 		return &service.ChatResultado{Resposta: resposta, Acoes: []service.AcaoDoAgente{}}, true
 	}
-	if a.uiPronta { // testes não têm contexto Wails
-		wailsRuntime.EventsEmit(a.ctx, evAbrirCard, card.ID)
-	}
+	a.emitirAbrirCard(card.ID)
 	return &service.ChatResultado{
 		Resposta: resposta,
 		Acoes: []service.AcaoDoAgente{{Ferramenta: "abrir_card",
 			Resumo: fmt.Sprintf("abriu o card %d (%s, coluna %s) via comando local", card.ID, card.NomeCliente, card.ColunaAtual)}},
 	}, true
+}
+
+// emitirAbrirCard pede ao frontend a abertura do modal completo do card.
+func (a *App) emitirAbrirCard(cardID int64) {
+	if a.uiPronta {
+		wailsRuntime.EventsEmit(a.ctx, evAbrirCard, cardID)
+	}
 }
 
 // resolverAbrir casa o alvo com card(s): número = id, código service ou nº do
