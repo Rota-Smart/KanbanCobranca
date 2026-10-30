@@ -19,7 +19,7 @@ import (
 )
 
 // VersaoApp é a versão deste binário; bump a cada release.
-const VersaoApp = "1.28.2"
+const VersaoApp = "1.29.0"
 
 // BasePadrao é a fonte de atualização padrão (branch release do repo).
 const BasePadrao = "https://raw.githubusercontent.com/Rota-Smart/KanbanCobranca/release"
@@ -65,7 +65,10 @@ type Info struct {
 
 // Verificar compara a versão local com a publicada.
 func (c *Cliente) Verificar(ctx context.Context) (Info, error) {
-	raw, err := c.get(ctx, "versao.txt")
+	// Query de cache-busting: o CDN do raw.githubusercontent.com guarda o
+	// versao.txt alguns minutos por URL; a query nova a cada consulta faz o
+	// monitor de atualização perceber o push na hora em que ele chega ao CDN.
+	raw, err := c.get(ctx, fmt.Sprintf("versao.txt?ts=%d", time.Now().UnixNano()))
 	if err != nil {
 		return Info{}, err
 	}

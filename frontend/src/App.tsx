@@ -224,6 +224,9 @@ export default function App() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [toast, setToast] = useState('');
+  // Aviso de versão nova achada pelo monitor: {versao, progresso} com
+  // progresso = -1 enquanto não está baixando; null = sem aviso/dispensado.
+  const [avisoAtualiza, setAvisoAtualiza] = useState<{ versao: string; progresso: number } | null>(null);
   const [aberto, setAberto] = useState<Ticket | null>(null);
   const [preCobranca, setPreCobranca] = useState<ResultadoCobranca | null>(null);
   const [visitaTicket, setVisitaTicket] = useState<Ticket | null>(null);
@@ -486,15 +489,24 @@ export default function App() {
   // termina ou falha — os toasts morreriam com o unmount dela.
   useEffect(() => {
     const offOk = EventsOn('atualizacao:pronto', (d: { versao: string }) => {
+      setAvisoAtualiza(null);
       setToast(`Atualizado para a versão ${d.versao} — o app vai reiniciar.`);
     });
     const offErr = EventsOn('atualizacao:erro', (d: { mensagem: string }) => {
       setToast(d.mensagem || 'Falha na atualização.');
       setTimeout(() => setToast(''), 6000);
     });
+    const offDisp = EventsOn('atualizacao:disponivel', (d: { versao: string }) => {
+      setAvisoAtualiza({ versao: d.versao, progresso: -1 });
+    });
+    const offProg = EventsOn('atualizacao:progresso', (d: { percento: number }) => {
+      setAvisoAtualiza((a) => (a ? { ...a, progresso: d.percento } : a));
+    });
     return () => {
       offOk();
       offErr();
+      offDisp();
+      offProg();
     };
   }, []);
 
@@ -1408,6 +1420,30 @@ ${txt.trim()}` : txt.trim());
         />
       )}
 
+      {avisoAtualiza && (
+        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[100] glass text-slate-800 dark:text-slate-100 text-sm px-4 py-3 rounded-xl shadow-lg flex items-center gap-3">
+          {avisoAtualiza.progresso >= 0 ? (
+            <span>Baixando atualização{avisoAtualiza.progresso > 0 ? ` — ${avisoAtualiza.progresso}%` : '…'}</span>
+          ) : (
+            <>
+              <span>Nova versão {avisoAtualiza.versao} disponível.</span>
+              <button
+                className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-500"
+                onClick={() => { void bindings.InstalarAtualizacao(); }}
+              >
+                Atualizar agora
+              </button>
+              <button
+                className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                title="Dispensar"
+                onClick={() => setAvisoAtualiza(null)}
+              >
+                ✕
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {toast && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] glass text-slate-800 dark:text-slate-100 text-sm px-4 py-2.5 rounded-xl shadow-lg">
           {toast}

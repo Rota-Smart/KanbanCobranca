@@ -47,10 +47,43 @@ func (a *App) GetFonteAtualizacao() string { return a.fonteAtualizacao() }
 
 // Eventos emitidos ao frontend durante a atualização em background.
 const (
-	evAtualizaProgresso = "atualizacao:progresso" // {baixados, total, percento}
-	evAtualizaPronto    = "atualizacao:pronto"    // {versao} — instalado, o app reinicia
-	evAtualizaErro      = "atualizacao:erro"      // {mensagem}
+	evAtualizaProgresso  = "atualizacao:progresso"  // {baixados, total, percento}
+	evAtualizaPronto     = "atualizacao:pronto"     // {versao} — instalado, o app reinicia
+	evAtualizaErro       = "atualizacao:erro"       // {mensagem}
+	evAtualizaDisponivel = "atualizacao:disponivel" // {versao} — monitor achou versão nova
 )
+
+// MonitorAtualizacao checa a fonte no arranque (após 30s, para não disputar
+// banda com o boot) e a cada 10 minutos; ao achar versão nova, emite
+// atualizacao:disponivel UMA vez por versão — o usuário decide quando
+// atualizar pelo botão do aviso. Chamado do startup.
+func (a *App) MonitorAtualizacao() {
+	go func() {
+		time.Sleep(30 * time.Second)
+		avisada := ""
+		checar := func() {
+			ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
+			defer cancel()
+			info, err := atualizacao.NovoCliente(a.fonteAtualizacao()).Verificar(ctx)
+			if err != nil || !info.TemNova || info.VersaoNova == avisada {
+				return
+			}
+			avisada = info.VersaoNova
+			wailsRuntime.EventsEmit(a.ctx, evAtualizaDisponivel, map[string]string{"versao": info.VersaoNova})
+		}
+		checar()
+		t := time.NewTicker(10 * time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-t.C:
+				checar()
+			}
+		}
+	}()
+}
 
 // percento devolve 0–100, ou -1 quando o total é desconhecido.
 func percento(baixados, total int64) int {

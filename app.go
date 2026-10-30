@@ -137,6 +137,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.iniciarAtalhos()
 	a.garantirColunaOrcamento()
+	a.MonitorAtualizacao()
 	a.garantirUpgradeUltimo(a.ctx)
 }
 
