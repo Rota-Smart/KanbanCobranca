@@ -77,7 +77,7 @@ print('zip ok', dentro)
 
     # 5. release worktree precisa estar limpa (outra sessao pode estar nela)
     $st = git -C $ReleaseDir status --porcelain --untracked-files=no
-    if ($st) { throw ("worktree release suja (" + $ReleaseDir + ") - publique manualmente") }
+    if ($st) { throw ("worktree release suja (" + $ReleaseDir + "): " + ($st -join "; ")) }
 
     if (-not $DryRun) {
         Copy-Item $exe (Join-Path $ReleaseDir 'rotasuite.exe') -Force
