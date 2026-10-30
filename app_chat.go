@@ -193,6 +193,19 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 	}
 
 	if a.groq == nil || !a.groq.TemChave() {
+		// Listagem de quadro é 100% banco local: responde direto, sem IA.
+		if resp := a.respostaBoardSemIA(mensagem); resp != "" {
+			res := &service.ChatResultado{Resposta: resp,
+				Acoes: []service.AcaoDoAgente{{Ferramenta: "listar_tickets",
+					Resumo: "listou os cards direto do banco local (sem IA)"}}}
+			if err := a.chats.AddMensagem(a.ctx, chatID, "user", mensagem, ""); err != nil {
+				return service.ChatResultado{}, friendly("EnviarChat", err)
+			}
+			if err := a.gravarResposta(chatID, res); err != nil {
+				return service.ChatResultado{}, err
+			}
+			return *res, nil
+		}
 		return service.ChatResultado{}, fmt.Errorf("configure a chave da IA em ⚙ Configurações para usar o assistente")
 	}
 

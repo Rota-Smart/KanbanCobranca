@@ -119,3 +119,35 @@ func TestAgentToolsSem(t *testing.T) {
 		}
 	}
 }
+
+func TestClassificarBoardSemPalavraColuna(t *testing.T) {
+	casos := []struct {
+		msg    string
+		want   ClasseConsulta
+		coluna string
+	}{
+		{"quais cards em Cobrança?", ConsultaBoard, "Cobrança"},
+		{"quem está na Cobrança?", ConsultaBoard, "Cobrança"},
+		{"quem tá no Ticket Fechado", ConsultaBoard, "Ticket Fechado"},
+		{"liste os cards", ConsultaBoard, ""},
+		{"todos os cards do quadro", ConsultaBoard, ""},
+		{"cards em Orçamento", ConsultaBoard, "Orçamento"},
+		// negativos: não podem virar consulta de quadro
+		{"o financeiro do cliente 12345", ConsultaFinanceiro, ""},
+		{"qual o saldo do cliente João?", ConsultaFinanceiro, ""},
+		{"quantos boletos venceram esse mês", ConsultaFinanceiro, ""},
+		{"mova o card do João para Cobrança", ConsultaNenhuma, ""},
+		{"remova o padrão antigo", ConsultaNenhuma, ""},
+	}
+	for _, c := range casos {
+		if got := ClassificarConsulta(c.msg); got != c.want {
+			t.Errorf("ClassificarConsulta(%q) = %q; quero %q", c.msg, got, c.want)
+			continue
+		}
+		if c.want == ConsultaBoard {
+			if got := ExtrairColunaBoard(c.msg); got != c.coluna {
+				t.Errorf("ExtrairColunaBoard(%q) = %q; quero %q", c.msg, got, c.coluna)
+			}
+		}
+	}
+}

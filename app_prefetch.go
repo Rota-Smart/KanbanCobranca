@@ -220,6 +220,23 @@ func (a *App) prebuscaTicket(ctx context.Context, c *rota360.Cliente, numero str
 	return p, nil
 }
 
+// respostaBoardSemIA responde um pedido de listagem direto do banco local,
+// sem chave de IA: é o mesmo bloco da pré-busca, sem o cabeçalho dirigido ao
+// modelo. Vazio quando a mensagem não é consulta de quadro.
+func (a *App) respostaBoardSemIA(msg string) string {
+	if service.ClassificarConsulta(msg) != service.ConsultaBoard {
+		return ""
+	}
+	pre := a.prebuscaBoard(msg)
+	if pre == nil {
+		return ""
+	}
+	if i := strings.Index(pre.bloco, "\n"); i >= 0 {
+		return strings.TrimRight(pre.bloco[i+1:], "\n")
+	}
+	return ""
+}
+
 // prebuscaBoard mastiga pedidos agregados sobre o quadro: lista os cards da
 // coluna pedida (ou do quadro inteiro) direto do banco local e já anexa o
 // que a IA ia perguntar de volta — renegociações e cobrança ativa de cada

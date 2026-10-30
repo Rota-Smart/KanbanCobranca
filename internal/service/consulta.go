@@ -45,8 +45,10 @@ var reAlvoNome = regexp.MustCompile(`(?i)(?:do cliente|do card|da cliente|client
 var reCorteNome = regexp.MustCompile(`(?i)^(.+?)\s+(?:tem|est[áa]|possui|quant[oa]s?|estando|que|no|na|em|e)\b`)
 
 // Board: agregação ("todos", "quais", "liste"...) sobre UMA coluna do quadro.
-// A palavra de agregação e a menção a "coluna" têm de coexistir — sem isso,
-// qualquer mensagem com "coluna" viraria consulta de quadro.
+// Exige uma palavra de agregação ("quem", "cards" no plural entram também) E
+// uma referência de lugar ("coluna X", "quadro", "em Cobrança") — ou o par
+// agregação+cards ("liste os cards"), que vale para o quadro inteiro. Sem
+// isso, qualquer mensagem com "card" viraria consulta de quadro.
 var (
 	reAgregBoard = regexp.MustCompile(`(?i)\b(todos|todas|quais|liste|lista|listar|verifi(que|car)|confer(a|ir)|confira|quant[oa]s?)\b`)
 	reTemColuna  = regexp.MustCompile(`(?i)\bcoluna\b`)
@@ -54,17 +56,30 @@ var (
 	// vem depois de conector ("coluna Cobrança e verifique...").
 	reAlvoColuna = regexp.MustCompile(`(?i)\b(?:d[ao]?\s+)?coluna\s+([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9'’.\- ]{1,39})`)
 	reCorteCol   = regexp.MustCompile(`(?i)^(.+?)\s+(?:e|que|para|pra|com|tem|est[áa]|possui|de)\b`)
+
+	// Coluna citada sem a palavra "coluna" ("quem está em Cobrança?",
+	// "cards no Orçamento"): só em/na/no + inicial maiúscula — "do João" e
+	// "em atraso" não podem virar coluna.
+	reColunaSolta     = regexp.MustCompile(`(?i)\b(?:em|na|no)\s+[A-ZÂÉÍÓÚÃÕÇ]`)
+	reAlvoColunaSolta = regexp.MustCompile(`\b(?:em|na|no)\s+([A-ZÂÉÍÓÚÃÕÇ][A-Za-zÀ-ÿ0-9'’.\- ]{1,39})`)
+
+	reCardsPlural = regexp.MustCompile(`(?i)\bcards\b`)
+	reQuemBoard   = regexp.MustCompile(`(?i)\bquem\b`)
+	reQuadroBoard = regexp.MustCompile(`(?i)\b(quadro|kanban)\b`)
 )
 
 // ExtrairColunaBoard devolve o nome da coluna citado numa frase de board
-// ("... da coluna Cobrança ..."). Vazio quando nenhuma coluna é nomeada —
-// o pedido então vale para o quadro inteiro.
+// ("... da coluna Cobrança ...", "quem está em Ticket Fechado?"). Vazio quando
+// nenhuma coluna é nomeada — o pedido então vale para o quadro inteiro.
 func ExtrairColunaBoard(m string) string {
-	mc := reAlvoColuna.FindStringSubmatch(m)
-	if mc == nil {
+	nome := ""
+	if mc := reAlvoColuna.FindStringSubmatch(m); mc != nil {
+		nome = mc[1]
+	} else if ms := reAlvoColunaSolta.FindStringSubmatch(m); ms != nil {
+		nome = ms[1]
+	} else {
 		return ""
 	}
-	nome := mc[1]
 	if corte := reCorteCol.FindStringSubmatch(nome); corte != nil {
 		nome = corte[1]
 	}
@@ -83,11 +98,13 @@ type AlvoConsulta struct {
 
 // ClassificarConsulta devolve a(s) fatia(s) de dados que a mensagem pede.
 // Vazia quando não é consulta de dados do 360 (ação, reescrita, meta...).
-// Pedido agregado de board ("todos os clientes da coluna X") vence: é dado
-// LOCAL e um match simultâneo de financeiro ("...com renegociação") não pode
-// reduzir o escopo a um cliente só.
+// Pedido agregado de board ("todos os clientes da coluna X", "quem tá em
+// Cobrança?") vence: é dado LOCAL e um match simultâneo de financeiro
+// ("...com renegociação") não pode reduzir o escopo a um cliente só.
 func ClassificarConsulta(m string) ClasseConsulta {
-	if reAgregBoard.MatchString(m) && reTemColuna.MatchString(m) {
+	palavraBoard := reAgregBoard.MatchString(m) || reCardsPlural.MatchString(m) || reQuemBoard.MatchString(m)
+	lugarBoard := reTemColuna.MatchString(m) || reQuadroBoard.MatchString(m) || reColunaSolta.MatchString(m)
+	if palavraBoard && (lugarBoard || (reAgregBoard.MatchString(m) && reCardsPlural.MatchString(m))) {
 		return ConsultaBoard
 	}
 	n, primeira := 0, ConsultaNenhuma
