@@ -533,8 +533,15 @@ export default function App() {
     // em relação ao banco, então se não achar aqui, recarrega e tenta de novo).
     const offAbrir = EventsOn('chat:abrir-card', (id: number) => {
       abrirCardPorId(id).then((t) => {
-        if (t) setAberto(t);
-        else showToast(`Card #${id} não encontrado no quadro visível.`);
+        if (t) {
+          // O drawer do chat é renderizado depois do modal (mesmo z-40) e
+          // ficaria por cima — fecha para o card aparecer na tela. A conversa
+          // fica salva e volta pelo botão do chat.
+          setChatAberto(false);
+          setAberto(t);
+        } else {
+          showToast(`Card #${id} não encontrado no quadro visível.`);
+        }
       });
     });
     return () => {
