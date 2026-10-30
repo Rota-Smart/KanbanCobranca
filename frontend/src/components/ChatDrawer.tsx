@@ -33,6 +33,7 @@ const comandosBarra: { cmd: string; exemplo: string }[] = [
   { cmd: '/move', exemplo: '/move 12345 para Cobrança' },
   { cmd: '/apagar', exemplo: '/apagar' },
   { cmd: '/vincular', exemplo: '/vincular' },
+  { cmd: '/realizada', exemplo: '/realizada' },
 ];
 
 function dicaDaBarra(texto: string): string | null {

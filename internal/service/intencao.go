@@ -132,6 +132,39 @@ func NormalizarTexto(s string) string {
 	return normalizar(s)
 }
 
+// ---- Comando /realizada do chat ----
+
+// ComandoRealizada é o "/realizada ..." reconhecido no texto do chat: Card é
+// o nome (pedaço) ou código do card; vazio = o cliente em discussão no chat.
+type ComandoRealizada struct {
+	Card string
+}
+
+var comandosRealizada = []string{"/realizada", "/realizado", "/visitarealizada", "/visita_realizada"}
+
+// ParseComandoRealizada reconhece o comando /realizada (e variantes) no texto:
+// "/realizada", "/realizada João". ok=false quando o texto não começa com o
+// comando (cai no fluxo normal do chat).
+func ParseComandoRealizada(msg string) (ComandoRealizada, bool) {
+	campos := strings.Fields(strings.TrimSpace(msg))
+	if len(campos) == 0 {
+		return ComandoRealizada{}, false
+	}
+	palavra := strings.ToLower(strings.Trim(campos[0], ".,!?;:"))
+	ehComando := false
+	for _, c := range comandosRealizada {
+		if palavra == c {
+			ehComando = true
+			break
+		}
+	}
+	if !ehComando {
+		return ComandoRealizada{}, false
+	}
+	corpo := limparBordas(strings.TrimSpace(msg[len(campos[0]):]))
+	return ComandoRealizada{Card: corpo}, true
+}
+
 // ---- Comando /apagar do chat ----
 
 // ComandoApagar é o "/apagar ..." reconhecido no texto do chat: Card é o nome

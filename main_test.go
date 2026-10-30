@@ -217,7 +217,7 @@ func TestGenerateProposalTemplate(t *testing.T) {
 func TestGetColunas(t *testing.T) {
 	a := newTestApp(t)
 	cols := a.GetColunas()
-	if len(cols) != 13 || cols[0] != "Fazer contato" || cols[2] != "Visita Agendada" || cols[4] != "Cobrança" || cols[12] != ColunaUpgrade {
+	if len(cols) != 14 || cols[0] != "Fazer contato" || cols[2] != "Visita Agendada" || cols[4] != "Cobrança" || cols[12] != "Visita Realizada" || cols[13] != ColunaUpgrade {
 		t.Fatalf("colunas: %v", cols)
 	}
 }

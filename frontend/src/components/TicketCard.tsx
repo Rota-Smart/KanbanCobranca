@@ -98,6 +98,7 @@ function CheckSelecao({ ticket, selecionado, onAlternar }: { ticket: Ticket; sel
 export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir, onAgendarVisita, comissao, onReceberComissao, onEditarComissao, selecionado = false, emSelecao = false, onAlternarSelecao }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
   const [menu, setMenu] = useState<{ right: number; top: number } | null>(null);
+  const [erroVisita, setErroVisita] = useState('');
   const [vinculando, setVinculando] = useState(false);
   const [entradaTicket, setEntradaTicket] = useState('');
   const [erroVinculo, setErroVinculo] = useState('');
@@ -270,6 +271,27 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
         >
           {ticket.visitaData ? `Editar visita (${visitaResumo(ticket)})` : '📅 Agendar visita…'}
         </button>
+        {ticket.visitaData && !ticket.visitaRealizada && (
+          <button
+            className="block w-full text-left px-3 py-2 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+            onClick={async () => {
+              setMenu(null);
+              try {
+                const t = await bindings.MarcarVisitaRealizada(ticket.id);
+                notificarCardAtualizado(t as Ticket);
+              } catch (e) {
+                setErroVisita(String(e) || 'Não foi possível marcar como realizada.');
+              }
+            }}
+          >
+            ✅ Marcar visita realizada
+          </button>
+        )}
+        {erroVisita && (
+          <p className="px-3 py-2 text-[10px] text-red-600 dark:text-red-400 max-w-[16rem] break-words">
+            {erroVisita}
+          </p>
+        )}
         {onEditarComissao && (
           <button
             className={itemMenu}
@@ -337,8 +359,11 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
             <span className="text-[11px] shrink-0" title="Tem observações internas">🗒️</span>
           )}
           {ticket.visitaData && (
-            <span className="text-[11px] px-1.5 rounded-full font-medium bg-orange-100/80 text-orange-800 dark:bg-orange-500/20 dark:text-orange-200 shrink-0" title={`Visita: ${visitaResumo(ticket)}`}>
-              📅
+            <span
+              className={`text-[11px] px-1.5 rounded-full font-medium shrink-0 ${ticket.visitaRealizada ? 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200' : 'bg-orange-100/80 text-orange-800 dark:bg-orange-500/20 dark:text-orange-200'}`}
+              title={`Visita ${ticket.visitaRealizada ? 'realizada' : `agendada: ${visitaResumo(ticket)}`}`}
+            >
+              {ticket.visitaRealizada ? '✅' : '📅'}
             </span>
           )}
           {qtdAcordos > 0 && (

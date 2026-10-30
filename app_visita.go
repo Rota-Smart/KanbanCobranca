@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"rota-smart/internal/db"
 	"rota-smart/internal/service"
@@ -34,6 +35,29 @@ func (a *App) SalvarVisita(ticketID int64, data, turno, hora, endereco string) (
 		return db.Ticket{}, friendly("SalvarVisita", err)
 	}
 	return *t, nil
+}
+
+// MarcarVisitaRealizada grava a data-hora da realização da visita do card
+// (menu ⋯ do card e comando /realizada do chat, sem IA).
+func (a *App) MarcarVisitaRealizada(ticketID int64) (db.Ticket, error) {
+	t, err := a.tickets.Get(a.ctx, ticketID)
+	if err != nil {
+		return db.Ticket{}, friendly("MarcarVisitaRealizada", err)
+	}
+	if strings.TrimSpace(t.VisitaData) == "" {
+		return db.Ticket{}, fmt.Errorf("o card %d (%s) não tem visita agendada — agende antes de marcar como realizada", t.ID, t.NomeCliente)
+	}
+	if t.VisitaRealizada == "" {
+		quando := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		if err := a.tickets.MarcarVisitaRealizada(a.ctx, ticketID, quando); err != nil {
+			return db.Ticket{}, friendly("MarcarVisitaRealizada", err)
+		}
+	}
+	atual, err := a.tickets.Get(a.ctx, ticketID)
+	if err != nil {
+		return db.Ticket{}, friendly("MarcarVisitaRealizada", err)
+	}
+	return *atual, nil
 }
 
 // EnderecoSugeridoVisita devolve o endereço para pré-preencher o diálogo:

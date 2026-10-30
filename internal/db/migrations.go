@@ -21,7 +21,20 @@ var migrations = []string{
 	migration011,
 	migration012,
 	migration013,
+	migration014,
 }
+
+// migration014: visita realizada — quando o card com visita agendada chega à
+// coluna "Visita Realizada" (ou pelo comando /realizada do chat), a data-hora
+// da marcação fica no card; re-agendar limpa a marca. A coluna entra no board
+// se ainda não existir.
+const migration014 = `
+ALTER TABLE tickets ADD COLUMN visita_realizada_em TEXT NOT NULL DEFAULT '';
+-- "Upgrade" permanece sempre a última coluna: a nova entra logo antes dela.
+UPDATE kanban_columns SET posicao = posicao + 1 WHERE nome = 'Upgrade';
+INSERT OR IGNORE INTO kanban_columns (nome, posicao)
+    SELECT 'Visita Realizada', COALESCE((SELECT MAX(posicao) FROM kanban_columns WHERE nome <> 'Upgrade'), 0) + 1;
+`
 
 // migration013: coluna "Upgrade" (sempre a última do board) e o comissio-
 // namento do card nela — valor do serviço (5% de comissão) e valor da parcela

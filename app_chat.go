@@ -172,6 +172,9 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		local, reconhecido = a.executarComandoApagar(mensagem, chatID)
 	}
 	if !reconhecido {
+		local, reconhecido = a.executarComandoRealizada(mensagem, chatID)
+	}
+	if !reconhecido {
 		local, reconhecido = a.executarIntencaoLocal(mensagem)
 	}
 	if reconhecido {
@@ -1749,6 +1752,49 @@ func (a *App) executarComandoApagar(mensagem string, chatID int64) (*service.Cha
 		return &service.ChatResultado{Resposta: err.Error(), Acoes: []service.AcaoDoAgente{}}, true
 	}
 	return a.apagarCardResolvido(card, cmd.Coluna), true
+}
+
+// executarComandoRealizada roda o "/realizada" do chat (sem IA): com cliente
+// no comando marca a visita agendada do card dele; sem cliente, do cliente em
+// discussão no chat. ok=false quando não é o comando.
+func (a *App) executarComandoRealizada(mensagem string, chatID int64) (*service.ChatResultado, bool) {
+	cmd, ok := service.ParseComandoRealizada(mensagem)
+	if !ok {
+		return nil, false
+	}
+	alvo := cmd.Card
+	if alvo == "" {
+		card, ok := a.cardDoContextoChat(chatID)
+		if !ok {
+			return &service.ChatResultado{
+				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga: /realizada <cliente> (ou cite o código service antes).",
+				Acoes:    []service.AcaoDoAgente{},
+			}, true
+		}
+		alvo = card.NomeCliente
+	}
+	ts, err := a.tickets.List(a.ctx)
+	if err != nil {
+		return &service.ChatResultado{Resposta: "Não consegui listar os cards: " + err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	cards := make([]service.CardResumo, 0, len(ts))
+	for _, t := range ts {
+		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
+	}
+	card, err := service.ResolverCard(alvo, cards)
+	if err != nil {
+		return &service.ChatResultado{Resposta: err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	t, err := a.MarcarVisitaRealizada(card.ID)
+	if err != nil {
+		return &service.ChatResultado{Resposta: "⚠ " + err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	return &service.ChatResultado{
+		Resposta: fmt.Sprintf("✅ Visita de %s (%s %s %s — %s) marcada como **realizada**.",
+			t.NomeCliente, t.VisitaData, t.VisitaTurno, t.VisitaHora, t.ColunaAtual),
+		Acoes: []service.AcaoDoAgente{{Ferramenta: "marcar_visita_realizada",
+			Resumo: fmt.Sprintf("marcou a visita do card %d (%s) como realizada via /realizada", t.ID, t.NomeCliente)}},
+	}, true
 }
 
 // apagarCardResolvido apaga o card já identificado, conferindo antes a coluna

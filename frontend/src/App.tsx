@@ -686,6 +686,7 @@ export default function App() {
         visitaTurno: '',
         visitaHora: '',
         visitaEndereco: '',
+        visitaRealizada: '',
         colunaAtual: coluna,
         posicao: fim,
         createdAt: '',

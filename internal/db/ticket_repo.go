@@ -8,7 +8,7 @@ import (
 	"strconv"
 )
 
-const ticketCols = `id, nome_cliente, tipo_ticket, numero_ticket, cod_service, endereco, telefone, coluna_atual, posicao, created_at, updated_at, ticket360_id, ticket360_numero, observacoes, visita_data, visita_turno, visita_hora, visita_endereco`
+const ticketCols = `id, nome_cliente, tipo_ticket, numero_ticket, cod_service, endereco, telefone, coluna_atual, posicao, created_at, updated_at, ticket360_id, ticket360_numero, observacoes, visita_data, visita_turno, visita_hora, visita_endereco, visita_realizada_em`
 
 type TicketRepo struct {
 	db *sql.DB
@@ -70,7 +70,7 @@ func (r *TicketRepo) Get(ctx context.Context, id int64) (*Ticket, error) {
 	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco)
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTicketNaoEncontrado
 	}
@@ -91,7 +91,7 @@ func (r *TicketRepo) GetPorNumero360(ctx context.Context, numero int64) (*Ticket
 	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco)
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -110,7 +110,7 @@ func (r *TicketRepo) GetPorCodService(ctx context.Context, cod string) (*Ticket,
 	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco)
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -214,18 +214,37 @@ func scanTicket(rows *sql.Rows, t *Ticket) error {
 	return rows.Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco)
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada)
 }
 
-// SetVisita grava (ou limpa) o agendamento de visita do card.
+// SetVisita grava (ou limpa) o agendamento de visita do card. Re-agendar
+// (data não vazia) limpa a marca de visita realizada.
 func (r *TicketRepo) SetVisita(ctx context.Context, id int64, data, turno, hora, endereco string) error {
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE tickets SET visita_data = ?, visita_turno = ?, visita_hora = ?, visita_endereco = ?,
+		   visita_realizada_em = CASE WHEN ? = '' THEN visita_realizada_em ELSE '' END,
 		   updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
 		 WHERE id = ?`,
-		data, turno, hora, endereco, id)
+		data, turno, hora, endereco, data, id)
 	if err != nil {
 		return fmt.Errorf("salvar visita: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrTicketNaoEncontrado
+	}
+	return nil
+}
+
+// MarcarVisitaRealizada grava a data-hora da marcação; data-hora vazia limpa.
+func (r *TicketRepo) MarcarVisitaRealizada(ctx context.Context, id int64, quando string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE tickets SET visita_realizada_em = ?,
+		   updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+		 WHERE id = ?`,
+		quando, id)
+	if err != nil {
+		return fmt.Errorf("marcar visita realizada: %w", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {

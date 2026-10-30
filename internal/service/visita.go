@@ -12,6 +12,13 @@ func TurnoVisitaValido(t string) bool {
 	return false
 }
 
+// EhColunaVisitaRealizada reconhece a coluna de destino que marca a visita
+// como realizada — "Visita Realizada" e variações de caixa/acentos/plural.
+// Mover o card com visita agendada para ela marca a visita como realizada.
+func EhColunaVisitaRealizada(coluna string) bool {
+	return strings.Contains(normalizar(coluna), "visita realiz")
+}
+
 // ValidarVisita confere o agendamento de visita na borda. Tudo vazio é
 // válido (limpa o agendamento); preenchido, data/hora seguem formato fixo,
 // turno sai da lista e o endereço respeita o limite de texto.
