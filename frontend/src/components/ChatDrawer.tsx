@@ -36,6 +36,17 @@ const comandosBarra: { cmd: string; exemplo: string }[] = [
   { cmd: '/realizada', exemplo: '/realizada' },
 ];
 
+// Sugestões clicáveis (estilo outros assistentes de IA): aparecem com o
+// campo vazio e, ao clicar, ENVIAM a mensagem pronta — sem digitar.
+const sugestoesChat: string[] = [
+  'quem está em Cobrança?',
+  'liste os cards',
+  '/vincular',
+  '/apagar',
+  '/realizada',
+  'abra o card do cliente ',
+];
+
 function dicaDaBarra(texto: string): string | null {
   if (!texto.startsWith('/')) return null;
   const palavra = texto.split(/\s/)[0].toLowerCase();
@@ -328,6 +339,21 @@ export default function ChatDrawer(props: {
             >
               {dicaDaBarra(texto)}
             </button>
+          )}
+          {!texto.trim() && !enviando && (
+            <div className="mt-2 flex flex-wrap gap-1" aria-label="Sugestões de comando">
+              {sugestoesChat.map((sug) => (
+                <button
+                  key={sug}
+                  type="button"
+                  className="rounded-full border border-white/30 dark:border-white/10 bg-white/50 dark:bg-slate-700/60 px-2.5 py-1 text-xs text-slate-600 hover:bg-sky-500/15 hover:text-sky-700 dark:text-slate-200 dark:hover:bg-sky-400/20"
+                  title="Clique para enviar esta mensagem"
+                  onClick={() => void enviar(sug)}
+                >
+                  {sug.trim()}
+                </button>
+              ))}
+            </div>
           )}
           <form
             className="mt-2 flex gap-1 items-center"
