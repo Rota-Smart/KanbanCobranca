@@ -7,8 +7,8 @@ while read local_ref local_sha remote_ref remote_sha; do
     ver=$(git show "$local_sha":internal/atualizacao/atualizacao.go 2>/dev/null | grep -o 'VersaoApp = "[^"]*"' | cut -d '"' -f2)
     pub=$(git show release:versao.txt 2>/dev/null)
     if [ -n "$ver" ] && [ "$ver" != "$pub" ]; then
-      echo "publicar: v$ver pendente (release tem $pub) — build em background, log em ~/publicar-rotasuite.log"
-      cmd //c start "RotaSuite-Publicar" //low //min powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\Rota Dev\\scripts\\publicar.ps1" -Versao "$ver" -Commit "$local_sha"
+      echo "publicar: v$ver pendente (release tem $pub) — publicando em background, log em ~/publicar-rotasuite.log"
+      nohup powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Rota Dev\scripts\publicar.ps1" -Versao "$ver" -Commit "$local_sha" >/dev/null 2>&1 &
     fi
   fi
 done

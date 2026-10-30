@@ -6,7 +6,10 @@ param(
     [Parameter(Mandatory=$true)][string]$Commit,
     [switch]$DryRun
 )
-$ErrorActionPreference = 'Stop'
+# PS 5.1: stderr de comando nativo (qualquer linha do git, ex. "Preparing
+# worktree") vira ErrorRecord e com 'Stop' mata o script na 1a linha de
+# progresso. 'Continue' + checagens explicitas abaixo.
+$ErrorActionPreference = 'Continue'
 $Log = "$env:USERPROFILE\publicar-rotasuite.log"
 $MainDir = 'C:\Rota Dev'
 $ReleaseDir = 'C:\Rota Smart'
@@ -17,7 +20,9 @@ try {
     $tmp = Join-Path $env:TEMP ("rotasuite-build-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 
     # 1. worktree temporaria no commit exato da main empurrada
-    git -C $MainDir worktree add --detach $tmp $Commit 2>&1 | Out-Null
+    # --force: o commit empurrado costuma ser o HEAD da main worktree
+    git -C $MainDir worktree add --force --detach $tmp $Commit 2>&1 | Out-Null
+    if (-not (Test-Path $tmp)) { throw "worktree temporaria nao criou ($tmp)" }
     Log "worktree temporaria: $tmp"
 
     # 2. exe rodando bloqueia o build
@@ -26,9 +31,20 @@ try {
 
     # 3. build (pesado, mas em prioridade baixa herdada)
     if (-not $DryRun) {
+        # worktree novo nao tem node_modules (gitignored): sem isso o wails
+        # falha e o exe VELHO commitado fica na arvore (regressao de release)
+        Push-Location (Join-Path $tmp 'frontend')
+        & npm install --no-audit --no-fund 2>&1 | ForEach-Object { Log "npm: $_" }
+        $npmOk = ($LASTEXITCODE -eq 0)
+        Pop-Location
+        if (-not $npmOk) { throw "npm install falhou" }
+
+        Remove-Item (Join-Path $tmp 'build\bin\rotasuite.exe') -Force -ErrorAction SilentlyContinue
         Push-Location $tmp
         & wails build -clean -trimpath 2>&1 | ForEach-Object { Log "build: $_" }
+        $buildOk = ($LASTEXITCODE -eq 0)
         Pop-Location
+        if (-not $buildOk) { throw "wails build falhou" }
         $exe = Join-Path $tmp 'build\bin\rotasuite.exe'
         if (-not (Test-Path $exe)) { throw "build nao gerou o exe" }
         Log ("exe gerado: " + (Get-Item $exe).Length + " bytes")
