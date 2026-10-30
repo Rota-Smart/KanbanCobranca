@@ -22,7 +22,23 @@ var migrations = []string{
 	migration012,
 	migration013,
 	migration014,
+	migration015,
 }
+
+// migration015: tentativas de contato do card — cada tentativa é uma linha
+// com data-hora automática, canal opcional (ligação/WhatsApp/e-mail…) e nota
+// livre. O contador e a última data saem por subconsulta no card; funciona
+// em qualquer coluna do board.
+const migration015 = `
+CREATE TABLE tentativas_contato (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id  INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    canal      TEXT    NOT NULL DEFAULT '',
+    nota       TEXT    NOT NULL DEFAULT '',
+    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX idx_tentativas_ticket ON tentativas_contato(ticket_id);
+`
 
 // migration014: visita realizada — quando o card com visita agendada chega à
 // coluna "Visita Realizada" (ou pelo comando /realizada do chat), a data-hora

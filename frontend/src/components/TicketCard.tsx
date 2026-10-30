@@ -3,7 +3,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as bindings from '../../wailsjs/go/main/App';
-import type { Comissao, Ticket } from '../wails-types';
+import type { Comissao, TentativaContato, Ticket } from '../wails-types';
 import { formatCents } from '../money';
 
 // Cores por tipo: faixa lateral + avatar, estilo card de pedido (delivery).
@@ -102,6 +102,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
   const [vinculando, setVinculando] = useState(false);
   const [entradaTicket, setEntradaTicket] = useState('');
   const [erroVinculo, setErroVinculo] = useState('');
+  const [tentativas, setTentativas] = useState<TentativaContato[]>([]);
   const cor = corPorTipo[ticket.tipoTicket] ?? corPorTipo['Outro'];
 
   // Abre o menu ⋯ ancorado no botão. Usa position: fixed em vez de absolute
@@ -110,6 +111,33 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
     e.stopPropagation();
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setMenu((m) => (m ? null : { right: window.innerWidth - r.right, top: r.bottom + 4 }));
+  }
+
+  // Tentativas de contato: a lista carrega ao abrir o menu; registrar grava
+  // uma tentativa agora (data automática) e devolve o card atualizado.
+  useEffect(() => {
+    if (!menu) return;
+    bindings.ListarTentativasContato(ticket.id)
+      .then((l) => setTentativas(l as TentativaContato[]))
+      .catch(() => setTentativas([]));
+  }, [menu, ticket.id, ticket.tentativas]);
+
+  async function registrarTentativa(canal: string) {
+    try {
+      const t = await bindings.RegistrarTentativaContato(ticket.id, canal, '');
+      notificarCardAtualizado(t as Ticket);
+    } catch (e) {
+      setErroVinculo(String(e));
+    }
+  }
+
+  async function removerTentativa(id: number) {
+    try {
+      const t = await bindings.RemoverTentativaContato(id);
+      notificarCardAtualizado(t as Ticket);
+    } catch (e) {
+      setErroVinculo(String(e));
+    }
   }
 
   const menuBox = useRef<HTMLDivElement | null>(null);
@@ -315,6 +343,29 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           </button>
         )}
         <button
+          className="block w-full text-left px-3 py-2 hover:bg-sky-500/10 text-sky-700 dark:text-sky-300"
+          onClick={() => registrarTentativa('')}
+        >
+          📞 Registrar tentativa de contato
+        </button>
+        {tentativas.length > 0 && (
+          <div className="px-3 py-1.5 border-t border-slate-500/10 text-[10px] text-slate-500 dark:text-slate-400">
+            <p className="font-medium">Tentativas ({tentativas.length}) — clique para remover:</p>
+            {tentativas.slice(0, 5).map((t) => (
+              <button
+                key={t.id}
+                className="block w-full text-left py-0.5 hover:text-red-600 dark:hover:text-red-400"
+                title={`Remover tentativa de ${t.createdAt.slice(8, 10)}/${t.createdAt.slice(5, 7)}${t.canal ? ` (${t.canal})` : ''}`}
+                onClick={() => removerTentativa(t.id)}
+              >
+                {t.createdAt.slice(8, 10)}/{t.createdAt.slice(5, 7)} {t.createdAt.slice(11, 16)}
+                {t.canal ? ` — ${t.canal}` : ''}
+              </button>
+            ))}
+            {tentativas.length > 5 && <p>+ {tentativas.length - 5} mais antigas</p>}
+          </div>
+        )}
+        <button
           className="block w-full text-left px-3 py-2 hover:bg-red-500/10 text-red-600 dark:text-red-400"
           onClick={() => {
             setMenu(null);
@@ -357,6 +408,14 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           )}
           {ticket.observacoes?.trim() && (
             <span className="text-[11px] shrink-0" title="Tem observações internas">🗒️</span>
+          )}
+          {(ticket.tentativas ?? 0) > 0 && (
+            <span
+              className="text-[11px] px-1.5 rounded-full font-medium bg-sky-100/80 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200 shrink-0"
+              title={`${ticket.tentativas} tentativa(s) de contato${ticket.ultimaTentativa ? ` — última: ${ticket.ultimaTentativa.slice(8, 10)}/${ticket.ultimaTentativa.slice(5, 7)}` : ''}`}
+            >
+              📞{ticket.tentativas}
+            </span>
           )}
           {ticket.visitaData && (
             <span

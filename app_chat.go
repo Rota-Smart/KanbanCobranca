@@ -602,6 +602,23 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		sb.WriteString(fmt.Sprintf("Pendentes: R$ %.2f | Recebidas: R$ %.2f", float64(pendTotal)/100, float64(recTotal)/100))
 		return sb.String(), "listou as comissões", nil
 
+	case "tentativa_contato":
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
+		}
+		t, err := a.RegistrarTentativaContato(id, argStr("canal"), argStr("nota"))
+		if err != nil {
+			return "", "", err
+		}
+		detalhe := ""
+		if canal := argStr("canal"); canal != "" {
+			detalhe += " via " + canal
+		}
+		return fmt.Sprintf("Tentativa de contato%s registrada no card %d (%s). Total: %d tentativa(s); última em %s.",
+			detalhe, t.ID, t.NomeCliente, t.Tentativas, t.UltimaTentativa),
+			fmt.Sprintf("registrou tentativa de contato de %s (total %d)", t.NomeCliente, t.Tentativas), nil
+
 	case "agendar_visita":
 		id, err := cardID()
 		if err != nil {

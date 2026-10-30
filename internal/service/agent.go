@@ -25,7 +25,7 @@ const systemAgente = `Você é o assistente do app Kanban de Cobrança da Rota S
 	`Prompt da proposta: para ver ou melhorar as instruções que a IA segue ao redigir a proposta de renegociação, use editar_prompt_proposta (acao=ler mostra o atual; acao=salvar grava o texto novo — mande o prompt completo, não só o trecho). ` +
 	`Responda em português do Brasil, curto e direto, confirmando o que fez com os dados obtidos. ` +
 	`Coluna Upgrade (a última): para "mover para upgrade" use registrar_comissao — ela move o card e grava o comissionamento (serviço rende 5%, parcela do upgrade rende 75%); se o usuário não informar os valores, pergunte antes; "recebida" = comissao_recebida. ` +
-	`Detalhes: agendar_visita aceita quando=HH:MM ou Manhã/Tarde/Noite (o que falta mantém o atual); observacao_card tem modo substituir (padrão) ou acrescentar; registrar_comissao aceita dataRegistro AAAA-MM-DD e observacoes.`
+	`Detalhes: agendar_visita aceita quando=HH:MM ou Manhã/Tarde/Noite (o que falta mantém o atual); observacao_card tem modo substituir (padrão) ou acrescentar; registrar_comissao aceita dataRegistro AAAA-MM-DD e observacoes; tentativa_contato (canal opcional, data automática) registra tentativa de contato — use quando o usuário disser que tentou/ligou/chamou o cliente; canal = ligação/WhatsApp/e-mail.`
 
 // Ferramentas disponíveis para o agente (formato tools da API OpenAI).
 func AgentTools() []map[string]any {
@@ -61,18 +61,18 @@ func AgentTools() []map[string]any {
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
 		tool("atendimentos_cliente", "",
 			map[string]any{"codService": map[string]any{"type": "string"}}, []string{"codService"}),
-		tool("pesquisar_tickets", "Tickets abertos; antes de detalhe/responder.",
+		tool("pesquisar_tickets", "Tickets abertos; antes de detalhe.",
 			map[string]any{"query": map[string]any{"type": "string"}}, []string{"query"}),
 		tool("detalhe_ticket_360", "Detalhe do ticket.",
 			map[string]any{"numero": map[string]any{"type": "string"}}, []string{"numero"}),
 		tool("abrir_ticket_360", "Abre o ticket no navegador.",
 			map[string]any{"numero": map[string]any{"type": "string"}}, []string{"numero"}),
-		tool("responder_ticket_360", "Responde o ticket (só pedido explícito).",
+		tool("responder_ticket_360", "Responde o ticket (só se pedido).",
 			map[string]any{
 				"numero": map[string]any{"type": "string"},
 				"texto":  map[string]any{"type": "string"},
 			}, []string{"numero", "texto"}),
-		tool("alterar_status_ticket_360", "Muda status (nome exato do detalhe).",
+		tool("alterar_status_ticket_360", "Muda status (nome exato).",
 			map[string]any{
 				"numero": map[string]any{"type": "string"},
 				"status": map[string]any{"type": "string"},
@@ -93,12 +93,12 @@ func AgentTools() []map[string]any {
 			}, []string{"cardId", "data"}),
 		tool("apagar_card", "Apaga card e acordos (destrutivo).",
 			map[string]any{"cardId": map[string]any{"type": "number"}}, []string{"cardId"}),
-		tool("vincular_ticket", "Vincula/desvincula ticket 360.",
+		tool("vincular_ticket", "Vincula ticket 360.",
 			map[string]any{
 				"cardId": map[string]any{"type": "number"},
 				"numero": map[string]any{"type": "string"},
 			}, []string{"cardId"}),
-		tool("observacao_card", "Observações do card (modo acrescentar/substituir).",
+		tool("observacao_card", "Obs. do card (acrescentar/substituir).",
 			map[string]any{
 				"cardId":      map[string]any{"type": "number"},
 				"observacoes": map[string]any{"type": "string"},
@@ -108,7 +108,7 @@ func AgentTools() []map[string]any {
 			map[string]any{"cardId": map[string]any{"type": "number"}}, []string{"cardId"}),
 		tool("gerar_proposta", "",
 			map[string]any{"cardId": map[string]any{"type": "number"}}, []string{"cardId"}),
-		tool("listar_tabela_orcamento", "Tabela de preços; antes de gerar_orcamento.",
+		tool("listar_tabela_orcamento", "Tabela de preços.",
 			map[string]any{}, nil),
 		tool("gerar_orcamento", "Orçamento (tipo + quantidades).",
 			map[string]any{
@@ -124,14 +124,14 @@ func AgentTools() []map[string]any {
 		tool("listar_padroes", "", map[string]any{}, nil),
 		tool("apagar_padrao", "",
 			map[string]any{"nome": map[string]any{"type": "string"}}, []string{"nome"}),
-		tool("editar_prompt_proposta", "Lê/troca o prompt de redação da proposta (acao=ler|salvar).",
+		tool("editar_prompt_proposta", "Lê/troca o prompt da proposta (acao=ler|salvar).",
 			map[string]any{
 				"acao":  map[string]any{"type": "string"},
 				"texto": map[string]any{"type": "string"},
 			}, []string{"acao"}),
 		tool("verificar_tickets_fechados", "",
 			map[string]any{}, nil),
-		tool("registrar_comissao", "Comissão na coluna Upgrade (move o card).",
+		tool("registrar_comissao", "Comissão na Upgrade (move o card).",
 			map[string]any{
 				"cardId":       map[string]any{"type": "number"},
 				"valorServico": map[string]any{"type": "string"},
@@ -143,6 +143,11 @@ func AgentTools() []map[string]any {
 			map[string]any{"cardId": map[string]any{"type": "number"}}, []string{"cardId"}),
 		tool("listar_comissoes", "",
 			map[string]any{}, nil),
+		tool("tentativa_contato", "",
+			map[string]any{
+				"cardId": map[string]any{"type": "number"},
+				"canal":  map[string]any{"type": "string"},
+			}, []string{"cardId"}),
 	}
 }
 

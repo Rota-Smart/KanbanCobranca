@@ -8,7 +8,9 @@ import (
 	"strconv"
 )
 
-const ticketCols = `id, nome_cliente, tipo_ticket, numero_ticket, cod_service, endereco, telefone, coluna_atual, posicao, created_at, updated_at, ticket360_id, ticket360_numero, observacoes, visita_data, visita_turno, visita_hora, visita_endereco, visita_realizada_em`
+const ticketCols = `id, nome_cliente, tipo_ticket, numero_ticket, cod_service, endereco, telefone, coluna_atual, posicao, created_at, updated_at, ticket360_id, ticket360_numero, observacoes, visita_data, visita_turno, visita_hora, visita_endereco, visita_realizada_em,
+	(SELECT COUNT(*) FROM tentativas_contato tc WHERE tc.ticket_id = tickets.id),
+	(SELECT COALESCE(MAX(tc.created_at), '') FROM tentativas_contato tc WHERE tc.ticket_id = tickets.id)`
 
 type TicketRepo struct {
 	db *sql.DB
@@ -70,7 +72,8 @@ func (r *TicketRepo) Get(ctx context.Context, id int64) (*Ticket, error) {
 	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada)
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada,
+		&t.Tentativas, &t.UltimaTentativa)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTicketNaoEncontrado
 	}
@@ -91,7 +94,8 @@ func (r *TicketRepo) GetPorNumero360(ctx context.Context, numero int64) (*Ticket
 	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada)
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada,
+		&t.Tentativas, &t.UltimaTentativa)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -110,7 +114,8 @@ func (r *TicketRepo) GetPorCodService(ctx context.Context, cod string) (*Ticket,
 	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada)
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada,
+		&t.Tentativas, &t.UltimaTentativa)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -211,10 +216,16 @@ func (r *TicketRepo) VincularTicket360(ctx context.Context, id int64, uuid, nume
 }
 
 func scanTicket(rows *sql.Rows, t *Ticket) error {
-	return rows.Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
+	var ultima sql.NullString // MAX sem linhas volta NULL
+	if err := rows.Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada)
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada,
+		&t.Tentativas, &ultima); err != nil {
+		return err
+	}
+	t.UltimaTentativa = ultima.String
+	return nil
 }
 
 // SetVisita grava (ou limpa) o agendamento de visita do card. Re-agendar

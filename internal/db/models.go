@@ -22,6 +22,8 @@ type Ticket struct {
 	VisitaHora      string `json:"visitaHora"`      // horário livre opcional (HH:MM)
 	VisitaEndereco  string `json:"visitaEndereco"`  // endereço da visita; base do link do Google Maps
 	VisitaRealizada string `json:"visitaRealizada"` // data-hora em que a visita foi marcada como realizada (vazio = pendente)
+	Tentativas      int    `json:"tentativas"`      // tentativas de contato registradas (linhas em tentativas_contato)
+	UltimaTentativa string `json:"ultimaTentativa"` // data-hora da última tentativa de contato (vazio = nenhuma)
 }
 
 // Comissao é o comissionamento de um card na coluna "Upgrade": o serviço

@@ -6,6 +6,7 @@ export type Ticket = db.Ticket;
 export type Vinculo360 = db.Vinculo360;
 export type Cobranca = db.Cobranca;
 export type Comissao = db.Comissao;
+export type TentativaContato = db.TentativaContato;
 export type Proposta = service.Proposta;
 export type ReparcelamentoInput = service.ReparcelamentoInput;
 export type ReparcelamentoResult = service.ReparcelamentoResult;

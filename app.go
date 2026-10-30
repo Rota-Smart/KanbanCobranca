@@ -25,6 +25,7 @@ type App struct {
 	db        *sql.DB
 	dbPath    string // caminho do arquivo do banco; vazio em testes antigos
 	tickets   *db.TicketRepo
+	tentativas *db.TentativaRepo
 	vinculos  *db.VinculoRepo
 	cobrancas *db.CobrancaRepo
 	// uiPronta: true após startup do Wails — sem isso o EventsEmit mata o
@@ -104,6 +105,7 @@ func NewApp(database *sql.DB, propostas *service.PropostaService) *App {
 		ctx:       context.Background(),
 		db:        database,
 		tickets:   db.NewTicketRepo(database),
+		tentativas: db.NewTentativaRepo(database),
 		vinculos:  db.NewVinculoRepo(database),
 		cobrancas: db.NewCobrancaRepo(database),
 		colunas:   db.NewColumnRepo(database),
