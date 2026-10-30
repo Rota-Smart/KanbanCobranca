@@ -175,6 +175,9 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		local, reconhecido = a.executarComandoRealizada(mensagem, chatID)
 	}
 	if !reconhecido {
+		local, reconhecido = a.executarIntencaoAbrir(mensagem)
+	}
+	if !reconhecido {
 		local, reconhecido = a.executarIntencaoLocal(mensagem)
 	}
 	if reconhecido {

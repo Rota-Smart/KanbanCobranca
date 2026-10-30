@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -306,5 +307,39 @@ func TestGenerateProposalAVista(t *testing.T) {
 	}
 	if contains(prop.Texto, "Parcelamento") {
 		t.Errorf("proposta à vista não deveria ter parcelamento:\n%s", prop.Texto)
+	}
+}
+
+func TestAbrirCardPorChat(t *testing.T) {
+	a := newTestApp(t)
+	tk, err := a.SaveTicket(db.Ticket{NomeCliente: "Maria Souza", TipoTicket: "Outro", ColunaAtual: "Fazer contato", CodService: "24755"})
+	if err != nil {
+		t.Fatalf("SaveTicket: %v", err)
+	}
+	if err := a.tickets.VincularTicket360(a.ctx, tk.ID, "", "99887", ""); err != nil {
+		t.Fatalf("VincularTicket360: %v", err)
+	}
+
+	// por nome
+	res, ok := a.executarIntencaoAbrir("abra o card do cliente Maria")
+	if !ok || !strings.Contains(res.Resposta, "Maria Souza") {
+		t.Fatalf("abra por nome: ok=%v resposta=%q", ok, res.Resposta)
+	}
+	// por código service
+	if res, ok := a.executarIntencaoAbrir("abra o cliente 24755"); !ok || !strings.Contains(res.Resposta, "Maria Souza") {
+		t.Fatalf("abra por código: resposta=%q", res.Resposta)
+	}
+	// por número do ticket 360
+	if res, ok := a.executarIntencaoAbrir("o ticket 99887 tem card?"); !ok || !strings.Contains(res.Resposta, "Maria Souza") {
+		t.Fatalf("ticket 360: resposta=%q", res.Resposta)
+	}
+	// sem card
+	res, ok = a.executarIntencaoAbrir("abra o cliente Inexistente")
+	if !ok || !strings.Contains(res.Resposta, "Nenhum card") {
+		t.Fatalf("sem card: resposta=%q", res.Resposta)
+	}
+	// não é o comando
+	if _, ok := a.executarIntencaoAbrir("qual o financeiro do João?"); ok {
+		t.Fatalf("não devia reconhecer consulta comum")
 	}
 }

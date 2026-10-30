@@ -441,3 +441,37 @@ func CasarColuna(texto string, colunas []string) (string, error) {
 		return "", fmt.Errorf("%d colunas casam com %q: %s — seja mais específico", len(achadas), texto, strings.Join(achadas, "; "))
 	}
 }
+
+// ---- Comando "abra o card do cliente X" (texto livre) ----
+
+// IntencaoAbrir é o pedido de abrir/verificar o card de um cliente, ticket ou
+// código: "abra o cliente X", "abra o card do X", "o ticket 123 tem card?".
+type IntencaoAbrir struct {
+	Alvo string // nome, código service, id do card ou nº do ticket 360
+}
+
+// reAbrirCard: verbo de abertura + palavra-chave obrigatória (card/cliente/
+// ticket) — "abra o orçamento" não é card.
+var reAbrirCard = regexp.MustCompile(
+	`(?i)^\s*(?:abra|abre|abrir|abri|mostre|mostra|me\s+mostre|me\s+mostra)\s+(?:o\s+|a\s+|esse\s+|este\s+)?(?:card|cliente|ticket)\b(?:\s+d[oa]s?\s+(?:cliente\s+)?)?(.+?)\s*[.!?]*$`)
+
+// reTemCard: "verifique se o cliente X tem card", "o ticket 123 tem card?".
+var reTemCard = regexp.MustCompile(
+	`(?i)^\s*(?:(?:verifi\w+|confer\w+|confira|veja|checa|checar|olha|olhe)\s+)?(?:se\s+)?(?:o\s+|a\s+)?(?:(?:card|cliente|ticket)\b(?:\s+d[oa]s?\s+(?:cliente\s+)?)?\s+)?(.+?)\s+tem\s+(?:um\s+)?cards?\s*[.!?]*$`)
+
+// ParseIntencaoAbrir reconhece os pedidos de abrir/verificar card no texto;
+// ok=false quando não é um deles.
+func ParseIntencaoAbrir(msg string) (IntencaoAbrir, bool) {
+	for _, re := range []*regexp.Regexp{reAbrirCard, reTemCard} {
+		if m := re.FindStringSubmatch(msg); m != nil {
+			alvo := strings.TrimSpace(m[1])
+			// "abra o card do cliente João" → "cliente João" vira "João".
+			alvo = strings.TrimPrefix(alvo, "cliente ")
+			alvo = limparBordas(alvo)
+			if alvo != "" {
+				return IntencaoAbrir{Alvo: alvo}, true
+			}
+		}
+	}
+	return IntencaoAbrir{}, false
+}

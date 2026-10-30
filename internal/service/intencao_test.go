@@ -66,7 +66,7 @@ func TestParseComandoMove(t *testing.T) {
 		{"/move João na Cobrança", true, "", "João", "Cobrança"},
 		{"/move 12345", true, "12345", "", ""},
 		{"/move", true, "", "", ""},
-		{"/move para Cobrança", true, "", "Cobrança", ""}, // sem alvo: o app pede a coluna
+		{"/move para Cobrança", true, "", "Cobrança", ""},        // sem alvo: o app pede a coluna
 		{"mova o card do João para Cobrança", false, "", "", ""}, // fluxo antigo
 		{"/apague o card do João", false, "", "", ""},
 		{"", false, "", "", ""},
@@ -160,7 +160,7 @@ func TestParseComandoApagar(t *testing.T) {
 		{"/excluir 12345", true, "12345", ""},
 		{"/delete João em Cobrança em Negociando", true, "João em Cobrança", "Negociando"},
 		{"/remova.", true, "", ""},
-		{"apague o card do João", false, "", ""},  // fluxo antigo, sem barra
+		{"apague o card do João", false, "", ""},     // fluxo antigo, sem barra
 		{"/move 12345 para Cobrança", false, "", ""}, // outro comando
 		{"", false, "", ""},
 	}
@@ -193,9 +193,9 @@ func TestResolverCardNoTexto(t *testing.T) {
 		{"o card #1 está atrasado", 1},
 		{"vamos mover o Resolute Distribuidora", 1},
 		{"clientes: Mercado Bom Preço e outros", 2},
-		{"falei do Batista ontem", 3},                       // pedaço único do nome
-		{"a cliente Rejane reclamou", 0},                    // nada casa
-		{"os dois clientes 24755 e 11223", 1},               // dois códigos: o primeiro citado vence
+		{"falei do Batista ontem", 3},         // pedaço único do nome
+		{"a cliente Rejane reclamou", 0},      // nada casa
+		{"os dois clientes 24755 e 11223", 1}, // dois códigos: o primeiro citado vence
 	}
 	for _, tc := range casos {
 		card, ok := ResolverCardNoTexto(tc.texto, cards)
@@ -211,5 +211,41 @@ func TestResolverCardNoTexto(t *testing.T) {
 	}
 	if card, ok := ResolverCardNoTexto("os dois clientes 24755 e 11223", cards); !ok || card.ID != 1 {
 		t.Errorf("dois códigos: quer card 1 (primeiro citado), veio %+v ok=%v", card, ok)
+	}
+}
+
+func TestParseIntencaoAbrir(t *testing.T) {
+	casos := []struct {
+		msg  string
+		want string
+	}{
+		{"abra o cliente João", "João"},
+		{"abre o card do cliente Maria Souza", "Maria Souza"},
+		{"abra o card do 24755", "24755"},
+		{"mostre o ticket 12345", "12345"},
+		{"abrir o cliente XPTO.", "XPTO"},
+		{"verifique se o cliente João tem card", "João"},
+		{"o ticket 55555 tem card?", "55555"},
+		{"confere se a Maria tem card", "Maria"},
+		// negativos: não são abrir card
+		{"abra o orçamento do João", ""},
+		{"abra a planilha", ""},
+		{"o cliente pagou o card?", ""},
+	}
+	for _, c := range casos {
+		in, ok := ParseIntencaoAbrir(c.msg)
+		if c.want == "" {
+			if ok {
+				t.Errorf("ParseIntencaoAbrir(%q) reconheceu alvo %q; devia ignorar", c.msg, in.Alvo)
+			}
+			continue
+		}
+		if !ok {
+			t.Errorf("ParseIntencaoAbrir(%q) não reconheceu; quero %q", c.msg, c.want)
+			continue
+		}
+		if in.Alvo != c.want {
+			t.Errorf("ParseIntencaoAbrir(%q) = %q; quero %q", c.msg, in.Alvo, c.want)
+		}
 	}
 }

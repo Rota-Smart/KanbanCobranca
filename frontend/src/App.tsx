@@ -304,6 +304,32 @@ export default function App() {
     return modos.cards[t.id] ?? modos.colunas[t.colunaAtual] ?? modos.global;
   }
 
+  // abrirCardPorId acha o card no board atual; se o quadro estiver velho
+  // (card criado por outra sessão/importação), recarrega do banco e tenta de
+  // novo. Nulo = card não existe mais.
+  async function abrirCardPorId(id: number): Promise<Ticket | null> {
+    for (const ts of Object.values(board)) {
+      const t = ts.find((x) => x.id === id);
+      if (t) return t;
+    }
+    try {
+      const bd = boardFromTickets(await bindings.GetTickets(), colunas);
+      const t = abrirCardPorIdEm(bd, id);
+      if (t) setBoard(bd);
+      return t;
+    } catch {
+      return null;
+    }
+  }
+
+  function abrirCardPorIdEm(fonte: Board, id: number): Ticket | null {
+    for (const ts of Object.values(fonte)) {
+      const t = ts.find((x) => x.id === id);
+      if (t) return t;
+    }
+    return null;
+  }
+
   function setModoCard(t: Ticket, modo: ModoCard | 'completo') {
     if (modo === 'completo') {
       setPreCobranca(null);
@@ -502,11 +528,21 @@ export default function App() {
     const offProg = EventsOn('atualizacao:progresso', (d: { percento: number }) => {
       setAvisoAtualiza((a) => (a ? { ...a, progresso: d.percento } : a));
     });
+    // "Abra o card do cliente X" no chat: o backend resolveu o card e pede a
+    // abertura do modal completo por evento (o board pode estar desatualizado
+    // em relação ao banco, então se não achar aqui, recarrega e tenta de novo).
+    const offAbrir = EventsOn('chat:abrir-card', (id: number) => {
+      abrirCardPorId(id).then((t) => {
+        if (t) setAberto(t);
+        else showToast(`Card #${id} não encontrado no quadro visível.`);
+      });
+    });
     return () => {
       offOk();
       offErr();
       offDisp();
       offProg();
+      offAbrir();
     };
   }, []);
 
@@ -1198,9 +1234,10 @@ ${txt.trim()}` : txt.trim());
           ticket={aberto}
           podeGerar={aberto.colunaAtual === colunaDisparaCobranca}
           preCobranca={preCobranca}
-          onFechouComSave={() => {
-            setAberto(null);
-            setPreCobranca(null);
+          onSalvou={() => {
+            // Acordo salvo: atualiza o quadro (selos/cobrança), o modal do
+            // cliente continua aberto.
+            void recarregarBoard();
           }}
           onFechar={() => {
             setAberto(null);

@@ -27,6 +27,9 @@ type App struct {
 	tickets   *db.TicketRepo
 	vinculos  *db.VinculoRepo
 	cobrancas *db.CobrancaRepo
+	// uiPronta: true após startup do Wails — sem isso o EventsEmit mata o
+	// processo (testes unitários emitem sem UI).
+	uiPronta  bool
 	colunas   *db.ColumnRepo
 	comissoes *db.ComissaoRepo
 	propostas *service.PropostaService
@@ -135,6 +138,7 @@ func (a *App) colunaValida(nome string) bool {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.uiPronta = true
 	a.iniciarAtalhos()
 	a.garantirColunaOrcamento()
 	a.MonitorAtualizacao()

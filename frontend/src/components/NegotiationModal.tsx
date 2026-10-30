@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as App from '../../wailsjs/go/main/App';
 import type {
   Avaliacao,
@@ -27,7 +28,8 @@ interface Props {
   podeGerar?: boolean;
   /** Resultado do fluxo automático da coluna Cobrança (pré-preenche o modal). */
   preCobranca?: ResultadoCobranca | null;
-  onFechouComSave: () => void;
+  /** Acordo salvo: o app recarrega o board, mas o modal continua aberto. */
+  onSalvou: () => void;
   onFechar: () => void;
   /** Abre o diálogo de agendamento/edição da visita deste card. */
   onAgendarVisita?: (t: Ticket) => void;
@@ -104,7 +106,7 @@ const dataBR = (iso: string) => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('pt-BR');
 };
 
-export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFechouComSave, onFechar, onAgendarVisita }: Props) {
+export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSalvou, onFechar, onAgendarVisita }: Props) {
   const [aba, setAba] = useState<Aba>('acordo');
   const [total, setTotal] = useState('');
   const [entrada, setEntrada] = useState('0');
@@ -116,6 +118,9 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
   const [calcErro, setCalcErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [saveErro, setSaveErro] = useState('');
+  const [msgSalvo, setMsgSalvo] = useState('');
+  const [histAberto, setHistAberto] = useState(false);
+  const [histAbertoId, setHistAbertoId] = useState<number | null>(null);
   const [proposta, setProposta] = useState<Proposta | null>(null);
   const [temIA, setTemIA] = useState(false);
   const [historico, setHistorico] = useState<Cobranca[]>([]);
@@ -402,7 +407,11 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
         versaoRegra: 1,
       });
       setSuja(false);
-      onFechouComSave();
+      // Confirma na tela e mantém o modal do cliente aberto — quem fecha é
+      // o usuário. O selo/quadro é recarregado pelo App via onSalvou.
+      setMsgSalvo('✅ Acordo salvo');
+      setTimeout(() => setMsgSalvo(''), 6000);
+      onSalvou();
     } catch (e) {
       setSaveErro(String(e));
     } finally {
@@ -535,9 +544,18 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
               {ticket.telefone ? ` · ${ticket.telefone}` : ''}
             </p>
           </div>
-          <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={tentarFechar}>
-            ✕
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              className="px-2.5 py-1.5 rounded-lg text-[13px] font-medium border border-slate-300/50 text-slate-600 hover:bg-slate-500/10 dark:text-slate-300"
+              title="Todos os acordos já salvos para este cliente (somente leitura)"
+              onClick={() => setHistAberto(true)}
+            >
+              📜 Acordos
+            </button>
+            <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={tentarFechar}>
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Nav de seções, estilo coluna do Kanban */}
@@ -819,6 +837,11 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
             >
               {salvando ? 'Salvando…' : 'Salvar acordo'}
             </button>
+            {msgSalvo && (
+              <span className="ml-2 text-sm font-medium text-emerald-600 dark:text-emerald-400" role="status">
+                {msgSalvo}
+              </span>
+            )}
             {saveErro && <p className="text-xs text-red-600">{saveErro}</p>}
 
             <button
@@ -1264,6 +1287,67 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onFec
 
         {orcAberto && <OrcamentoModal ticket={ticket} onFechar={() => setOrcAberto(false)} />}
       </aside>
+
+      {histAberto &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setHistAberto(false)}>
+            <div
+              className="glass w-[34rem] max-w-full max-h-[80vh] overflow-y-auto rounded-xl p-4 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-semibold dark:text-slate-100">
+                  📜 Acordos salvos — {ticket.nomeCliente}
+                </h3>
+                <button aria-label="Fechar histórico" className="text-slate-400 hover:text-slate-600" onClick={() => setHistAberto(false)}>
+                  ✕
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                {historico.length} acordo(s) registrado(s). Somente leitura — para mudar o acordo ativo, edite na aba Acordo.
+              </p>
+              {historico.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">Nenhum acordo salvo ainda para este cliente.</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {historico.map((c) => {
+                    const aberto = histAbertoId === c.id;
+                    return (
+                      <li key={c.id} className="rounded-lg border border-slate-200/60 dark:border-slate-600/40 overflow-hidden">
+                        <button
+                          className="w-full flex items-center justify-between px-3 py-2 text-left text-[13px] hover:bg-slate-500/10 dark:text-slate-200"
+                          onClick={() => setHistAbertoId(aberto ? null : c.id)}
+                          title={aberto ? 'Recolher detalhes' : 'Ver detalhes do acordo'}
+                        >
+                          <span>
+                            {dataBR(c.dataContrato)} · {formatCents(c.totalAbertoCents)} em {c.numeroVezes}x
+                            {c.ativa && <span className="ml-1.5 text-emerald-600 dark:text-emerald-400 font-medium">· ativa</span>}
+                          </span>
+                          <span className="uppercase text-xs text-slate-500 dark:text-slate-400">{c.status}</span>
+                        </button>
+                        {aberto && (
+                          <dl className="px-3 pb-3 pt-1 text-xs text-slate-600 dark:text-slate-300 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-slate-200/60 dark:border-slate-600/40">
+                            <dt>Data do contrato</dt><dd>{dataBR(c.dataContrato)}</dd>
+                            <dt>Total em aberto</dt><dd>{formatCents(c.totalAbertoCents)}</dd>
+                            <dt>Entrada</dt><dd>{formatCents(c.entradaCents)}</dd>
+                            <dt>Parcelas</dt><dd>{c.numeroVezes}x de {formatCents(c.parcelaBaseCents)}</dd>
+                            {c.parceladoCents > 0 && (<><dt>Parcelado</dt><dd>{formatCents(c.parceladoCents)}</dd></>)}
+                            {c.ultimaParcelaCents > 0 && (<><dt>Última parcela</dt><dd>{formatCents(c.ultimaParcelaCents)}</dd></>)}
+                            {c.finalCents > 0 && (<><dt>Final</dt><dd>{formatCents(c.finalCents)}</dd></>)}
+                            <dt>Status</dt><dd className="uppercase">{c.status}{c.ativa ? ' (ativa)' : ''}</dd>
+                            <dt>Vencimento</dt><dd>{c.dataVencimento ? dataBR(c.dataVencimento) : '—'}</dd>
+                            <dt>Regra</dt><dd>Política v{c.versaoRegra}</dd>
+                          </dl>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
