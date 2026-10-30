@@ -269,3 +269,29 @@ func TestParseIntencaoAbrirContexto(t *testing.T) {
 		t.Errorf("o cliente João tem card? deveria ser alvo João, veio %+v (ok=%v)", in, ok)
 	}
 }
+
+func TestParseIntencaoAbrirContextoVerbos(t *testing.T) {
+	for _, msg := range []string{
+		"abra o card",
+		"abrir o card",
+		"abre o card do cliente",
+		"me mostre o card",
+		"mostra o card",
+		"expanda o card",
+		"expandir o card",
+		"expande o card",
+		"visualizar o card",
+	} {
+		in, ok := ParseIntencaoAbrir(msg)
+		if !ok || !in.Contexto || !in.Abrir {
+			t.Errorf("ParseIntencaoAbrir(%q): ok=%v contexto=%v abrir=%v", msg, ok, in.Contexto, in.Abrir)
+		}
+	}
+	// pergunta sem nome (responde, não abre)
+	for _, msg := range []string{"possui card aberto?", "tem card?", "possui card?"} {
+		in, ok := ParseIntencaoAbrir(msg)
+		if !ok || !in.Contexto || in.Abrir {
+			t.Errorf("ParseIntencaoAbrir(%q): ok=%v contexto=%v abrir=%v", msg, ok, in.Contexto, in.Abrir)
+		}
+	}
+}

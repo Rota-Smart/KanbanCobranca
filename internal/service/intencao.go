@@ -449,6 +449,7 @@ func CasarColuna(texto string, colunas []string) (string, error) {
 type IntencaoAbrir struct {
 	Alvo     string // nome, código service, id do card ou nº do ticket 360
 	Contexto bool   // alvo é pronome ("esse cliente", "ele"): quem resolve é o contexto da conversa
+	Abrir    bool   // comando de abertura ("abra o card"): abre o modal, não só responde
 }
 
 // reAbrirCard: verbo de abertura + palavra-chave obrigatória (card/cliente/
@@ -463,12 +464,21 @@ var reTemCard = regexp.MustCompile(
 // reContextoCard reconhece a pergunta SEM nome: "esse cliente possui card
 // aberto?", "ele tem card?", "o cliente tem card?". Tem de vir antes das
 // regexes gerais, senão o pronome vira alvo.
+// reAbrirCardContexto: comando de abertura SEM nome — "abra o card",
+// "abrir o card", "abre o card do cliente", "me mostre o card". O card é o
+// do cliente em discussão na conversa e o modal abre de verdade.
+var reAbrirCardContexto = regexp.MustCompile(
+	`(?i)^\s*(?:abra|abre|abrir|abri|expand\w*|mostre|mostra|me\s+mostre|me\s+mostra|visualiz\w*|vejo|veja)\s+(?:o\s+|esse\s+|este\s+|aquele\s+)?cards?\s*(?:d[oa]\s+)?(?:cliente\b)?\s*[.!?]?\s*$`)
+
 var reContextoCard = regexp.MustCompile(
 	`(?i)^\s*(?:(?:verifi\w+|confer\w+|confira|veja|checa|checar|olha|olhe)\s+)?(?:se\s+)?(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|ele\s+|ela\s+)?(?:card\s+|cliente\s+|ticket\s+)?(?:d[oa]\s+)?(?:cliente\s+)?(?:tem|possui|poss\w+|existe)\s+(?:um\s+|algum\s+)?cards?\s*(?:abertos?|em\s+aberto)?\s*[.!?]*$`)
 
 // ParseIntencaoAbrir reconhece os pedidos de abrir/verificar card no texto;
 // ok=false quando não é um deles.
 func ParseIntencaoAbrir(msg string) (IntencaoAbrir, bool) {
+	if reAbrirCardContexto.MatchString(msg) {
+		return IntencaoAbrir{Contexto: true, Abrir: true}, true
+	}
 	if reContextoCard.MatchString(msg) {
 		return IntencaoAbrir{Contexto: true}, true
 	}
