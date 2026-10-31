@@ -218,10 +218,14 @@ func ParseComandoApagar(msg string) (ComandoApagar, bool) {
 
 // ---- Cliente citado num texto livre (contexto do chat) ----
 
-// reNumeroCard acha códigos service/ids citados no texto: "#1" curto com
-// cerilha, ou número de 3+ dígitos solto ("24755") — soltos curtos demais
-// ("3 dias") casariam id de card por coincidência.
-var reNumeroCard = regexp.MustCompile(`#(\d{1,10})\b|(?:^|[\s(])(\d{3,10})\b`)
+// reNumeroCard acha códigos service/ids citados COM referência explícita:
+// "#1" (cerilha) ou número rotulado ("cod 24755", "cliente 24044", "card 12").
+// Número SOLTO no texto ficou de fora de propósito: valor em R$, data, dias
+// ou telefone casavam id de card por coincidência e o "cliente em discussão"
+// virava um card aleatório — de preferência um recém-criado, de id mais alto
+// (v1.40.2: "coloque em aguardando assinatura" moveu o card errado).
+var reNumeroCard = regexp.MustCompile(`#(\d{1,10})\b`)
+var reNumeroRotulado = regexp.MustCompile(`(?i)\b(?:c[óo]d(?:igo)?(?:\s+service)?|clientes?|cards?)\s*[:#]?\s*(\d{3,10})\b`)
 
 // ResolverCardNoTexto acha, num texto livre (uma mensagem do chat), UM card
 // citado — é assim que "/move cobrança" descobre o cliente em discussão.
@@ -230,14 +234,13 @@ var reNumeroCard = regexp.MustCompile(`#(\d{1,10})\b|(?:^|[\s(])(\d{3,10})\b`)
 // único card. ok=false quando nada casa ou o casamento é ambíguo — agir no
 // card errado é pior que pedir de novo.
 func ResolverCardNoTexto(texto string, cards []CardResumo) (CardResumo, bool) {
-	for _, m := range reNumeroCard.FindAllStringSubmatch(texto, -1) {
-		n := m[1]
-		if n == "" {
-			n = m[2]
-		}
-		for _, c := range cards {
-			if c.CodService == n || strconv.FormatInt(c.ID, 10) == n {
-				return c, true
+	for _, re := range []*regexp.Regexp{reNumeroRotulado, reNumeroCard} {
+		for _, m := range re.FindAllStringSubmatch(texto, -1) {
+			n := m[1]
+			for _, c := range cards {
+				if c.CodService == n || strconv.FormatInt(c.ID, 10) == n {
+					return c, true
+				}
 			}
 		}
 	}

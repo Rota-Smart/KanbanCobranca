@@ -189,7 +189,8 @@ func TestResolverCardNoTexto(t *testing.T) {
 		texto string
 		quer  int64
 	}{
-		{"qual o financeiro do 24755?", 1},
+		{"qual o financeiro do cod 24755?", 1},
+		{"saldo de 3221 e 12 dias de atraso", 0}, // números soltos NÃO são card
 		{"o card #1 está atrasado", 1},
 		{"vamos mover o Resolute Distribuidora", 1},
 		{"clientes: Mercado Bom Preço e outros", 2},
