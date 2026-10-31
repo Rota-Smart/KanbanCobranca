@@ -315,6 +315,22 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
             ✅ Marcar visita realizada
           </button>
         )}
+        {ticket.visitaRealizada && (
+          <button
+            className={itemMenu}
+            onClick={async () => {
+              setMenu(null);
+              try {
+                const t = await bindings.DesmarcarVisitaRealizada(ticket.id);
+                notificarCardAtualizado(t as Ticket);
+              } catch (e) {
+                setErroVisita(String(e) || 'Não foi possível desmarcar a visita.');
+              }
+            }}
+          >
+            ↩ Desmarcar visita realizada
+          </button>
+        )}
         {erroVisita && (
           <p className="px-3 py-2 text-[10px] text-red-600 dark:text-red-400 max-w-[16rem] break-words">
             {erroVisita}
