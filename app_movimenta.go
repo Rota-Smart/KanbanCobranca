@@ -20,7 +20,11 @@ func (a *App) MovimentarTicket360(entrada, coluna string) (db.Ticket, error) {
 	entrada = strings.TrimSpace(entrada)
 	coluna = strings.TrimSpace(coluna)
 	// Valida contra o board dinâmico (colunas criadas depois, ex.: Ticket
-	// Fechado, não estão na lista estática ColunasValidas).
+	// Fechado, não estão na lista estática ColunasValidas) e grava o nome
+	// canônico — "aguardando assinatura" vira "Aguardando Assinatura".
+	if canon, ok := a.colunaCanonica(coluna); ok {
+		coluna = canon
+	}
 	if !a.colunaValida(coluna) {
 		return db.Ticket{}, service.ErrColunaInvalida
 	}

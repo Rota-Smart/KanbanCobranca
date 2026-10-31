@@ -922,6 +922,9 @@ func (a *App) agentImportarCliente(ctx context.Context, cod, coluna string) (db.
 	if c == nil {
 		return db.Ticket{}, rota360.ErrSemSessao
 	}
+	if canon, ok := a.colunaCanonica(coluna); ok {
+		coluna = canon
+	}
 	if !a.colunaValida(coluna) {
 		return db.Ticket{}, service.ErrColunaInvalida
 	}

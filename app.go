@@ -130,13 +130,24 @@ func (a *App) colunasAtivas() []string {
 	return service.ColunasValidas
 }
 
+// colunaValida aceita variação de caixa/acento/pontuação: "aguardando
+// assinatura" casa com "Aguardando Assinatura" — o nome digitado pelo usuário
+// (ou escolhido pelo agente) nunca é rejeitado por detalhe de grafia.
 func (a *App) colunaValida(nome string) bool {
+	_, ok := a.colunaCanonica(nome)
+	return ok
+}
+
+// colunaCanonica devolve o nome EXATO da coluna do board que casa com nome
+// sem caixa/acento; ok=false se nenhuma casa.
+func (a *App) colunaCanonica(nome string) (string, bool) {
+	alvo := strings.Join(strings.Fields(service.Normalizar(nome)), " ")
 	for _, c := range a.colunasAtivas() {
-		if c == nome {
-			return true
+		if strings.Join(strings.Fields(service.Normalizar(c)), " ") == alvo {
+			return c, true
 		}
 	}
-	return false
+	return "", false
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -224,6 +235,10 @@ func (a *App) GetTickets() ([]db.Ticket, error) {
 
 // MoveTicket move o card numa transação; posicao é o índice final na coluna de destino.
 func (a *App) MoveTicket(id int64, coluna string, posicao int) error {
+	// grava sempre o nome canônico do board, mesmo que veio "aguardando assinatura"
+	if canon, ok := a.colunaCanonica(coluna); ok {
+		coluna = canon
+	}
 	if !a.colunaValida(coluna) {
 		return service.ErrColunaInvalida
 	}

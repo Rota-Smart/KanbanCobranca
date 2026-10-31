@@ -220,7 +220,11 @@ func (a *App) Rota360AbrirTicket(numero string) (string, error) {
 // sincroniza o cache para avaliação/financeiro posterior.
 func (a *App) ImportarCliente360(codService, coluna string) (db.Ticket, error) {
 	codService = strings.TrimSpace(codService)
-	// Board dinâmico: aceita colunas criadas pelo usuário (ex.: Ticket Fechado).
+	// Board dinâmico: aceita colunas criadas pelo usuário (ex.: Ticket Fechado)
+	// e grava o nome canônico do board, não o que veio digitado.
+	if canon, ok := a.colunaCanonica(coluna); ok {
+		coluna = canon
+	}
 	if !a.colunaValida(coluna) {
 		return db.Ticket{}, service.ErrColunaInvalida
 	}

@@ -410,6 +410,10 @@ func normalizar(s string) string {
 	return replAcentos.Replace(strings.Trim(strings.ToLower(strings.TrimSpace(s)), ".,!?;:"))
 }
 
+// Normalizar é a versão exportada de normalizar, para quem de fora do service
+// precisa comparar textos com a mesma regra (caixa/acento/pontuação).
+func Normalizar(s string) string { return normalizar(s) }
+
 // CasarColuna casa o texto digitado com UMA coluna do board, sem caixa e sem
 // acento, aceitando pedaço ("cobr" → "Cobrança"). Zero ou vários matches são
 // erro — mover para a coluna errada é pior que pedir de novo.
