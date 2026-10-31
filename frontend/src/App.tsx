@@ -7,6 +7,7 @@ import {
   useSensors,
   type DragEndEvent,
   type DragOverEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -31,7 +32,7 @@ import type { ModoCard } from './components/TicketCard';
 import VisitaModal from './components/VisitaModal';
 import { formatCents } from './money';
 import ComissaoModal from './components/ComissaoModal';
-import { boardFromTickets, moveCard, type Board } from './kanban';
+import { boardFromTickets, moveCard, ordenarFechados, type Board } from './kanban';
 
 const fallbackColunas = ['Fazer contato'];
 
@@ -914,9 +915,39 @@ ${txt.trim()}` : txt.trim());
     return typeof id === 'string' && colunas.includes(id);
   }
 
+  // onDragStart guarda o board antes do arrasto: o onDragOver teleporta o card
+  // para a coluna de destino na tela ANTES de salvar no banco — se o soltar não
+  // vira movimento válido (soltou fora das colunas, Esc, arrasto abortado), a
+  // tela precisa voltar ao estado original, senão o card parece movido e some
+  // do lugar quando o board recarrega (voltando "sozinho" pra coluna anterior).
+  const [boardPreArrasto, setBoardPreArrasto] = useState<Board | null>(null);
+
+  function onDragStartUnificado(event: DragStartEvent) {
+    if (!ehColuna(event.active.id)) setBoardPreArrasto(board);
+  }
+
+  function descartarArrasto() {
+    if (boardPreArrasto) setBoard(boardPreArrasto);
+    setBoardPreArrasto(null);
+  }
+
+  function onDragCancelUnificado() {
+    descartarArrasto();
+  }
+
   function onDragEndUnificado(event: DragEndEvent) {
-    if (ehColuna(event.active.id)) onColunaDragEnd(event);
-    else onDragEnd(event);
+    if (ehColuna(event.active.id)) {
+      onColunaDragEnd(event);
+      return;
+    }
+    // Sem destino válido (soltou fora de coluna/card): desfaz o teleport do
+    // onDragOver — nada foi salvo no banco.
+    if (!event.over) {
+      descartarArrasto();
+      return;
+    }
+    setBoardPreArrasto(null);
+    onDragEnd(event);
   }
 
   function onDragOverUnificado(event: DragOverEvent) {
@@ -1122,6 +1153,8 @@ ${txt.trim()}` : txt.trim());
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
+        onDragStart={onDragStartUnificado}
+        onDragCancel={onDragCancelUnificado}
         onDragOver={onDragOverUnificado}
         onDragEnd={onDragEndUnificado}
       >
@@ -1131,13 +1164,11 @@ ${txt.trim()}` : txt.trim());
                 const todosDaColuna = (board[c] ?? []).filter(cardVisivel);
                 const ehFechada = c === colunaTicketFechado;
                 // Coluna de fechados: só os últimos movidos ficam visíveis —
-                // a ordem vem do histórico (mais recente primeiro); o que não
-                // está nele vai para o fim.
+                // a ordem vem do histórico (mais recente primeiro); card que
+                // acabou de chegar (fora do histórico ainda) fica no topo.
                 let ticketsDaColuna = todosDaColuna;
                 if (ehFechada) {
-                  const ordem = new Map(historicoFechados.map((h, i) => [h.cardId, i]));
-                  ticketsDaColuna = [...todosDaColuna]
-                    .sort((a, b) => (ordem.get(a.id) ?? Infinity) - (ordem.get(b.id) ?? Infinity))
+                  ticketsDaColuna = ordenarFechados(todosDaColuna, historicoFechados)
                     .slice(0, maxCardsFechadosVisiveis);
                 } else {
                   ticketsDaColuna = ordenarTickets(todosDaColuna, ordenacaoDe(c));

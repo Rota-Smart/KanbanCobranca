@@ -26,3 +26,16 @@ export function moveCard(board: Board, id: number, colunaDestino: string, posica
   const novo: Board = { ...board, [origem]: restante.map((t, i) => ({ ...t, posicao: i })), [colunaDestino]: renumerado };
   return novo;
 }
+
+// ordenarFechados põe a coluna Ticket Fechado na ordem do histórico (mais
+// recente primeiro) e mostra só os últimos N. Card que ainda não está no
+// histórico (acabou de ser arrastado p/ cá) vem ANTES de todos — é o mais
+// recente por definição; antes ele caía pro fim da coluna até o histórico
+// recarregar, sumindo do topo durante o arrasto.
+export function ordenarFechados(tickets: Ticket[], historico: { cardId: number }[]): Ticket[] {
+  const ordem = new Map(historico.map((h, i) => [h.cardId, i]));
+  return [...tickets]
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => (ordem.get(a.t.id) ?? -1) - (ordem.get(b.t.id) ?? -1) || a.i - b.i)
+    .map((x) => x.t);
+}

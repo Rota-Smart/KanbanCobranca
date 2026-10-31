@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boardFromTickets, moveCard } from './kanban';
+import { boardFromTickets, moveCard, ordenarFechados } from './kanban';
 import type { Ticket } from './wails-types';
 
 function t(id: number, coluna: string, posicao: number): Ticket {
@@ -54,5 +54,27 @@ describe('moveCard', () => {
   it('não perde cards com posição fora do intervalo', () => {
     const novo = moveCard(board, 1, 'B', 99);
     expect(novo['B'].map((x) => x.id)).toEqual([3, 1]);
+  });
+});
+
+describe('ordenarFechados', () => {
+  const mk = (id: number, posicao: number): Ticket => ({ id, posicao } as Ticket);
+
+  it('ordena pela ordem do histórico (mais recente primeiro)', () => {
+    const ts = [mk(1, 0), mk(2, 1), mk(3, 2)];
+    const hist = [{ cardId: 3 }, { cardId: 2 }, { cardId: 1 }];
+    expect(ordenarFechados(ts, hist).map((t) => t.id)).toEqual([3, 2, 1]);
+  });
+
+  it('card fora do histórico (recém-arrastado) vem primeiro', () => {
+    const ts = [mk(1, 0), mk(2, 1), mk(9, 2)];
+    const hist = [{ cardId: 2 }, { cardId: 1 }];
+    expect(ordenarFechados(ts, hist).map((t) => t.id)).toEqual([9, 2, 1]);
+  });
+
+  it('dois cards fora do histórico mantêm a ordem do board', () => {
+    const ts = [mk(7, 0), mk(1, 1), mk(8, 2), mk(2, 3)];
+    const hist = [{ cardId: 2 }, { cardId: 1 }];
+    expect(ordenarFechados(ts, hist).map((t) => t.id)).toEqual([7, 8, 2, 1]);
   });
 });
