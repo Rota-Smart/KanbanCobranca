@@ -90,6 +90,18 @@
   background-clip: content-box;
 }
 
+/* Lista de cards da coluna: scroll SEM barra visível — roda do mouse e
+   arrasto continuam funcionando (WebKit + Firefox). */
+.scroll-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scroll-hide::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Seta de recolher coluna: gira suavemente */
 .seta-coluna {
   transition: transform 0.2s ease;

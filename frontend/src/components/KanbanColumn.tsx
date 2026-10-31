@@ -257,7 +257,7 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
         </div>
       </div>
 
-      <div ref={setNodeRef} className="flex flex-col gap-2.5 flex-1 min-h-[4rem] overflow-y-auto pr-0.5">
+      <div ref={setNodeRef} className="flex flex-col gap-2.5 flex-1 min-h-[4rem] overflow-y-auto scroll-hide pr-0.5">
         <SortableContext items={tickets.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {tickets.map((t) => (
             <TicketCard
