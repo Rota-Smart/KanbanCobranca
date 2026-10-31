@@ -70,6 +70,15 @@ func (a *App) MonitorAtualizacao() {
 			}
 			avisada = info.VersaoNova
 			wailsRuntime.EventsEmit(a.ctx, evAtualizaDisponivel, map[string]string{"versao": info.VersaoNova})
+			// Baixa sozinho em background: quando terminar, o frontend
+			// pergunta se reinicia agora — fechar o app antes disso também
+			// atualiza, porque o exe já foi trocado no disco.
+			a.muAtualiza.Lock()
+			jogoBaixada := a.baixandoAtualizacao || a.prontaVersao == info.VersaoNova
+			a.muAtualiza.Unlock()
+			if !jogoBaixada {
+				go a.baixarEInstalar(info)
+			}
 		}
 		checar()
 		t := time.NewTicker(10 * time.Minute)
@@ -106,6 +115,14 @@ func (a *App) InstalarAtualizacao() (string, error) {
 	a.baixandoAtualizacao = true
 	a.muAtualiza.Unlock()
 
+	a.muAtualiza.Lock()
+	pronta := a.prontaVersao
+	a.muAtualiza.Unlock()
+	if pronta != "" {
+		// Já baixada e trocada no disco: só falta reiniciar.
+		return pronta, nil
+	}
+
 	info, err := a.VerificarAtualizacao()
 	if err != nil {
 		a.muAtualiza.Lock()
@@ -122,6 +139,23 @@ func (a *App) InstalarAtualizacao() (string, error) {
 
 	go a.baixarEInstalar(info)
 	return info.VersaoNova, nil
+}
+
+// ReiniciarApp relança o executável (já atualizado no disco) e encerra o
+// atual — o botão "Reiniciar agora" do aviso e de Configurações.
+func (a *App) ReiniciarApp() error {
+	exeAtual, err := atualizacao.CaminhoExe()
+	if err != nil {
+		return friendly("ReiniciarApp", err)
+	}
+	args := os.Args[1:]
+	cmd := exec.Command(exeAtual, args...)
+	cmd.Dir = filepath.Dir(exeAtual)
+	if err := cmd.Start(); err != nil {
+		return friendly("ReiniciarApp", err)
+	}
+	wailsRuntime.Quit(a.ctx)
+	return nil
 }
 
 // baixarEInstalar roda em background: baixa o exe com progresso, troca o
@@ -176,15 +210,10 @@ func (a *App) baixarEInstalar(info atualizacao.Info) {
 		wailsRuntime.EventsEmit(a.ctx, evAtualizaErro, map[string]string{"mensagem": friendly("InstalarAtualizacao", err).Error()})
 		return
 	}
+	// Troca feita no disco: quem fechar o app daqui pra frente já reabre na
+	// versão nova. O reinício é decisão do usuário (aviso na tela).
+	a.muAtualiza.Lock()
+	a.prontaVersao = info.VersaoNova
+	a.muAtualiza.Unlock()
 	wailsRuntime.EventsEmit(a.ctx, evAtualizaPronto, map[string]string{"versao": info.VersaoNova})
-
-	// Relança o app novo e encerra o atual.
-	args := os.Args[1:]
-	cmd := exec.Command(exeAtual, args...)
-	cmd.Dir = dir
-	if err := cmd.Start(); err != nil {
-		wailsRuntime.EventsEmit(a.ctx, evAtualizaErro, map[string]string{"mensagem": friendly("InstalarAtualizacao", err).Error()})
-		return
-	}
-	wailsRuntime.Quit(a.ctx)
 }

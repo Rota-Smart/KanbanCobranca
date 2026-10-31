@@ -227,6 +227,8 @@ export default function App() {
   // Aviso de versão nova achada pelo monitor: {versao, progresso} com
   // progresso = -1 enquanto não está baixando; null = sem aviso/dispensado.
   const [avisoAtualiza, setAvisoAtualiza] = useState<{ versao: string; progresso: number } | null>(null);
+  // Versão baixada e trocada no disco, esperando decisão de reinício.
+  const [prontaAtualiza, setProntaAtualiza] = useState<string | null>(null);
   const [aberto, setAberto] = useState<Ticket | null>(null);
   const [preCobranca, setPreCobranca] = useState<ResultadoCobranca | null>(null);
   const [visitaTicket, setVisitaTicket] = useState<Ticket | null>(null);
@@ -514,9 +516,15 @@ export default function App() {
   // porque a tela de Configurações pode estar fechada quando o download
   // termina ou falha — os toasts morreriam com o unmount dela.
   useEffect(() => {
+    // Se este app JÁ é a versão nova, a pendência de reinício expirou: o exe
+    // foi trocado no disco antes do reinício, então reabrir = atualizado.
+    localStorage.removeItem('atualizacaoPronta');
     const offOk = EventsOn('atualizacao:pronto', (d: { versao: string }) => {
       setAvisoAtualiza(null);
-      setToast(`Atualizado para a versão ${d.versao} — o app vai reiniciar.`);
+      // Instalada no disco; o reinício é decisão do usuário. Se ele fechar
+      // o app sem reiniciar, na próxima abertura já é a versão nova.
+      localStorage.setItem('atualizacaoPronta', d.versao);
+      setProntaAtualiza(d.versao);
     });
     const offErr = EventsOn('atualizacao:erro', (d: { mensagem: string }) => {
       setToast(d.mensagem || 'Falha na atualização.');
@@ -524,6 +532,8 @@ export default function App() {
     });
     const offDisp = EventsOn('atualizacao:disponivel', (d: { versao: string }) => {
       setAvisoAtualiza({ versao: d.versao, progresso: -1 });
+      // Baixa sozinho em background — sem clicar em nada.
+      bindings.InstalarAtualizacao().catch(() => {});
     });
     const offProg = EventsOn('atualizacao:progresso', (d: { percento: number }) => {
       setAvisoAtualiza((a) => (a ? { ...a, progresso: d.percento } : a));
@@ -1469,25 +1479,37 @@ ${txt.trim()}` : txt.trim());
       {avisoAtualiza && (
         <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[100] glass text-slate-800 dark:text-slate-100 text-sm px-4 py-3 rounded-xl shadow-lg flex items-center gap-3">
           {avisoAtualiza.progresso >= 0 ? (
-            <span>Baixando atualização{avisoAtualiza.progresso > 0 ? ` — ${avisoAtualiza.progresso}%` : '…'}</span>
+            <span>Baixando atualização {avisoAtualiza.versao}{avisoAtualiza.progresso > 0 ? ` — ${avisoAtualiza.progresso}%` : '…'}</span>
           ) : (
             <>
-              <span>Nova versão {avisoAtualiza.versao} disponível.</span>
-              <button
-                className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-500"
-                onClick={() => { void bindings.InstalarAtualizacao(); }}
-              >
-                Atualizar agora
-              </button>
+              <span>Nova versão {avisoAtualiza.versao} encontrada — baixando em segundo plano…</span>
               <button
                 className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                title="Dispensar"
+                title="Dispensar aviso (o download continua)"
                 onClick={() => setAvisoAtualiza(null)}
               >
                 ✕
               </button>
             </>
           )}
+        </div>
+      )}
+      {prontaAtualiza && (
+        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[100] glass text-slate-800 dark:text-slate-100 text-sm px-4 py-3 rounded-xl shadow-lg flex items-center gap-3">
+          <span>Versão <b>{prontaAtualiza}</b> baixada. Reiniciar agora para atualizar?</span>
+          <button
+            className="px-3 py-1 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-500"
+            onClick={() => { void bindings.ReiniciarApp(); }}
+          >
+            Reiniciar agora
+          </button>
+          <button
+            className="px-3 py-1 rounded-lg text-xs font-medium border border-slate-300/50 text-slate-600 hover:bg-slate-500/10 dark:text-slate-300"
+            title="Depois: o botão de reiniciar fica em ⚙ Configurações (e fechar o app já atualiza)"
+            onClick={() => setProntaAtualiza(null)}
+          >
+            Depois
+          </button>
         </div>
       )}
       {toast && (

@@ -21,13 +21,13 @@ import (
 // App expõe a API para o frontend via bridge do Wails (Etapa 5).
 // Os métodos públicos são a única ponte com o React.
 type App struct {
-	ctx       context.Context
-	db        *sql.DB
-	dbPath    string // caminho do arquivo do banco; vazio em testes antigos
-	tickets   *db.TicketRepo
+	ctx        context.Context
+	db         *sql.DB
+	dbPath     string // caminho do arquivo do banco; vazio em testes antigos
+	tickets    *db.TicketRepo
 	tentativas *db.TentativaRepo
-	vinculos  *db.VinculoRepo
-	cobrancas *db.CobrancaRepo
+	vinculos   *db.VinculoRepo
+	cobrancas  *db.CobrancaRepo
 	// uiPronta: true após startup do Wails — sem isso o EventsEmit mata o
 	// processo (testes unitários emitem sem UI).
 	uiPronta  bool
@@ -56,7 +56,8 @@ type App struct {
 	conectando360 bool // detecção CDP em andamento (ConectarRota360 em background)
 
 	muAtualiza          sync.Mutex
-	baixandoAtualizacao bool // download do exe novo em background
+	baixandoAtualizacao bool   // download do exe novo em background
+	prontaVersao        string // versão já baixada e trocada, esperando reinício
 
 	muModeloVoz sync.Mutex
 	gzModeloVoz []byte // .tar.gz do modelo montado p/ o vosk-browser (cache)
@@ -102,18 +103,18 @@ func (a *App) configGet(ctx context.Context, chave string) string {
 // O ctx inicia como Background para os testes (startup troca pelo do Wails).
 func NewApp(database *sql.DB, propostas *service.PropostaService) *App {
 	return &App{
-		ctx:       context.Background(),
-		db:        database,
-		tickets:   db.NewTicketRepo(database),
+		ctx:        context.Background(),
+		db:         database,
+		tickets:    db.NewTicketRepo(database),
 		tentativas: db.NewTentativaRepo(database),
-		vinculos:  db.NewVinculoRepo(database),
-		cobrancas: db.NewCobrancaRepo(database),
-		colunas:   db.NewColumnRepo(database),
-		comissoes: db.NewComissaoRepo(database),
-		chats:     db.NewChatRepo(database),
-		padroes:   db.NewPadraoRepo(database),
-		stats:     db.NewAgenteStatsRepo(database),
-		propostas: propostas,
+		vinculos:   db.NewVinculoRepo(database),
+		cobrancas:  db.NewCobrancaRepo(database),
+		colunas:    db.NewColumnRepo(database),
+		comissoes:  db.NewComissaoRepo(database),
+		chats:      db.NewChatRepo(database),
+		padroes:    db.NewPadraoRepo(database),
+		stats:      db.NewAgenteStatsRepo(database),
+		propostas:  propostas,
 	}
 }
 

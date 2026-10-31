@@ -36,6 +36,14 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   const [syncInfo, setSyncInfo] = useState<SyncInfo | null>(null);
   const [syncOcupado, setSyncOcupado] = useState(false);
   const [usoGroq, setUsoGroq] = useState<import('../wails-types').UsoGroq | null>(null);
+  // Versão já baixada e trocada no disco esperando reinício ("Depois" no
+  // aviso): enquanto existir, o botão de reiniciar fica fixo aqui.
+  const [prontaReinicio, setProntaReinicio] = useState<string | null>(null);
+
+  {
+    const pendente = localStorage.getItem('atualizacaoPronta');
+    if (pendente && prontaReinicio === null) setProntaReinicio(pendente);
+  }
 
   function recarregarSync() {
     App.SyncStatus().then(setSyncInfo).catch(() => setSyncInfo(null));
@@ -88,9 +96,11 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
       setProgresso(d.percento >= 0 ? d.percento : -1);
       setBaixadosMb(Math.round(d.baixados / (1024 * 1024)));
     });
-    const offOk = EventsOn('atualizacao:pronto', () => {
+    const offOk = EventsOn('atualizacao:pronto', (d: { versao: string }) => {
       setProgresso(100);
-      // o app reinicia sozinho em seguida
+      // Instalada no disco: reinício fica a cargo do usuário.
+      localStorage.setItem('atualizacaoPronta', d.versao);
+      setProntaReinicio(d.versao);
     });
     const offErr = EventsOn('atualizacao:erro', () => {
       setAtualizando(false);
@@ -656,6 +666,15 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               </span>
             )}
           </div>
+          {prontaReinicio && (
+            <button
+              className="mt-2 bg-emerald-600 text-white rounded px-3 py-1 text-sm"
+              title={`A versão ${prontaReinicio} já está instalada no disco; reiniciar troca o app em execução`}
+              onClick={() => { void App.ReiniciarApp(); }}
+            >
+              🔄 Reiniciar agora para a versão {prontaReinicio}
+            </button>
+          )}
           {infoAtual?.temNova && (
             <>
               <button
@@ -663,7 +682,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
                 disabled={atualizando}
                 onClick={instalarAtualizacao}
               >
-                {atualizando ? 'Baixando em segundo plano…' : `Atualizar para ${infoAtual.versaoNova} (o app reinicia)`}
+                {atualizando ? 'Baixando em segundo plano…' : `Atualizar para ${infoAtual.versaoNova} (baixa e pergunta quando reiniciar)`}
               </button>
               {progresso !== null && (
                 <p className="mt-1 text-xs text-slate-500">
