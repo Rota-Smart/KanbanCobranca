@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -77,6 +78,34 @@ type GroqCliente struct {
 	// muFallback protege fallbackAte, o cooldown pós-429 do modo auto.
 	muFallback  sync.Mutex
 	fallbackAte time.Time
+
+	// saldoTPM: último "x-ratelimit-remaining-tokens" reportado pela Groq
+	// (-1 = desconhecido). Alimenta o modo econômico do chat: saldo baixo
+	// → histórico menor, para a requisição caber na janela sem 429.
+	saldoTPM atomic.Int64
+}
+
+// SaldoTPM devolve o último saldo de tokens por minuto conhecido da Groq
+// (-1 quando ainda não houve resposta bem-sucedida).
+func (g *GroqCliente) SaldoTPM() int64 {
+	if g == nil {
+		return -1
+	}
+	return g.saldoTPM.Load()
+}
+
+// registrarSaldoTPM grava o saldo do header de ratelimit da Groq.
+func (g *GroqCliente) registrarSaldoTPM(resp *http.Response) {
+	if g == nil || resp == nil {
+		return
+	}
+	v := strings.TrimSpace(resp.Header.Get("X-Ratelimit-Remaining-Tokens"))
+	if v == "" {
+		return
+	}
+	if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
+		g.saldoTPM.Store(int64(f))
+	}
 }
 
 // provedor diz o provedor ativo nesta chamada.
@@ -404,6 +433,7 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 		// O contador alimenta os limites do plano free da Groq — respostas
 		// do fallback DeepInfra não entram nele.
 		if alvo.provedor == ProvedorGroq {
+			g.registrarSaldoTPM(resp)
 			g.reportarUsage(&out)
 		}
 		return respostaRodada{Content: strings.TrimSpace(content), ToolCalls: msg.ToolCalls}, nil

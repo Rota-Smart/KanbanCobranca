@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -237,5 +239,106 @@ func TestOnUsageRecebido(t *testing.T) {
 	}
 	if prompt != 120 || completion != 30 {
 		t.Errorf("usage: prompt=%d completion=%d", prompt, completion)
+	}
+}
+
+// captura os corpos das requisições (para inspecionar as mensagens enviadas).
+type capturaDeCorpos struct {
+	mu     sync.Mutex
+	corpos []map[string]any
+}
+
+func (c *capturaDeCorpos) servidor(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var corpo map[string]any
+		json.NewDecoder(r.Body).Decode(&corpo)
+		c.mu.Lock()
+		c.corpos = append(c.corpos, corpo)
+		c.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": "ok"}}},
+			"usage":   map[string]any{"prompt_tokens": 10, "completion_tokens": 5},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func (c *capturaDeCorpos) mensagens() []any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.corpos) == 0 {
+		return nil
+	}
+	return c.corpos[0]["messages"].([]any)
+}
+
+// (b): o bloco de contexto vai como mensagem system PRÓPRIA — o system
+// prompt principal fica byte-idêntico entre mensagens (cache de prefixo).
+func TestBlocoContextoMensagemSeparada(t *testing.T) {
+	cap := &capturaDeCorpos{}
+	g := groqParaTeste(t, cap.servidor(t))
+	ops := &OpcoesConversa{BlocoContexto: "Contexto pré-coletado: financeiro do cliente X"}
+	if _, err := g.ConversarCom(context.Background(), nil, "e o resumo?", "", &executorDeTeste{}, nil, ops); err != nil {
+		t.Fatal(err)
+	}
+	msgs := cap.mensagens()
+	if len(msgs) < 2 {
+		t.Fatalf("mensagens: %d", len(msgs))
+	}
+	primeiro := msgs[0].(map[string]any)
+	if primeiro["role"] != "system" || strings.Contains(primeiro["content"].(string), "pré-coletado") {
+		t.Errorf("system prompt principal contém o bloco: %v", primeiro)
+	}
+	if msgs[1].(map[string]any)["content"] != ops.BlocoContexto {
+		t.Errorf("bloco não é a 2ª mensagem: %v", msgs[1])
+	}
+}
+
+// (c): saldo de TPM baixo → histórico cai para o modo econômico (2 msgs).
+func TestModoEconomicoHistorico(t *testing.T) {
+	cap := &capturaDeCorpos{}
+	g := groqParaTeste(t, cap.servidor(t))
+	g.saldoTPM.Store(1500) // janela quase no fim
+	var hist []MensagemDeChat
+	for i := 0; i < 6; i++ {
+		hist = append(hist, MensagemDeChat{Papel: "user", Conteudo: fmt.Sprintf("msg %d", i)})
+	}
+	if _, err := g.ConversarCom(context.Background(), hist, "nova mensagem", "", &executorDeTeste{}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	// system + 2 do histórico + user = 4
+	if got := len(cap.mensagens()); got != 4 {
+		t.Errorf("modo econômico: %d mensagens no request; quero 4", got)
+	}
+	// saldo desconhecido (-1): histórico cheio (system + 6 + user = 8)
+	g.saldoTPM.Store(-1)
+	if _, err := g.ConversarCom(context.Background(), hist, "outra", "", &executorDeTeste{}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	cap.mu.Lock()
+	ultimo := cap.corpos[len(cap.corpos)-1]["messages"].([]any)
+	cap.mu.Unlock()
+	if got := len(ultimo); got != 8 {
+		t.Errorf("saldo desconhecido: %d mensagens; quero 8", got)
+	}
+}
+
+// (c): o header x-ratelimit-remaining-tokens alimenta o saldo.
+func TestRegistrarSaldoTPM(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Ratelimit-Remaining-Tokens", "5664")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": "oi"}}},
+		})
+	}))
+	defer srv.Close()
+	g := groqParaTeste(t, srv)
+	if _, err := g.Completar(context.Background(), "s", "u"); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.SaldoTPM(); got != 5664 {
+		t.Errorf("SaldoTPM = %d; quero 5664", got)
 	}
 }

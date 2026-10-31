@@ -224,6 +224,13 @@ const (
 	// meio (cap global) esconde itens que o modelo precisa nomear. Cap próprio,
 	// maior — só ela o usa, e só quando o usuário pede orçamento.
 	MaxRunasTabelaOrcamento = 2500
+
+	// Modo econômico: quando o saldo de TPM reportado pela Groq está baixo
+	// (a janela de 8K/min quase no fim), o histórico cai para 2 mensagens —
+	// a próxima requisição passa a caber no saldo em vez de tomar 429 e
+	// dormir pela janela inteira (17-60s).
+	MaxMensagensHistoricoEconomico = 2
+	limiteTPMEconomico             = 3000
 )
 
 // AcaoDoAgente registra uma ferramenta executada, para exibir ao usuário.
@@ -266,19 +273,31 @@ func (g *GroqCliente) ConversarCom(ctx context.Context, historico []MensagemDeCh
 	}
 	sistema := SystemComPadroes(padroes)
 	tools := AgentTools()
+	var bloco string
 	if ops != nil {
-		if ops.BlocoContexto != "" {
-			sistema += "\n\n" + ops.BlocoContexto
-		}
+		bloco = ops.BlocoContexto
 		if len(ops.FerramentasRemovidas) > 0 {
 			tools = AgentToolsSem(ops.FerramentasRemovidas)
 		}
 	}
+	// O bloco de pré-busca NÃO é colado no system prompt: ele muda a cada
+	// mensagem e invalidaria o cache de prefixo da Groq (trechos idênticos
+	// no começo do prompt custam menos TPM). System fixo primeiro, bloco
+	// como mensagem própria logo depois — o prefixo "system" fica byte-
+	// idêntico entre mensagens e entre rodadas do loop.
+	// Modo econômico: saldo de TPM baixo → menos histórico no request.
+	histN := MaxMensagensHistorico
+	if s := g.saldoTPM.Load(); s > 0 && s < limiteTPMEconomico {
+		histN = MaxMensagensHistoricoEconomico
+	}
+	compacto := historicoCompactoLim(historico, histN)
 	// Fast-path: mensagem que não precisa de ação sai em 1 requisição, sem
 	// os schemas das tools nem o loop.
-	compacto := historicoCompacto(historico)
 	if MensagemSemFerramentas(mensagem) {
 		msgs := []groqMensagem{{Role: "system", Content: sistema}}
+		if bloco != "" {
+			msgs = append(msgs, groqMensagem{Role: "system", Content: bloco})
+		}
 		for _, m := range compacto {
 			msgs = append(msgs, groqMensagem{Role: m.Papel, Content: m.Conteudo})
 		}
@@ -291,6 +310,9 @@ func (g *GroqCliente) ConversarCom(ctx context.Context, historico []MensagemDeCh
 	}
 
 	msgs := []groqMensagem{{Role: "system", Content: sistema}}
+	if bloco != "" {
+		msgs = append(msgs, groqMensagem{Role: "system", Content: bloco})
+	}
 	for _, m := range compacto {
 		msgs = append(msgs, groqMensagem{Role: m.Papel, Content: m.Conteudo})
 	}
@@ -344,6 +366,12 @@ func (g *GroqCliente) ConversarCom(ctx context.Context, historico []MensagemDeCh
 // histórico, cada uma com no máximo MaxRunasMensagem runes (corte em rune,
 // nunca em meio a caractere multibyte).
 func historicoCompacto(historico []MensagemDeChat) []MensagemDeChat {
+	return historicoCompactoLim(historico, MaxMensagensHistorico)
+}
+
+// historicoCompactoLim é o historicoCompacto com limite de mensagens
+// parametrizável (o modo econômico usa menos).
+func historicoCompactoLim(historico []MensagemDeChat, limite int) []MensagemDeChat {
 	var out []MensagemDeChat
 	for _, m := range historico {
 		if m.Papel != "user" && m.Papel != "assistant" {
@@ -354,8 +382,8 @@ func historicoCompacto(historico []MensagemDeChat) []MensagemDeChat {
 		}
 		out = append(out, MensagemDeChat{Papel: m.Papel, Conteudo: limitarRunas(m.Conteudo, MaxRunasMensagem)})
 	}
-	if len(out) > MaxMensagensHistorico {
-		out = out[len(out)-MaxMensagensHistorico:]
+	if len(out) > limite {
+		out = out[len(out)-limite:]
 	}
 	return out
 }

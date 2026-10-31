@@ -27,7 +27,92 @@ const (
 	// coluna X", "liste os cards em Cobrança") — o backend responde com dados
 	// LOCAIS do banco, sem tocar no 360.
 	ConsultaBoard ClasseConsulta = "board"
+
+	// Classes de AÇÃO (não consulta): a mensagem pede uma operação e só
+	// precisa das tools daquela operação — as outras 20+ saem do request
+	// (cada schema de tool custa tokens em TODA rodada do loop). O conjunto
+	// de cada classe é generoso de propósito: melhor mandar uma tool a mais
+	// do que o modelo tentar chamar uma que não existe.
+	AcaoCard      ClasseConsulta = "acao_card"
+	AcaoTicket    ClasseConsulta = "acao_ticket"
+	AcaoOrcamento ClasseConsulta = "acao_orcamento"
+	AcaoComissao  ClasseConsulta = "acao_comissao"
+	AcaoPadroes   ClasseConsulta = "acao_padroes"
+	AcaoImportar  ClasseConsulta = "acao_importar"
 )
+
+// Regexes de ação: exigem verbo de operação + objeto da classe — mensagem
+// ambígua (sem verbo claro) NÃO é classificada e vai com o conjunto completo
+// de tools. Rodam SÓ depois das classes de consulta (uma pergunta de dados
+// com "ticket" não pode virar ação).
+var (
+	// "salve esse padrão", "esqueça o padrão X", "quais são os meus padrões",
+	// "mude o prompt da proposta".
+	reAcaoPadroes = regexp.MustCompile(`(?i)\b(salv\w+|guard\w+|esque[çc]\w+|apag\w+|remov\w+|exclu\w+|delet\w+|elimin\w+|liste|listar|quais|veja|ver|mostr\w+|mud\w+|edit\w+)\b[^.?!]{0,30}\b(padr[ãaõo]+(?:es)?|prompt d[oa] proposta)\b`)
+	// "registre a comissão", "comissão recebida do card 5", "quanto já recebi de comissão".
+	reAcaoComissao = regexp.MustCompile(`(?i)\b(registr\w+|lan[çc]\w+|apont\w+|recebid[oa]|recebemos|recebi|quanto|liste|listar)\b[^.?!]*\bcomiss\w*|\bcomiss\w*`)
+	// "gere um orçamento", "quanto fica a tabela de preços".
+	reAcaoOrcamento = regexp.MustCompile(`(?i)\b(ger\w+|mont\w+|faz\w+|crie|criar|consult\w+|veja|ver|liste|listar|pre[çc]o)\b[^.?!]*\b(or[çc]ament\w*|tabela de pre[çc]os?)\b`)
+	// "responda o ticket 123", "abra o ticket", "mude o status do ticket",
+	// "feche o ticket 45".  (Pergunta de leitura cai na ConsultaTicket antes.)
+	reAcaoTicket = regexp.MustCompile(`(?i)\b(respond\w+|abr\w+|fech\w+|mud\w+|alter\w+|troqu\w+|resolv\w+|encerr\w+|pesquis\w+|localiz\w+|encontre|veja|ver)\b[^.?!]*\btickets?\b|\btickets?\b[^.?!]*\b(respond\w+|abr\w+|fech\w+|status|resolv\w+|encerr\w+)\b`)
+	// Verbos de ESCRITA sobre ticket — sem "responderam/mudou" (leitura no
+	// passado). Usada para não deixar "mude o status do ticket 123" virar
+	// consulta de leitura só porque tem número.
+	reAcaoTicketForte = regexp.MustCompile(`(?i)\b(respond(?:er|a|e)\b|abr(?:a|ir|e)\b|fech(?:a|ar|e)\b|mud(?:a|ar|e)\b|alter(?:a|ar|e)\b|troqu(?:e|ar)\b|resolv(?:a|er|e)\b|encerr(?:a|ar|e)\b)[^.?!]{0,40}\btickets?\b`)
+	// "mova o card do João", "apague o card 5", "anote no card", "agende uma
+	// visita", "vincule o ticket 123 ao card", "verifique os tickets fechados".
+	reAcaoCard = regexp.MustCompile(`(?i)\b(mov\w+|arrast\w+|pass\w+|lev\w+|mand\w+|mud\w+|coloc\w+|coloq\w+|ponh\w+|p[õo]e|deix\w+|mex\w+|apag\w+|exclu\w+|remov\w+|delet\w+|elimin\w+|anot\w+|observ\w+|vincul\w+|desvincul\w+|agend\w+|avalie|avaliar|ger\w+)\b[^.?!]*\b(card|visita|observa\w*|ticket fechado|proposta)\b|\b(card|visita)\b[^.?!]*\b(para|pro|pra|em|na|no|apag\w+|exclu\w+)\b`)
+	// "adicione o cliente X", "importe o cod 1234", "cadastre o cliente".
+	reAcaoImportar = regexp.MustCompile(`(?i)\b(adicione|adicionar|adc|importe|importar|cadastre|cadastrar|puxe|puxar|crie um card|criar um card)\b`)
+)
+
+// ferramentasDaAcao mapeia cada classe de ação às tools que ela pode usar —
+// TODAS as outras saem do request. listar_tickets/listar_colunas entram nas
+// classes de card/quadro porque o modelo quase sempre precisa conferir onde
+// o card está (ou para onde pode ir) antes de agir.
+var ferramentasDaAcao = map[ClasseConsulta][]string{
+	AcaoCard: {"listar_tickets", "listar_colunas", "mover_card", "apagar_card",
+		"observacao_card", "agendar_visita", "vincular_ticket", "verificar_tickets_fechados",
+		"avaliar_cliente", "gerar_proposta"},
+	AcaoTicket: {"pesquisar_tickets", "detalhe_ticket_360", "abrir_ticket_360",
+		"responder_ticket_360", "alterar_status_ticket_360", "listar_tickets",
+		"vincular_ticket", "verificar_tickets_fechados"},
+	AcaoOrcamento: {"listar_tabela_orcamento", "gerar_orcamento", "buscar_cliente_360",
+		"importar_cliente", "listar_colunas", "listar_tickets"},
+	AcaoComissao: {"registrar_comissao", "comissao_recebida", "listar_comissoes",
+		"listar_tickets", "listar_colunas"},
+	AcaoPadroes:  {"salvar_padrao", "listar_padroes", "apagar_padrao", "editar_prompt_proposta"},
+	AcaoImportar: {"buscar_cliente_360", "importar_cliente", "listar_colunas", "listar_tickets"},
+}
+
+// EhAcao diz se a classe é de ação (operação, não consulta de dados).
+func EhAcao(c ClasseConsulta) bool {
+	_, ok := ferramentasDaAcao[c]
+	return ok
+}
+
+// FerramentasForaDaClasse devolve os NOMES das tools que saem do request
+// para uma classe de ação (todas menos as da classe). Classe sem conjunto
+// definido devolve nil — o request vai completo.
+func FerramentasForaDaClasse(c ClasseConsulta) []string {
+	permitidas := ferramentasDaAcao[c]
+	if len(permitidas) == 0 {
+		return nil
+	}
+	naClasse := map[string]bool{}
+	for _, f := range permitidas {
+		naClasse[f] = true
+	}
+	var out []string
+	for _, t := range AgentTools() {
+		nome := t["function"].(map[string]any)["name"].(string)
+		if !naClasse[nome] {
+			out = append(out, nome)
+		}
+	}
+	return out
+}
 
 // Regexes de intenção. Acentos cobertos na mão (RE2 + \b é ASCII).
 var (
@@ -107,6 +192,33 @@ func ClassificarConsulta(m string) ClasseConsulta {
 	if palavraBoard && (lugarBoard || (reAgregBoard.MatchString(m) && reCardsPlural.MatchString(m))) {
 		return ConsultaBoard
 	}
+	// Ações com palavra-chave própria primeiro: "os meus padrões" e "tabela
+	// de preços" são fisgados pelo \bos\b (ASCII) das fatias de consulta —
+	// com verbo de operação explícito, a intenção de ação vence.
+	switch {
+	case reAcaoPadroes.MatchString(m):
+		return AcaoPadroes
+	case reAcaoComissao.MatchString(m):
+		return AcaoComissao
+	case reAcaoOrcamento.MatchString(m):
+		return AcaoOrcamento
+	}
+	// Ticket com número: consulta de leitura vence a ação ("o que
+	// responderam no ticket 123?") — e vem antes das fatias porque o
+	// \bos\b (ASCII) do reConsultaOS fisga "os tickets".
+	if reConsultaTicket.MatchString(m) && reAlvoTicket.MatchString(m) && !reAcaoTicketForte.MatchString(m) {
+		return ConsultaTicket
+	}
+	// Ações com alvo de ticket/card/importar antes das fatias de dados,
+	// pelo mesmo motivo (\bos\b pega "os tickets fechados", "os cards").
+	switch {
+	case reAcaoTicket.MatchString(m):
+		return AcaoTicket
+	case reAcaoCard.MatchString(m):
+		return AcaoCard
+	case reAcaoImportar.MatchString(m):
+		return AcaoImportar
+	}
 	n, primeira := 0, ConsultaNenhuma
 	for _, c := range []struct {
 		re     *regexp.Regexp
@@ -128,9 +240,6 @@ func ClassificarConsulta(m string) ClasseConsulta {
 	}
 	if n == 1 {
 		return primeira
-	}
-	if reConsultaTicket.MatchString(m) && reAlvoTicket.MatchString(m) {
-		return ConsultaTicket
 	}
 	return ConsultaNenhuma
 }

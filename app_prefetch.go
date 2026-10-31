@@ -55,6 +55,13 @@ func (a *App) prepararPrebusca(ctx context.Context, msg string) (*prebusca, erro
 	if classe == service.ConsultaBoard {
 		return a.prebuscaBoard(msg), nil
 	}
+	// Ação (mover card, responder ticket, orçamento...): não pré-coleta
+	// nada — o ganho é só o roteamento de tools: as que não servem para
+	// essa operação saem do request inteiro (economia de TPM por rodada).
+	if service.EhAcao(classe) {
+		return &prebusca{classe: classe, cache: map[string]string{},
+			removidas: service.FerramentasForaDaClasse(classe)}, nil
+	}
 
 	c := a.rotaAtual()
 	if c == nil {
