@@ -1729,7 +1729,10 @@ func (a *App) executarComandoVincular(mensagem string) (*service.ChatResultado, 
 // cardDoContextoChat acha o cliente "em discussão" na conversa: varre as
 // mensagens persistidas do chat (mais recentes primeiro) procurando um código
 // service/id citado ou um nome que case com UM card do board. É o que permite
-// "/move cobrança" e "/apagar" sem dizer o cliente.
+// "/move cobrança" e "/apagar" sem dizer o cliente. Mensagens do USUÁRIO têm
+// prioridade: respostas do assistente que listam vários clientes (ex.: o
+// /vincular lista dezenas de nomes) não definem sobre quem se está falando —
+// só contam se nenhuma mensagem do usuário citar cliente.
 func (a *App) cardDoContextoChat(chatID int64) (service.CardResumo, bool) {
 	if a.chats == nil || a.tickets == nil {
 		return service.CardResumo{}, false
@@ -1746,9 +1749,14 @@ func (a *App) cardDoContextoChat(chatID int64) (service.CardResumo, bool) {
 	for _, t := range ts {
 		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
 	}
-	for i := len(ms) - 1; i >= 0; i-- {
-		if card, ok := service.ResolverCardNoTexto(ms[i].Conteudo, cards); ok {
-			return card, true
+	for _, papel := range []string{"user", "assistant"} {
+		for i := len(ms) - 1; i >= 0; i-- {
+			if ms[i].Papel != papel {
+				continue
+			}
+			if card, ok := service.ResolverCardNoTexto(ms[i].Conteudo, cards); ok {
+				return card, true
+			}
 		}
 	}
 	return service.CardResumo{}, false
@@ -1765,7 +1773,7 @@ func (a *App) executarComandoApagar(mensagem string, chatID int64) (*service.Cha
 		return nil, false
 	}
 	alvo := cmd.Card
-	if alvo == "" {
+	if alvo == "" || service.EhAlvoDeContexto(alvo) {
 		card, ok := a.cardDoContextoChat(chatID)
 		if !ok {
 			return &service.ChatResultado{
@@ -1799,7 +1807,7 @@ func (a *App) executarComandoRealizada(mensagem string, chatID int64) (*service.
 		return nil, false
 	}
 	alvo := cmd.Card
-	if alvo == "" {
+	if alvo == "" || service.EhAlvoDeContexto(alvo) {
 		card, ok := a.cardDoContextoChat(chatID)
 		if !ok {
 			return &service.ChatResultado{
@@ -1893,6 +1901,22 @@ func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.Cha
 	cards := make([]service.CardResumo, 0, len(ts))
 	for _, t := range ts {
 		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
+	}
+	// Alvo é referência ao cliente da conversa ("adicione o cliente do chat
+	// em X", "mova esse cliente para Y"): quem resolve é o contexto, nunca a
+	// busca por nome no 360 ("do chat" não é cliente — importava errado).
+	if service.EhAlvoDeContexto(in.Alvo) {
+		card, achou := a.cardDoContextoChat(chatID)
+		if !achou {
+			return &service.ChatResultado{
+				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"coloque o cliente João em Cobrança\".",
+				Acoes:    []service.AcaoDoAgente{},
+			}, true
+		}
+		if in.Apagar {
+			return a.apagarCardResolvido(card, in.Coluna), true
+		}
+		return a.moverCardResolvido(card, in.Coluna, abrirNoFim), true
 	}
 	card, err := service.ResolverCard(in.Alvo, cards)
 	switch {

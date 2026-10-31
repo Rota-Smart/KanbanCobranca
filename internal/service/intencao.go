@@ -499,7 +499,8 @@ func ParseIntencaoAbrir(msg string) (IntencaoAbrir, bool) {
 			// contexto da conversa (executarIntencaoAbrir resolve).
 			switch normalizar(alvo) {
 			case "esse cliente", "este cliente", "aquele cliente", "o cliente", "a cliente",
-				"ele", "ela", "desse cliente", "deste cliente", "esse card", "este card":
+				"ele", "ela", "desse cliente", "deste cliente", "esse card", "este card",
+				"do chat", "da conversa", "do chat atual", "da conversa atual":
 				return IntencaoAbrir{Contexto: true}, true
 			}
 			return IntencaoAbrir{Alvo: alvo}, true
@@ -514,7 +515,25 @@ func ParseIntencaoAbrir(msg string) (IntencaoAbrir, bool) {
 // "põe o cliente em Cobrança", "mova pra Negociando". A coluna vem do texto;
 // o cliente é o que está em discussão na conversa.
 var reMoverContexto = regexp.MustCompile(
-	`(?i)^\s*(?:mov\w+|arrast\w+|passe|passar|lev\w+|mand\w+|mud\w+|jog\w+|pux\w+|coloc\w+|coloque|coloq\w+|ponh\w+|p[õo]e|pôr|por|deix\w+|mex\w+|adic\w+)\s+(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|um\s+|uma\s+)?(?:card\s+|cliente\s+|ticket\s+)?(?:d[oa]\s+)?(?:cliente\s+)?(?:em|na|no)\s+(?:a\s+coluna\s+|coluna\s+|o\s+|a\s+)?(.+?)\s*[.!?]*$`)
+	`(?i)^\s*(?:mov\w+|arrast\w+|passe|passar|lev\w+|mand\w+|mud\w+|jog\w+|pux\w+|coloc\w+|coloque|coloq\w+|ponh\w+|p[õo]e|pôr|por|deix\w+|mex\w+|adic\w+)\s+(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|um\s+|uma\s+)?(?:card\s+|cliente\s+|ticket\s+)?(?:d[oa]\s+)?(?:cliente\s+)?(?:d[oa]\s+(?:chat|conversa)\s+)?(?:em|na|no)\s+(?:a\s+coluna\s+|coluna\s+|o\s+|a\s+)?(.+?)\s*[.!?]*$`)
+
+// ehAlvoDeContexto diz se o "alvo" extraído de um comando é uma referência
+// ao cliente em discussão na conversa ("esse cliente", "do chat", "da
+// conversa") e não um nome — quem resolve é o contexto do chat. Sem isso,
+// "adicione o cliente do chat em X" ia buscar literalmente "do chat" no 360
+// e importar um cliente qualquer (v1.40.2).
+func EhAlvoDeContexto(alvo string) bool {
+	switch normalizar(alvo) {
+	case "esse", "este", "aquele", "ele", "ela",
+		"esse cliente", "este cliente", "aquele cliente", "o cliente", "a cliente",
+		"desse cliente", "deste cliente", "esse card", "este card",
+		"do chat", "da conversa", "do chat atual", "da conversa atual",
+		"cliente do chat", "cliente da conversa",
+		"chat", "conversa":
+		return true
+	}
+	return false
+}
 
 // ParseIntencaoMoverContexto devolve a coluna pedida quando a mensagem move
 // o cliente do contexto sem citar nome. ok=false quando citar nome (ou não

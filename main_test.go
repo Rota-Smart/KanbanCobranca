@@ -395,3 +395,49 @@ func TestAbrirContextoEMoverContexto(t *testing.T) {
 		t.Fatalf("apagar inexistente: ok=%v resposta=%q", ok, res.Resposta)
 	}
 }
+
+// TestAdicionarClienteDoChat: "adicione o cliente do chat em X" usa o cliente
+// em discussão da conversa — não busca "do chat" como nome no 360 (bug da
+// v1.40.1, que importava um cliente aleatório).
+func TestAdicionarClienteDoChat(t *testing.T) {
+	a := newTestApp(t)
+	tk, err := a.SaveTicket(db.Ticket{NomeCliente: "Maria Souza", TipoTicket: "Outro", ColunaAtual: "Fazer contato"})
+	if err != nil {
+		t.Fatalf("SaveTicket: %v", err)
+	}
+	chat, err := a.CriarChat()
+	if err != nil {
+		t.Fatalf("CriarChat: %v", err)
+	}
+	if err := a.chats.AddMensagem(a.ctx, chat.ID, "user", "estou falando do cliente Maria Souza", ""); err != nil {
+		t.Fatalf("AddMensagem: %v", err)
+	}
+
+	res, ok := a.executarIntencaoLocal("adicione o cliente do chat em Cobrança", chat.ID)
+	if !ok {
+		t.Fatalf("deveria reconhecer a intenção local")
+	}
+	if !strings.Contains(res.Resposta, "Maria Souza") {
+		t.Fatalf("resposta deveria citar Maria Souza: %q", res.Resposta)
+	}
+	if t2, _ := a.tickets.Get(a.ctx, tk.ID); t2.ColunaAtual != "Cobrança" {
+		t.Fatalf("card deveria ter ido para Cobrança, está em %q", t2.ColunaAtual)
+	}
+
+	// Listagem do assistente com outros nomes não define o cliente: mesmo a
+	// última mensagem sendo do assistente, o contexto é o que o usuário falou.
+	if err := a.chats.AddMensagem(a.ctx, chat.ID, "assistant",
+		"Sem ticket na fila aberta: CARLOS EDUARDO, JOAO PEREIRA, MARIA C CAETANO", ""); err != nil {
+		t.Fatalf("AddMensagem assistant: %v", err)
+	}
+	// Cria cards rivais para a listagem poder enganar o resolver.
+	if _, err := a.SaveTicket(db.Ticket{NomeCliente: "Carlos Eduardo", TipoTicket: "Outro", ColunaAtual: "Fazer contato"}); err != nil {
+		t.Fatalf("SaveTicket rival: %v", err)
+	}
+	if _, ok := a.executarComandoMove("/move cobrança", chat.ID); !ok {
+		t.Fatalf("/move sem cliente deveria reconhecer")
+	}
+	if t2, _ := a.tickets.Get(a.ctx, tk.ID); t2.ColunaAtual != "Cobrança" {
+		t.Fatalf("depois da listagem, /move deveria continuar resolvendo Maria Souza; foi para %q", t2.ColunaAtual)
+	}
+}

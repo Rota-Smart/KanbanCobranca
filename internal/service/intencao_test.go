@@ -314,3 +314,30 @@ func TestParseIntencaoAdicionar(t *testing.T) {
 		t.Errorf("ParseIntencaoCard(adicionar João) = %+v, %v", in, ok)
 	}
 }
+
+// TestAlvoDeContexto: "do chat"/"da conversa" e pronomes são referência ao
+// cliente em discussão — nunca nome para buscar no 360 (v1.40.1 importou um
+// cliente errado buscando literalmente "do chat").
+func TestAlvoDeContexto(t *testing.T) {
+	for _, alvo := range []string{"do chat", "da conversa", "do chat atual", "esse cliente", "ele", "cliente do chat"} {
+		if !EhAlvoDeContexto(alvo) {
+			t.Errorf("EhAlvoDeContexto(%q) = false; queria true", alvo)
+		}
+	}
+	for _, alvo := range []string{"João", "On tec", "24044", "maicon rodrigues"} {
+		if EhAlvoDeContexto(alvo) {
+			t.Errorf("EhAlvoDeContexto(%q) = true; queria false", alvo)
+		}
+	}
+	// "adicione o cliente do chat em X" agora é mover-pelo-contexto.
+	if col, ok := ParseIntencaoMoverContexto("adicione o cliente do chat em aguardando assinatura"); !ok || col != "aguardando assinatura" {
+		t.Errorf("MoverContexto(cliente do chat) = %q, %v", col, ok)
+	}
+	if col, ok := ParseIntencaoMoverContexto("coloque o cliente da conversa em Cobrança"); !ok || col != "Cobrança" {
+		t.Errorf("MoverContexto(cliente da conversa) = %q, %v", col, ok)
+	}
+	// Nome próprio continua indo pelo caminho com alvo.
+	if in, ok := ParseIntencaoCard("adicione o cliente João em Cobrança"); !ok || in.Alvo != "João" {
+		t.Errorf("ParseIntencaoCard(João) = %+v, %v", in, ok)
+	}
+}
