@@ -326,7 +326,7 @@ func (a *App) blocoCardsCliente(cod string) string {
 		}
 	}
 	if len(encontrados) == 0 {
-		return fmt.Sprintf("Cards no sistema: o cliente (código %s) NÃO tem card no Kanban local.", cod)
+		return fmt.Sprintf("Cards no sistema: o cliente (código %s) NÃO tem card no Kanban local — isso NÃO impede a ação: para colocar/mover esse cliente numa coluna, use importar_cliente com codService=%s e a coluna pedida (cria o card direto nela).", cod, cod)
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Cards no sistema (%d card(s) do cliente no Kanban local; card id é o identificador para mover_card/apagar_card/etc.):\n", len(encontrados))
