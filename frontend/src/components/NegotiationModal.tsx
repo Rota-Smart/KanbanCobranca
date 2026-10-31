@@ -151,6 +151,8 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
   const [det, setDet] = useState<TicketDetalhe360 | null>(null);
   const [detErro, setDetErro] = useState('');
   const [detCarregando, setDetCarregando] = useState(false);
+  const [visitando, setVisitando] = useState(false);
+  const [erroVisita, setErroVisita] = useState('');
   const reqId = useRef(0);
   const detReqId = useRef(0);
   const debounce = useRef<ReturnType<typeof setTimeout>>();
@@ -1126,14 +1128,18 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
                     <span className="text-slate-500 dark:text-slate-400 shrink-0">Situação</span>
                     <span
                       className={`text-right font-medium ${
-                        ticket.colunaAtual === 'Visita Agendada'
-                          ? 'text-sky-700 dark:text-sky-300'
-                          : 'text-slate-800 dark:text-slate-100'
+                        ticket.visitaRealizada
+                          ? 'text-emerald-700 dark:text-emerald-300'
+                          : ticket.colunaAtual === 'Visita Agendada'
+                            ? 'text-sky-700 dark:text-sky-300'
+                            : 'text-slate-800 dark:text-slate-100'
                       }`}
                     >
-                      {ticket.colunaAtual === 'Visita Agendada'
-                        ? '📅 Agendada'
-                        : `Visita registrada — card em ${ticket.colunaAtual}`}
+                      {ticket.visitaRealizada
+                        ? `✅ Realizada${ticket.visitaRealizada.length >= 16 ? ` em ${ticket.visitaRealizada.slice(8, 10)}/${ticket.visitaRealizada.slice(5, 7)}/${ticket.visitaRealizada.slice(0, 4)}` : ''}`
+                        : ticket.colunaAtual === 'Visita Agendada'
+                          ? '📅 Agendada'
+                          : `Visita registrada — card em ${ticket.colunaAtual}`}
                     </span>
                   </div>
                   <LinhaDado
@@ -1165,6 +1171,40 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
                       ✏️ Editar agendamento…
                     </button>
                   )}
+                  {ticket.visitaRealizada ? (
+                    <button
+                      className="text-sm px-3 py-1.5 rounded-lg bg-white/60 dark:bg-white/10 hover:bg-white dark:hover:bg-white/20 border border-slate-200 dark:border-slate-600 disabled:opacity-60"
+                      disabled={visitando}
+                      onClick={async () => {
+                        setVisitando(true);
+                        try {
+                          notificarCardAtualizado(await App.DesmarcarVisitaRealizada(ticket.id));
+                        } catch (e) {
+                          setErroVisita(String(e));
+                        }
+                        setVisitando(false);
+                      }}
+                    >
+                      ↩ Desmarcar (voltar a pendente)
+                    </button>
+                  ) : (
+                    <button
+                      className="text-sm px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-60"
+                      disabled={visitando}
+                      onClick={async () => {
+                        setVisitando(true);
+                        try {
+                          notificarCardAtualizado(await App.MarcarVisitaRealizada(ticket.id));
+                        } catch (e) {
+                          setErroVisita(String(e));
+                        }
+                        setVisitando(false);
+                      }}
+                    >
+                      ✅ Marcar como realizada
+                    </button>
+                  )}
+                  {erroVisita && <p className="text-xs text-red-600 dark:text-red-400 w-full">{erroVisita}</p>}
                 </div>
               </>
             ) : (

@@ -471,6 +471,7 @@ export default function App() {
     const itens: Ticket[] = [];
     for (const lista of Object.values(board)) {
       for (const t of lista) {
+        if (t.visitaRealizada) continue; // realizadas saem do aviso de visitas
         if (t.visitaData || t.colunaAtual === colunaVisitaAgendada) itens.push(t);
       }
     }
@@ -1002,19 +1003,42 @@ ${txt.trim()}` : txt.trim());
                     </div>
                   ) : (
                     visitasProximas.map((t) => (
-                      <button
-                        key={t.id}
-                        className={`block w-full text-left px-3 py-2 hover:bg-slate-500/10 ${visitaAtrasada(t) ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}`}
-                        title={t.visitaEndereco || t.endereco || ''}
-                        onClick={() => {
-                          setMenuVisitas(null);
-                          setPreCobranca(null);
-                          setAberto(t);
-                        }}
-                      >
-                        📍 {resumoVisita(t)}
-                        {visitaAtrasada(t) ? ' · atrasada' : ''}
-                      </button>
+                      <div key={t.id} className="flex items-stretch">
+                        <button
+                          className={`flex-1 text-left px-3 py-2 hover:bg-slate-500/10 ${visitaAtrasada(t) && !t.visitaRealizada ? 'text-red-600 dark:text-red-400' : t.visitaRealizada ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-200'}`}
+                          title={t.visitaEndereco || t.endereco || ''}
+                          onClick={() => {
+                            setMenuVisitas(null);
+                            setPreCobranca(null);
+                            setAberto(t);
+                          }}
+                        >
+                          {t.visitaRealizada ? '✅' : '📍'} {resumoVisita(t)}
+                          {visitaAtrasada(t) && !t.visitaRealizada ? ' · atrasada' : ''}
+                        </button>
+                        {!t.visitaRealizada && (
+                          <button
+                            className="px-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                            title="Marcar visita como realizada"
+                            onClick={async () => {
+                              try {
+                                const u = await bindings.MarcarVisitaRealizada(t.id);
+                                const atual = u as Ticket;
+                                setBoard((b) => {
+                                  const n: Board = {};
+                                  for (const [c, ts] of Object.entries(b)) n[c] = ts.map((x) => (x.id === atual.id ? atual : x));
+                                  return n;
+                                });
+                                showToast(`Visita de ${t.nomeCliente} marcada como realizada.`);
+                              } catch (e) {
+                                showToast(String(e));
+                              }
+                            }}
+                          >
+                            ✅
+                          </button>
+                        )}
+                      </div>
                     ))
                   )}
                 </div>

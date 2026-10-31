@@ -60,6 +60,19 @@ func (a *App) MarcarVisitaRealizada(ticketID int64) (db.Ticket, error) {
 	return *atual, nil
 }
 
+// DesmarcarVisitaRealizada volta a visita do card para pendente (só manual —
+// sem atalho no chat nem na IA).
+func (a *App) DesmarcarVisitaRealizada(ticketID int64) (db.Ticket, error) {
+	if err := a.tickets.MarcarVisitaRealizada(a.ctx, ticketID, ""); err != nil {
+		return db.Ticket{}, friendly("DesmarcarVisitaRealizada", err)
+	}
+	t, err := a.tickets.Get(a.ctx, ticketID)
+	if err != nil {
+		return db.Ticket{}, friendly("DesmarcarVisitaRealizada", err)
+	}
+	return *t, nil
+}
+
 // EnderecoSugeridoVisita devolve o endereço para pré-preencher o diálogo:
 // cadastro do cliente no 360 (cache local); sem cadastro, o endereço do card.
 func (a *App) EnderecoSugeridoVisita(ticketID int64) (string, error) {
