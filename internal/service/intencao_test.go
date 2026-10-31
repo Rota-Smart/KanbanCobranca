@@ -295,3 +295,22 @@ func TestParseIntencaoAbrirContextoVerbos(t *testing.T) {
 		}
 	}
 }
+
+// TestParseIntencaoAdicionar: "adicione" é verbo de mover ("adicione em
+// Aguardando assinatura" move o cliente do contexto; v1.40.1 — antes caía
+// no agente de IA, que recusava).
+func TestParseIntencaoAdicionar(t *testing.T) {
+	casos := []struct{ msg, coluna string }{
+		{"adicione em aguardando assinatura", "aguardando assinatura"},
+		{"adicione na Cobrança", "Cobrança"},
+		{"adiciona o cliente em Negociando", "Negociando"},
+	}
+	for _, c := range casos {
+		if col, ok := ParseIntencaoMoverContexto(c.msg); !ok || col != c.coluna {
+			t.Errorf("ParseIntencaoMoverContexto(%q) = %q, %v; queria %q", c.msg, col, ok, c.coluna)
+		}
+	}
+	if in, ok := ParseIntencaoCard("adicione o cliente João em Cobrança"); !ok || in.Apagar || in.Alvo != "João" || in.Coluna != "Cobrança" {
+		t.Errorf("ParseIntencaoCard(adicionar João) = %+v, %v", in, ok)
+	}
+}
