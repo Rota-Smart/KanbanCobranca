@@ -342,3 +342,20 @@ func TestAlvoDeContexto(t *testing.T) {
 		t.Errorf("ParseIntencaoCard(João) = %+v, %v", in, ok)
 	}
 }
+
+func TestExtrairCodigoNoTexto(t *testing.T) {
+	// briefing do Shift+F2: código service rotulado vence a cerilha do ticket.
+	if got := ExtrairCodigoNoTexto("Analise o ticket #99887 (sem internet) do cliente João (código service 24755)."); got != "24755" {
+		t.Errorf("briefing = %q, queria 24755", got)
+	}
+	if got := ExtrairCodigoNoTexto("mova o cliente 12345 para cobrança"); got != "12345" {
+		t.Errorf("rotulado = %q", got)
+	}
+	if got := ExtrairCodigoNoTexto("apague o #42"); got != "42" {
+		t.Errorf("cerilha = %q", got)
+	}
+	// número solto é ignorado de propósito (mesma regra do ResolverCardNoTexto).
+	if got := ExtrairCodigoNoTexto("valor de 5000 reais"); got != "" {
+		t.Errorf("número solto = %q, queria vazio", got)
+	}
+}

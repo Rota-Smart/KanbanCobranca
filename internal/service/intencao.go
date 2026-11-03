@@ -271,6 +271,23 @@ func ResolverCardNoTexto(texto string, cards []CardResumo) (CardResumo, bool) {
 	return CardResumo{}, false
 }
 
+// ExtrairCodigoNoTexto devolve o último código service/id citado COM
+// referência explícita ("cod 123", "cliente 123", "#123") num texto — o
+// primeiro passo do ResolverCardNoTexto, mas sem depender de cards: serve
+// para o contexto do chat identificar o cliente citado mesmo quando ele
+// não tem card no quadro. O número rotulado vence a cerilha: no briefing
+// do Shift+F2 os dois aparecem ("ticket #123 ... código service 456") e o
+// código service é o que identifica o cliente.
+func ExtrairCodigoNoTexto(texto string) string {
+	if ms := reNumeroRotulado.FindAllStringSubmatch(texto, -1); len(ms) > 0 {
+		return ms[len(ms)-1][1]
+	}
+	if ms := reNumeroCard.FindAllStringSubmatch(texto, -1); len(ms) > 0 {
+		return ms[len(ms)-1][1]
+	}
+	return ""
+}
+
 // pedaçoComum filtra tokens que aparecem em qualquer nome/razão social e não
 // identificam ninguém sozinhos.
 func pedaçoComum(tk string) bool {

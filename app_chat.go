@@ -1759,33 +1759,97 @@ func (a *App) executarComandoVincular(mensagem string) (*service.ChatResultado, 
 // prioridade: respostas do assistente que listam vários clientes (ex.: o
 // /vincular lista dezenas de nomes) não definem sobre quem se está falando —
 // só contam se nenhuma mensagem do usuário citar cliente.
-func (a *App) cardDoContextoChat(chatID int64) (service.CardResumo, bool) {
+//
+// Quando a conversa cita um código service mas o cliente NÃO tem card no
+// quadro (fluxo comum do Shift+F2: ticket analisado sem card criado), devolve
+// (CardResumo{}, cod, false) — o chamador decide: comando de mover importa o
+// card direto do 360; pergunta de "tem card?" responde honestamente quem é o
+// cliente.
+func (a *App) cardDoContextoChat(chatID int64) (service.CardResumo, string, bool) {
 	if a.chats == nil || a.tickets == nil {
-		return service.CardResumo{}, false
+		return service.CardResumo{}, "", false
 	}
 	ms, err := a.chats.Mensagens(a.ctx, chatID)
 	if err != nil || len(ms) == 0 {
-		return service.CardResumo{}, false
+		return service.CardResumo{}, "", false
 	}
 	ts, err := a.tickets.List(a.ctx)
 	if err != nil {
-		return service.CardResumo{}, false
+		return service.CardResumo{}, "", false
 	}
 	cards := make([]service.CardResumo, 0, len(ts))
 	for _, t := range ts {
 		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
 	}
+	cod := ""
 	for _, papel := range []string{"user", "assistant"} {
 		for i := len(ms) - 1; i >= 0; i-- {
 			if ms[i].Papel != papel {
 				continue
 			}
 			if card, ok := service.ResolverCardNoTexto(ms[i].Conteudo, cards); ok {
-				return card, true
+				return card, "", true
+			}
+			if cod == "" {
+				cod = service.ExtrairCodigoNoTexto(ms[i].Conteudo)
 			}
 		}
 	}
-	return service.CardResumo{}, false
+	return service.CardResumo{}, cod, false
+}
+
+// respostaContextoSemCard monta a resposta dos comandos de contexto quando a
+// conversa identifica o cliente (código service citado) mas ele não tem card
+// no quadro — melhor que o genérico "não identifiquei", que sugere conversa
+// vazia quando o problema é só a ausência do card. cod vazio = conversa mesmo
+// sem cliente identificável (mensagem original).
+func respostaContextoSemCard(cod, oQueFalta string) *service.ChatResultado {
+	if cod == "" {
+		return &service.ChatResultado{
+			Resposta: "Não identifiquei o cliente em discussão nesta conversa — cite o código service ou o nome dele.",
+			Acoes:    []service.AcaoDoAgente{},
+		}
+	}
+	return &service.ChatResultado{
+		Resposta: fmt.Sprintf("O cliente em discussão é o de código service %s, mas ele não tem card no quadro — não há %s.", cod, oQueFalta),
+		Acoes:    []service.AcaoDoAgente{},
+	}
+}
+
+// importarCardDoContexto cria o card do cliente citado na conversa (código
+// service identificado sem card correspondente) direto na coluna pedida —
+// o mesmo fluxo do "adicione o cliente X em Y", sem perguntar nada. Precisa
+// de sessão no 360.
+func (a *App) importarCardDoContexto(cod, colunaDita string, abrirNoFim bool) *service.ChatResultado {
+	colunas, err := a.colunas.List(a.ctx)
+	if err != nil {
+		return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error(), Acoes: []service.AcaoDoAgente{}}
+	}
+	coluna, err := service.CasarColuna(colunaDita, colunas)
+	if err != nil {
+		return &service.ChatResultado{Resposta: err.Error(), Acoes: []service.AcaoDoAgente{}}
+	}
+	if a.rotaAtual() == nil {
+		return &service.ChatResultado{
+			Resposta: fmt.Sprintf("O cliente de código service %s da conversa não tem card e não consegui criar: sem sessão no 360. Conecte-se em ⚙ Configurações.", cod),
+			Acoes:    []service.AcaoDoAgente{},
+		}
+	}
+	t, err := a.agentImportarCliente(a.ctx, cod, coluna)
+	if err != nil {
+		return &service.ChatResultado{
+			Resposta: fmt.Sprintf("O cliente de código service %s da conversa não tem card e a criação falhou: %v", cod, err),
+			Acoes:    []service.AcaoDoAgente{},
+		}
+	}
+	if abrirNoFim {
+		a.emitirAbrirCard(t.ID)
+	}
+	return &service.ChatResultado{
+		Resposta: fmt.Sprintf("O cliente não tinha card: criei o card %d (%s, código %s) direto em %s.", t.ID, t.NomeCliente, t.CodService, t.ColunaAtual),
+		Acoes: []service.AcaoDoAgente{{Ferramenta: "importar_cliente",
+			Resumo: fmt.Sprintf("criou o card %d (%s) em %s via contexto do chat", t.ID, t.NomeCliente, t.ColunaAtual)}},
+	}
 }
 
 // executarComandoApagar roda o "/apagar" do chat (sem IA): com cliente no
@@ -1800,8 +1864,11 @@ func (a *App) executarComandoApagar(mensagem string, chatID int64) (*service.Cha
 	}
 	alvo := cmd.Card
 	if alvo == "" || service.EhAlvoDeContexto(alvo) {
-		card, ok := a.cardDoContextoChat(chatID)
+		card, cod, ok := a.cardDoContextoChat(chatID)
 		if !ok {
+			if cod != "" {
+				return respostaContextoSemCard(cod, "card para apagar"), true
+			}
 			return &service.ChatResultado{
 				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga: /apagar <cliente> (ou cite o código service antes).",
 				Acoes:    []service.AcaoDoAgente{},
@@ -1834,8 +1901,11 @@ func (a *App) executarComandoRealizada(mensagem string, chatID int64) (*service.
 	}
 	alvo := cmd.Card
 	if alvo == "" || service.EhAlvoDeContexto(alvo) {
-		card, ok := a.cardDoContextoChat(chatID)
+		card, cod, ok := a.cardDoContextoChat(chatID)
 		if !ok {
+			if cod != "" {
+				return respostaContextoSemCard(cod, "visita agendada para marcar como realizada"), true
+			}
 			return &service.ChatResultado{
 				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga: /realizada <cliente> (ou cite o código service antes).",
 				Acoes:    []service.AcaoDoAgente{},
@@ -1904,10 +1974,15 @@ func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.Cha
 		mensagem, abrirNoFim = resto, true
 	}
 
-	// "coloque em cobrança" sem nome: o cliente é o da conversa.
+	// "coloque em cobrança" sem nome: o cliente é o da conversa. Se ele não
+	// tem card mas o código service está na conversa (fluxo Shift+F2), cria
+	// o card direto na coluna pedida — sem perguntar nada.
 	if colunaDita, ok := service.ParseIntencaoMoverContexto(mensagem); ok {
-		card, achou := a.cardDoContextoChat(chatID)
+		card, cod, achou := a.cardDoContextoChat(chatID)
 		if !achou {
+			if cod != "" {
+				return a.importarCardDoContexto(cod, colunaDita, abrirNoFim), true
+			}
 			return &service.ChatResultado{
 				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"coloque o cliente João em Cobrança\".",
 				Acoes:    []service.AcaoDoAgente{},
@@ -1932,8 +2007,14 @@ func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.Cha
 	// em X", "mova esse cliente para Y"): quem resolve é o contexto, nunca a
 	// busca por nome no 360 ("do chat" não é cliente — importava errado).
 	if service.EhAlvoDeContexto(in.Alvo) {
-		card, achou := a.cardDoContextoChat(chatID)
+		card, cod, achou := a.cardDoContextoChat(chatID)
 		if !achou {
+			if cod != "" {
+				if in.Apagar {
+					return respostaContextoSemCard(cod, "card para apagar"), true
+				}
+				return a.importarCardDoContexto(cod, in.Coluna, abrirNoFim), true
+			}
 			return &service.ChatResultado{
 				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"coloque o cliente João em Cobrança\".",
 				Acoes:    []service.AcaoDoAgente{},

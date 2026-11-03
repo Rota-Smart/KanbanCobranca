@@ -25,10 +25,18 @@ func (a *App) executarIntencaoAbrir(mensagem string, chatID int64) (*service.Cha
 		return nil, false
 	}
 	// "esse cliente possui card aberto?": o alvo é o cliente em discussão
-	// na conversa (mesma memória do /apagar e do /realizada).
+	// na conversa (mesma memória do /apagar e do /realizada). Sem card, a
+	// resposta diz quem é o cliente (código service citado na conversa) em
+	// vez do genérico "não identifiquei".
 	if in.Contexto {
-		card, achou := a.cardDoContextoChat(chatID)
+		card, cod, achou := a.cardDoContextoChat(chatID)
 		if !achou {
+			if cod != "" {
+				return &service.ChatResultado{
+					Resposta: fmt.Sprintf("Não — o cliente em discussão é o de código service %s e ele não tem card no quadro.", cod),
+					Acoes:    []service.AcaoDoAgente{},
+				}, true
+			}
 			return &service.ChatResultado{
 				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"o card do João tem card?\".",
 				Acoes:    []service.AcaoDoAgente{},

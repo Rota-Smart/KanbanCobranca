@@ -441,3 +441,54 @@ func TestAdicionarClienteDoChat(t *testing.T) {
 		t.Fatalf("depois da listagem, /move deveria continuar resolvendo Maria Souza; foi para %q", t2.ColunaAtual)
 	}
 }
+
+func TestContextoSemCardImportaOuInforma(t *testing.T) {
+	a := newTestApp(t)
+	chat, err := a.CriarChat()
+	if err != nil {
+		t.Fatalf("CriarChat: %v", err)
+	}
+	// Briefing do Shift+F2: cita ticket #99887 E o código service — a
+	// conversa identifica o cliente, mas ele não tem card no quadro.
+	briefing := "Analise o ticket #99887 (sem internet) do cliente João da Silva (código service 24755), assunto Conectividade."
+	if err := a.chats.AddMensagem(a.ctx, chat.ID, "user", briefing, ""); err != nil {
+		t.Fatalf("AddMensagem: %v", err)
+	}
+
+	// pergunta de card: responde quem é o cliente, não "não identifiquei".
+	res, ok := a.executarIntencaoAbrir("esse cliente possui card aberto?", chat.ID)
+	if !ok || !strings.Contains(res.Resposta, "24755") || !strings.Contains(res.Resposta, "não tem card") {
+		t.Fatalf("contexto abrir sem card: ok=%v resposta=%q", ok, res.Resposta)
+	}
+
+	// /apagar: nunca cria — informa o cliente e diz que não há card.
+	res, ok = a.executarComandoApagar("/apagar", chat.ID)
+	if !ok || !strings.Contains(res.Resposta, "24755") || !strings.Contains(res.Resposta, "card para apagar") {
+		t.Fatalf("/apagar sem card: ok=%v resposta=%q", ok, res.Resposta)
+	}
+
+	// mover: cria o card direto. Sem sessão no 360 (test app), a criação
+	// falha — mas a resposta já não é "não identifiquei": mostra o código
+	// e o motivo real.
+	res, ok = a.executarIntencaoLocal("coloque em cobrança", chat.ID)
+	if !ok || strings.Contains(res.Resposta, "Não identifiquei") || !strings.Contains(res.Resposta, "24755") {
+		t.Fatalf("contexto mover sem card: ok=%v resposta=%q", ok, res.Resposta)
+	}
+	res, ok = a.executarComandoMove("/move cobrança", chat.ID)
+	if !ok || strings.Contains(res.Resposta, "Não identifiquei") || !strings.Contains(res.Resposta, "24755") {
+		t.Fatalf("/move sem card: ok=%v resposta=%q", ok, res.Resposta)
+	}
+
+	// conversa sem cliente citado algum: mensagem original permanece.
+	chat2, err := a.CriarChat()
+	if err != nil {
+		t.Fatalf("CriarChat 2: %v", err)
+	}
+	if err := a.chats.AddMensagem(a.ctx, chat2.ID, "user", "olá bom dia", ""); err != nil {
+		t.Fatalf("AddMensagem 2: %v", err)
+	}
+	res, ok = a.executarIntencaoAbrir("esse cliente possui card aberto?", chat2.ID)
+	if !ok || !strings.Contains(res.Resposta, "Não identifiquei") {
+		t.Fatalf("conversa vazia: ok=%v resposta=%q", ok, res.Resposta)
+	}
+}
