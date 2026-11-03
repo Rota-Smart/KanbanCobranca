@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"rota-smart/internal/db"
 	"rota-smart/internal/rota360"
 )
 
@@ -25,12 +26,30 @@ type CardFechado struct {
 
 // ResultadoVerificacao resume o disparo do botão de tickets fechados.
 type ResultadoVerificacao struct {
-	Verificados int          `json:"verificados"` // tickets únicos consultados no 360
-	Fechados    int          `json:"fechados"`    // tickets detectados como fechados
+	Verificados int           `json:"verificados"` // tickets únicos consultados no 360
+	Fechados    int           `json:"fechados"`    // tickets detectados como fechados
 	Movidos     []CardFechado `json:"movidos"`
-	Ficaram     int          `json:"ficaram"` // cards com ticket ainda aberto
-	Erros       []string     `json:"erros"`
-	Coluna      string       `json:"coluna"`
+	Ficaram     int           `json:"ficaram"`   // cards com ticket ainda aberto
+	Ignorados   int           `json:"ignorados"` // já fechados antes ou na coluna — a verificação não desfaz o que o usuário moveu
+	Erros       []string      `json:"erros"`
+	Coluna      string        `json:"coluna"`
+}
+
+// cardsQueNaoMexer junta os cards que a verificação de fechados não pode
+// desfazer: quem já está na coluna de fechados agora e quem já passou por ela
+// alguma vez (movimentações) — se o usuário arrastou um desses de volta para
+// outra coluna, foi decisão manual e o card fica onde está.
+func cardsQueNaoMexer(ts []db.Ticket, hist []db.MovimentoFechado) map[int64]bool {
+	naoMexer := map[int64]bool{}
+	for _, t := range ts {
+		if t.ColunaAtual == ColunaTicketFechado {
+			naoMexer[t.ID] = true
+		}
+	}
+	for _, m := range hist {
+		naoMexer[m.CardID] = true
+	}
+	return naoMexer
 }
 
 // ticketFechado avalia o status do 360: Resolvido, Fechado, Concluído,
@@ -77,16 +96,39 @@ func (a *App) VerificarTicketsFechados() (ResultadoVerificacao, error) {
 	if err != nil {
 		return res, err
 	}
-	if len(vs) == 0 {
-		return res, nil
-	}
 
-	// Tickets do board para nome/status do card; um card pode ter vários vínculos.
+	// Tickets do board para nome do card e para saber em que coluna está.
+	var ts []db.Ticket
+	var hist []db.MovimentoFechado
 	tickets := map[int64]string{}
-	if ts, err := a.tickets.List(ctx); err == nil {
+	if aux, err := a.tickets.List(ctx); err == nil {
+		ts = aux
 		for _, t := range ts {
 			tickets[t.ID] = t.NomeCliente
 		}
+	}
+	if aux, err := a.tickets.HistoricoFechados(a.ctx, ColunaTicketFechado); err == nil {
+		hist = aux
+	}
+
+	// Cards que a verificação não pode desfazer: quem já está na coluna de
+	// fechados e quem já passou por ela alguma vez (registro em movimentações).
+	// Se o usuário arrastou um desses cards de volta para outra coluna, foi
+	// decisão manual — a verificação respeita e deixa onde está.
+	naoMexer := cardsQueNaoMexer(ts, hist)
+	ignorados := map[int64]bool{}
+	ativos := make([]db.Vinculo360, 0, len(vs))
+	for _, v := range vs {
+		if naoMexer[v.TicketID] {
+			ignorados[v.TicketID] = true
+			continue
+		}
+		ativos = append(ativos, v)
+	}
+	res.Ignorados = len(ignorados)
+	vs = ativos
+	if len(vs) == 0 {
+		return res, nil
 	}
 
 	// Consulta o status de cada ticket único no 360, com paralelismo limitado.
