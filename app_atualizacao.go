@@ -27,6 +27,13 @@ func (a *App) fonteAtualizacao() string {
 	return atualizacao.BasePadrao
 }
 
+// VersaoInstalada devolve a versão DESTE executável — o frontend usa para
+// decidir se uma pendência de reinício ainda faz sentido (só mantém a
+// pendência se este app ainda NÃO for a versão baixada).
+func (a *App) VersaoInstalada() string {
+	return atualizacao.VersaoApp
+}
+
 // VerificarAtualizacao compara a versão local com a publicada na fonte.
 func (a *App) VerificarAtualizacao() (atualizacao.Info, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, 25*time.Second)
@@ -149,10 +156,22 @@ func (a *App) ReiniciarApp() error {
 		return friendly("ReiniciarApp", err)
 	}
 	args := os.Args[1:]
-	cmd := exec.Command(exeAtual, args...)
-	cmd.Dir = filepath.Dir(exeAtual)
-	if err := cmd.Start(); err != nil {
-		return friendly("ReiniciarApp", err)
+	// O antivírus costuma segurar o exe recém-trocado por alguns segundos:
+	// tenta abrir 3 vezes antes de desistir e devolver o erro ao frontend.
+	var erroInicio error
+	for i := 0; i < 3; i++ {
+		lance := exec.Command(exeAtual, args...)
+		lance.Dir = filepath.Dir(exeAtual)
+		erroInicio = lance.Start()
+		if erroInicio == nil {
+			break
+		}
+		if i < 2 {
+			time.Sleep(2 * time.Second)
+		}
+	}
+	if erroInicio != nil {
+		return friendly("ReiniciarApp", fmt.Errorf("não foi possível abrir o app atualizado (o antivírus pode estar segurando o arquivo): tente fechar e abrir de novo"))
 	}
 	wailsRuntime.Quit(a.ctx)
 	return nil

@@ -517,9 +517,16 @@ export default function App() {
   // porque a tela de Configurações pode estar fechada quando o download
   // termina ou falha — os toasts morreriam com o unmount dela.
   useEffect(() => {
-    // Se este app JÁ é a versão nova, a pendência de reinício expirou: o exe
-    // foi trocado no disco antes do reinício, então reabrir = atualizado.
-    localStorage.removeItem('atualizacaoPronta');
+    // Restaura pendência de reinício ("Depois" + fechou/reabriu): só apaga se
+    // este app JÁ for a versão pendente (reabrir = exe já trocado = atualizado).
+    // Antes apagava sem conferir — o botão de reiniciar em Configurações
+    // nunca mais aparecia depois de reabrir o app com pendência ativa.
+    bindings.VersaoInstalada().then((versaoAtual: string) => {
+      const pendente = localStorage.getItem('atualizacaoPronta');
+      if (!pendente) return;
+      if (pendente === versaoAtual) localStorage.removeItem('atualizacaoPronta');
+      else setProntaAtualiza(pendente);
+    }).catch(() => {});
     const offOk = EventsOn('atualizacao:pronto', (d: { versao: string }) => {
       setAvisoAtualiza(null);
       // Instalada no disco; o reinício é decisão do usuário. Se ele fechar
@@ -1530,7 +1537,10 @@ ${txt.trim()}` : txt.trim());
           <span>Versão <b>{prontaAtualiza}</b> baixada. Reiniciar agora para atualizar?</span>
           <button
             className="px-3 py-1 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-500"
-            onClick={() => { void bindings.ReiniciarApp(); }}
+            onClick={() => { bindings.ReiniciarApp().then(() => setProntaAtualiza(null)).catch((e) => {
+              setToast('⚠ ' + String(e));
+              setTimeout(() => setToast(''), 8000);
+            }); }}
           >
             Reiniciar agora
           </button>

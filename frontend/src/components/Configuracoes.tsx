@@ -670,7 +670,10 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
             <button
               className="mt-2 bg-emerald-600 text-white rounded px-3 py-1 text-sm"
               title={`A versão ${prontaReinicio} já está instalada no disco; reiniciar troca o app em execução`}
-              onClick={() => { void App.ReiniciarApp(); }}
+              onClick={() => { App.ReiniciarApp().then(() => {
+                setProntaReinicio(null);
+                localStorage.removeItem('atualizacaoPronta');
+              }).catch((e) => props.onToast('⚠ ' + String(e))); }}
             >
               🔄 Reiniciar agora para a versão {prontaReinicio}
             </button>
