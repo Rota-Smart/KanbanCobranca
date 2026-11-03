@@ -619,6 +619,32 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 				detalhe, t.ID, t.NomeCliente, t.Tentativas, t.UltimaTentativa),
 			fmt.Sprintf("registrou tentativa de contato de %s (total %d)", t.NomeCliente, t.Tentativas), nil
 
+	case "tentativas_contato":
+		id, err := cardID()
+		if err != nil {
+			return "", "", err
+		}
+		regs, err := a.ListarTentativasContato(id)
+		if err != nil {
+			return "", "", err
+		}
+		if len(regs) == 0 {
+			return "Nenhuma tentativa de contato registrada neste card.", "listou contatos: nenhuma tentativa", nil
+		}
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "%d tentativa(s) de contato (da mais recente para a mais antiga):", len(regs))
+		for _, r := range regs {
+			linha := "\n- " + r.CreatedAt
+			if r.Canal != "" {
+				linha += " via " + r.Canal
+			}
+			if r.Nota != "" {
+				linha += " — " + r.Nota
+			}
+			sb.WriteString(linha)
+		}
+		return sb.String(), fmt.Sprintf("listou %d tentativa(s) de contato", len(regs)), nil
+
 	case "agendar_visita":
 		id, err := cardID()
 		if err != nil {

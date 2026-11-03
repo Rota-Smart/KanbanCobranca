@@ -11,6 +11,7 @@ import type {
   ReparcelamentoResult,
   RenegociacaoPronta,
   ResultadoCobranca,
+  TentativaContato,
   Ticket,
   TicketDetalhe360,
   Vinculo360,
@@ -36,7 +37,7 @@ interface Props {
 }
 
 // Seções do card completo: o nav troca o conteúdo, estilo coluna do Kanban.
-type Aba = 'acordo' | 'proposta' | 'cliente' | 'ticket' | 'visita' | 'observacoes' | 'financeiro' | 'historico';
+type Aba = 'acordo' | 'proposta' | 'cliente' | 'ticket' | 'visita' | 'contatos' | 'observacoes' | 'financeiro' | 'historico';
 
 const abas: { id: Aba; icone: string; rotulo: string }[] = [
   { id: 'acordo', icone: '📝', rotulo: 'Acordo' },
@@ -44,10 +45,14 @@ const abas: { id: Aba; icone: string; rotulo: string }[] = [
   { id: 'cliente', icone: '👤', rotulo: 'Cliente' },
   { id: 'ticket', icone: '🎫', rotulo: 'Ticket' },
   { id: 'visita', icone: '📅', rotulo: 'Visita' },
+  { id: 'contatos', icone: '📞', rotulo: 'Contatos' },
   { id: 'observacoes', icone: '🗒️', rotulo: 'Observações' },
   { id: 'financeiro', icone: '💰', rotulo: 'Financeiro' },
   { id: 'historico', icone: '🕘', rotulo: 'Histórico' },
 ];
+
+// Canais de contato do registro rápido (livre — pode digitar outro).
+const canaisContato = ['', 'ligação', 'WhatsApp', 'e-mail'];
 
 function CampoMoeda(props: {
   label: string;
@@ -153,6 +158,11 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
   const [detCarregando, setDetCarregando] = useState(false);
   const [visitando, setVisitando] = useState(false);
   const [erroVisita, setErroVisita] = useState('');
+  const [contatos, setContatos] = useState<TentativaContato[]>([]);
+  const [canalContato, setCanalContato] = useState('');
+  const [notaContato, setNotaContato] = useState('');
+  const [salvandoContato, setSalvandoContato] = useState(false);
+  const [erroContato, setErroContato] = useState('');
   const reqId = useRef(0);
   const detReqId = useRef(0);
   const debounce = useRef<ReturnType<typeof setTimeout>>();
@@ -191,6 +201,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
     App.GetHistoricoCobrancas(ticket.id).then(setHistorico).catch(() => {});
     App.GetAvaliacaoCliente(ticket.id).then(setAvaliacao).catch(() => {});
     App.VinculosDoCard(ticket.id).then((vs) => setVinculos(vs ?? [])).catch(() => {});
+    App.ListarTentativasContato(ticket.id).then((l) => setContatos(l ?? [])).catch(() => setContatos([]));
   }, [ticket.id, preCobranca]);
 
   // Seleciona o vínculo exibido na aba Ticket: o principal por padrão; se a
@@ -299,6 +310,42 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
       setObsEstado('erro');
     }
   }
+
+  async function registrarContato() {
+    setSalvandoContato(true);
+    setErroContato('');
+    try {
+      const t = await App.RegistrarTentativaContato(ticket.id, canalContato.trim(), notaContato.trim());
+      notificarCardAtualizado(t);
+      setNotaContato('');
+      const l = await App.ListarTentativasContato(ticket.id);
+      setContatos(l ?? []);
+    } catch (e) {
+      setErroContato(String(e));
+    } finally {
+      setSalvandoContato(false);
+    }
+  }
+
+  async function removerContato(id: number) {
+    setErroContato('');
+    try {
+      const t = await App.RemoverTentativaContato(id);
+      notificarCardAtualizado(t);
+      const l = await App.ListarTentativasContato(ticket.id);
+      setContatos(l ?? []);
+    } catch (e) {
+      setErroContato(String(e));
+    }
+  }
+
+  // "03/11 14:32" a partir do ISO com fuso local.
+  const dataHoraContato = (iso: string) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? iso
+      : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  };
 
   async function vincularTicket(entrada: string) {
     setVinculoErro('');
@@ -1221,6 +1268,80 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
                   </button>
                 )}
               </div>
+            )}
+          </div>
+        )}
+
+        {aba === 'contatos' && (
+          <div className="mt-3 flex flex-col gap-3">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Histórico de contatos com o cliente — cada registro guarda data e hora automáticas. Também aparece para o assistente no chat.
+            </p>
+            <div className="flex flex-col gap-1.5 bg-white/40 dark:bg-white/5 rounded-lg p-3">
+              <div className="flex gap-1.5">
+                <select
+                  className={`border rounded px-2 py-1 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100 w-32 ${canaisContato.includes(canalContato) ? '' : 'text-slate-400'}`}
+                  value={canaisContato.includes(canalContato) ? canalContato : '__outro'}
+                  onChange={(e) => setCanalContato(e.target.value === '__outro' ? 'outro' : e.target.value)}
+                  title="Canal do contato (opcional)"
+                >
+                  {canaisContato.map((c) => (
+                    <option key={c || 'sem'} value={c}>{c || 'Sem canal'}</option>
+                  ))}
+                  {!canaisContato.includes(canalContato) && canalContato !== '' && (
+                    <option value="__outro">{canalContato}</option>
+                  )}
+                </select>
+                {!canaisContato.includes(canalContato) && (
+                  <input
+                    autoFocus
+                    className="flex-1 min-w-0 border rounded px-2 py-1 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100"
+                    placeholder="Qual canal?"
+                    value={canalContato}
+                    onChange={(e) => setCanalContato(e.target.value)}
+                  />
+                )}
+              </div>
+              <textarea
+                className="w-full min-h-16 border rounded-lg p-2 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100"
+                placeholder="Nota do contato (ex.: cliente pediu retorno na sexta)…"
+                value={notaContato}
+                onChange={(e) => setNotaContato(e.target.value)}
+              />
+              <button
+                className="self-start text-sm px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+                disabled={salvandoContato}
+                onClick={registrarContato}
+              >
+                {salvandoContato ? 'Salvando…' : '📞 Registrar contato'}
+              </button>
+              {erroContato && <p className="text-xs text-red-600 break-words">{erroContato}</p>}
+            </div>
+
+            {contatos.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">Nenhum contato registrado para este cliente.</p>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {contatos.map((c) => (
+                  <li key={c.id} className="flex items-start gap-2 text-xs border-b border-slate-100 dark:border-slate-600/40 pb-1.5">
+                    <span className="text-slate-400 shrink-0 mt-0.5" aria-hidden>📞</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-slate-700 dark:text-slate-200">
+                        <b>{dataHoraContato(c.createdAt)}</b>
+                        {c.canal && <span className="ml-1 px-1.5 py-0.5 rounded-full bg-sky-100/80 text-sky-800 dark:bg-sky-500/20 dark:text-sky-100">{c.canal}</span>}
+                      </p>
+                      {c.nota && <p className="text-slate-500 dark:text-slate-400 break-words">{c.nota}</p>}
+                    </div>
+                    <button
+                      title="Apagar este registro"
+                      className="text-slate-400 hover:text-red-500 shrink-0"
+                      onClick={() => removerContato(c.id)}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}
