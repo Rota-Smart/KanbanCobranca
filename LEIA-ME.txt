@@ -198,3 +198,10 @@ Repositório: github.com/luisboneta/banco-de-dados (privado).
    você soltar), e o histórico recarrega na hora — o card mais antigo da
    lista visível sai e continua acessível pelo botão "🗂 Histórico de
    fechados" no rodapé da coluna.
+
+26. ABA CONTATOS NO CARD (v1.41.0): o menu completo do cliente (clique no
+   card) ganhou a aba 📞 Contatos — registre cada ligação/WhatsApp/e-mail
+   com canal e nota (data e hora automáticas) e veja o histórico completo;
+   cada registro pode ser apagado com o ✕. O assistente do chat também lê
+   esse histórico (tool tentativas_contato) e registra contatos quando você
+   diz "registre o contato com o cliente" / "anote que liguei".
