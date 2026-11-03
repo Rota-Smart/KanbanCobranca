@@ -322,3 +322,78 @@ func TestProvedorDeepInfra(t *testing.T) {
 		t.Errorf("endpoint da Groq: %q", g2.endpoint())
 	}
 }
+
+// rotação de chaves: a principal bate no teto e a extra responde na hora.
+func TestRotacaoChavesNo429(t *testing.T) {
+	vistas := []string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vistas = append(vistas, r.Header.Get("Authorization"))
+		if len(vistas) == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		jsonResposta(w, "segunda chave atendeu")
+	}))
+	t.Cleanup(srv.Close)
+	g := groqParaTeste(t, srv)
+	g.ChavesInjetavel = func() []string { return []string{"gsk_1", "gsk_2"} }
+
+	res, err := g.Completar(context.Background(), "s", "u")
+	if err != nil {
+		t.Fatalf("deveria ter rodado pra 2ª chave: %v", err)
+	}
+	if res != "segunda chave atendeu" {
+		t.Errorf("resposta: %q", res)
+	}
+	if len(vistas) != 2 || vistas[0] != "Bearer gsk_1" || vistas[1] != "Bearer gsk_2" {
+		t.Errorf("chaves usadas: %v", vistas)
+	}
+}
+
+// esgotadas as chaves da Groq no modo auto, a chamada segue pro DeepInfra.
+func TestRotacaoEsgotadaVaiProDeepInfra(t *testing.T) {
+	srvGroq := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	t.Cleanup(srvGroq.Close)
+	srvDI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jsonResposta(w, "deepinfra")
+	}))
+	t.Cleanup(srvDI.Close)
+	g := clienteAuto(t, srvGroq, srvDI, "gsk_1")
+	g.ChavesInjetavel = func() []string { return []string{"gsk_1", "gsk_2", "gsk_3"} }
+
+	res, err := g.Completar(context.Background(), "s", "u")
+	if err != nil {
+		t.Fatalf("deveria ter caído no DeepInfra: %v", err)
+	}
+	if res != "deepinfra" {
+		t.Errorf("resposta: %q", res)
+	}
+	if !g.emCooldown() {
+		t.Error("cooldown deveria estar armado após o failover")
+	}
+}
+
+// chave inválida (401) roda pra próxima da lista antes de falhar.
+func TestRotacaoNo401(t *testing.T) {
+	var respostas []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respostas = append(respostas, r.Header.Get("Authorization"))
+		if len(respostas) == 1 {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		jsonResposta(w, "ok")
+	}))
+	t.Cleanup(srv.Close)
+	g := groqParaTeste(t, srv)
+	g.ChavesInjetavel = func() []string { return []string{"gsk_velha", "gsk_nova"} }
+
+	if _, err := g.Completar(context.Background(), "s", "u"); err != nil {
+		t.Fatalf("deveria ter rodado pra 2ª chave após 401: %v", err)
+	}
+	if len(respostas) != 2 || respostas[1] != "Bearer gsk_nova" {
+		t.Errorf("chaves usadas: %v", respostas)
+	}
+}

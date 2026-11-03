@@ -20,6 +20,7 @@ const MODELOS_DEEPINFRA = [
 export default function Configuracoes(props: { onFechar: () => void; onToast: (msg: string) => void }) {
   const [cfg, setCfg] = useState<ConfigApp | null>(null);
   const [chave, setChave] = useState('');
+  const [chaveExtra, setChaveExtra] = useState('');
   const [modelo, setModelo] = useState('');
   const [chaveDI, setChaveDI] = useState('');
   const [modeloDI, setModeloDI] = useState('');
@@ -474,6 +475,61 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
                       Remover chave
                     </button>
                   )}
+                </div>
+                {/* Chaves extras: quando uma bate no limite, a próxima entra */}
+                <div className="border-t pt-2">
+                  <p className="text-xs text-slate-500">
+                    Chaves extras — quando uma bate no limite da API, o app tenta a seguinte na
+                    hora (só depois de todas, cai pra DeepInfra no modo Automático).
+                  </p>
+                  {cfg?.groqChaves && cfg.groqChaves.length > 0 && (
+                    <ul className="mt-1 flex flex-col gap-1">
+                      {cfg.groqChaves.map((k, i) => (
+                        <li key={`${k}-${i}`} className="flex items-center gap-2 text-xs">
+                          <span className="font-mono text-slate-600">
+                            {i === 0 ? 'principal: ' : ''}
+                            {k}
+                          </span>
+                          {i > 0 && (
+                            <button
+                              className="text-red-600 hover:underline"
+                              onClick={() =>
+                                App.RemoverChaveGroq(i - 1)
+                                  .then(recarregar)
+                                  .catch((e: unknown) => props.onToast(String(e)))
+                              }
+                            >
+                              apagar
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      className="border rounded px-2 py-1 text-sm flex-1"
+                      type="password"
+                      placeholder="Adicionar outra chave (gsk_…)"
+                      value={chaveExtra}
+                      onChange={(e) => setChaveExtra(e.target.value)}
+                    />
+                    <button
+                      className="border rounded px-3 py-1 text-sm disabled:opacity-50"
+                      disabled={!chaveExtra.trim()}
+                      onClick={() =>
+                        App.AdicionarChaveGroq(chaveExtra.trim())
+                          .then(() => {
+                            setChaveExtra('');
+                            recarregar();
+                            props.onToast('Chave adicionada.');
+                          })
+                          .catch((e: unknown) => props.onToast(String(e)))
+                      }
+                    >
+                      Adicionar
+                    </button>
+                  </div>
                 </div>
               </div>
             </>

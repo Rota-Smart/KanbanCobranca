@@ -60,6 +60,11 @@ type GroqCliente struct {
 	HTTP            *http.Client
 	ChaveInjetavel  func() string
 	ModeloInjetavel func() string
+	// ChavesInjetavel devolve todas as chaves da Groq (principal primeiro,
+	// extras depois) — no 429 a próxima chave entra na hora, pois cada uma
+	// tem janela de TPM própria; só esgotadas a chamada segue o fluxo antigo
+	// (espera da janela / fallback DeepInfra).
+	ChavesInjetavel func() []string
 	// ProvedorInjetavel devolve "groq" (padrão), "deepinfra" ou "auto" —
 	// decide o destino; consultado a cada chamada.
 	ProvedorInjetavel func() string
@@ -143,6 +148,21 @@ func (g *GroqCliente) chave() string {
 	return strings.TrimSpace(g.ChaveInjetavel())
 }
 
+// chaves devolve a lista completa de chaves da Groq; sem ChavesInjetavel,
+// cai na chave única de sempre.
+func (g *GroqCliente) chaves() []string {
+	if g == nil || g.ChavesInjetavel == nil {
+		return nil
+	}
+	var out []string
+	for _, k := range g.ChavesInjetavel() {
+		if k = strings.TrimSpace(k); k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
 func (g *GroqCliente) modelo() string {
 	if g != nil && g.ModeloInjetavel != nil {
 		if m := strings.TrimSpace(g.ModeloInjetavel()); m != "" {
@@ -164,10 +184,10 @@ func (g *GroqCliente) TemChave() bool {
 	if g == nil {
 		return false
 	}
-	if g.emAuto() && g.chave() == "" {
+	if g.emAuto() && g.chave() == "" && len(g.chaves()) == 0 {
 		return g.alvoDeepInfra().chave != ""
 	}
-	return g.chave() != ""
+	return g.chave() != "" || len(g.chaves()) > 0
 }
 
 // respostaRodada é a mensagem bruta do modelo numa rodada de chat.
@@ -213,10 +233,16 @@ func (g *GroqCliente) alvoDeepInfra() alvoChamada {
 // Groq (o principal do auto) ou o provedor escolhido nas Configurações.
 func (g *GroqCliente) alvoAtual() alvoChamada {
 	if g.emAuto() {
-		if fb := g.alvoDeepInfra(); fb.chave != "" && (g.emCooldown() || g.chave() == "") {
+		if fb := g.alvoDeepInfra(); fb.chave != "" && (g.emCooldown() || (g.chave() == "" && len(g.chaves()) == 0)) {
 			return fb
 		}
-		return alvoChamada{provedor: ProvedorGroq, endpoint: g.endpoint(), chave: g.chave(), modelo: g.modelo()}
+		alvo := alvoChamada{provedor: ProvedorGroq, endpoint: g.endpoint(), chave: g.chave(), modelo: g.modelo()}
+		if alvo.chave == "" {
+			if cs := g.chaves(); len(cs) > 0 {
+				alvo.chave = cs[0]
+			}
+		}
+		return alvo
 	}
 	return alvoChamada{provedor: g.provedor(), endpoint: g.endpoint(), chave: g.chave(), modelo: g.modelo()}
 }
@@ -337,14 +363,25 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 	if alvo.chave == "" {
 		return respostaRodada{}, ErrGroqSemChave
 	}
+	// Chaves da Groq desta chamada: principal + extras (rotação no 429/401).
+	chaves := []string{alvo.chave}
+	if alvo.provedor == ProvedorGroq {
+		if cs := g.chaves(); len(cs) > 0 {
+			chaves = cs
+		}
+	}
+	idxChave := 0
+	esgotou := false // a última chave da Groq também recebeu 429
 	esperado := time.Duration(0) // soma das esperas por 429 nesta chamada
 	var ultimoErr error
 	espera := 2 * time.Second
 	for tentativa := 0; tentativa < maxTentativasGroq; tentativa++ {
 		if tentativa > 0 {
-			// Teto da Groq no modo auto com o orçamento de 15s estourado:
-			// failover imediato, sem esperar a janela inteira.
-			if g.emAuto() && alvo.provedor == ProvedorGroq && esperado+espera > esperaCurtaAuto {
+			// Teto da Groq no modo auto: orçamento de 15s estourado (ou todas
+			// as chaves já deram 429) — failover imediato, sem esperar a
+			// janela de uma chave que se sabe esgotada.
+			if g.emAuto() && alvo.provedor == ProvedorGroq && idxChave >= len(chaves)-1 &&
+				(esgotou || esperado+espera > esperaCurtaAuto) {
 				if fb := g.alvoDeepInfra(); fb.chave != "" {
 					alvo = fb
 					g.armarCooldown()
@@ -375,7 +412,11 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 		if err != nil {
 			return respostaRodada{}, err
 		}
-		req.Header.Set("Authorization", "Bearer "+alvo.chave)
+		chaveEnvio := alvo.chave
+		if alvo.provedor == ProvedorGroq {
+			chaveEnvio = chaves[idxChave]
+		}
+		req.Header.Set("Authorization", "Bearer "+chaveEnvio)
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := g.HTTP.Do(req)
 		if err != nil {
@@ -391,6 +432,20 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 		switch {
 		case resp.StatusCode == http.StatusTooManyRequests:
 			ultimoErr = fmt.Errorf("%s: HTTP 429 — limite de tokens por minuto atingido", alvo.provedor)
+			// Rotação de chaves: a próxima chave tem janela de TPM própria —
+			// entra na hora, sem esperar; a rotação não gasta tentativa.
+			if alvo.provedor == ProvedorGroq && idxChave < len(chaves)-1 {
+				idxChave++
+				tentativa--
+				espera = 2 * time.Second
+				continue
+			}
+			// Só marca esgotamento quando houve rotação (lista com várias
+			// chaves): com uma chave única, a janela curta segue o caminho
+			// antigo de espera.
+			if alvo.provedor == ProvedorGroq && len(chaves) > 1 && idxChave >= len(chaves)-1 {
+				esgotou = true
+			}
 			espera = esperaDeRetry(resp, tentativa)
 			continue
 		case resp.StatusCode >= 500:
@@ -402,6 +457,14 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 			continue
 		case resp.StatusCode != http.StatusOK:
 			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusBadRequest {
+				// Chave rejeitada (401/403): tenta a próxima chave da lista
+				// antes de reportar o erro ao usuário.
+				if resp.StatusCode != http.StatusBadRequest && alvo.provedor == ProvedorGroq && idxChave < len(chaves)-1 {
+					idxChave++
+					tentativa--
+					espera = 2 * time.Second
+					continue
+				}
 				return respostaRodada{}, fmt.Errorf("%s: HTTP %d — verifique a chave e o modelo nas configurações", alvo.provedor, resp.StatusCode)
 			}
 			if resp.StatusCode == http.StatusNotFound {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"log"
 	"log/slog"
 	"os"
@@ -102,6 +103,25 @@ func main() {
 		},
 	)
 	groq.ProvedorInjetavel = provedorIA
+	// Rotação de chaves da Groq: principal + extras (groq_chaves_extras,
+	// JSON) — no 429 a próxima chave entra antes do fallback DeepInfra.
+	groq.ChavesInjetavel = func() []string {
+		if provedorIA() == service.ProvedorDeepInfra {
+			return nil
+		}
+		ctx := context.Background()
+		var ch []string
+		if v, _ := config.Get(ctx, "groq_chave"); v != "" {
+			ch = append(ch, v)
+		}
+		if v, _ := config.Get(ctx, "groq_chaves_extras"); v != "" {
+			var extras []string
+			if json.Unmarshal([]byte(v), &extras) == nil {
+				ch = append(ch, extras...)
+			}
+		}
+		return ch
+	}
 	// Fallback do modo auto (Groq → DeepInfra no teto do free).
 	groq.DeepInfraChaveInjetavel = func() string {
 		ctx := context.Background()

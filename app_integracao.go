@@ -23,6 +23,7 @@ import (
 // Chaves da tabela config.
 const (
 	cfgGroqChave       = "groq_chave"
+	cfgGroqChavesExtra = "groq_chaves_extras" // JSON: chaves adicionais (rotação no 429)
 	cfgGroqModelo      = "groq_modelo"
 	cfgDeepInfraChave  = "deepinfra_chave"
 	cfgDeepInfraModelo = "deepinfra_modelo"
@@ -729,10 +730,11 @@ func faturasDoCache(cli *db.Cliente360) []rota360.Fatura360 {
 
 // ConfigApp é o estado não-sensível das configurações (a chave nunca volta).
 type ConfigApp struct {
-	GroqModelo        string `json:"groqModelo"`
-	GroqTemChave      bool   `json:"groqTemChave"`
-	Provedor          string `json:"provedor"`          // "groq" (padrão), "deepinfra" ou "auto"
-	DeepInfraTemChave bool   `json:"deepInfraTemChave"`
+	GroqModelo        string   `json:"groqModelo"`
+	GroqTemChave      bool     `json:"groqTemChave"`
+	GroqChaves        []string `json:"groqChaves"` // todas as chaves, mascaradas (principal primeiro)
+	Provedor          string   `json:"provedor"`   // "groq" (padrão), "deepinfra" ou "auto"
+	DeepInfraTemChave bool     `json:"deepInfraTemChave"`
 	Autor360      string `json:"autor360"`
 	RotaConectado bool   `json:"rotaConectado"`
 	RotaOrigem    string `json:"rotaOrigem"`
@@ -744,11 +746,102 @@ func (a *App) GetConfig() ConfigApp {
 	return ConfigApp{
 		GroqModelo:        a.groqModeloAtual(),
 		GroqTemChave:      a.configGet(a.ctx, cfgGroqChave) != "",
+		GroqChaves:        a.groqChavesMascaradas(),
 		Provedor:          a.provedorIA(),
 		DeepInfraTemChave: a.configGet(a.ctx, cfgDeepInfraChave) != "",
 		Autor360:          a.configGet(a.ctx, cfgAutor360),
 		RotaConectado:     a.rotaAtual() != nil,
 	}
+}
+
+// groqChavesExtra lê a lista JSON de chaves adicionais do config.
+func (a *App) groqChavesExtra() []string {
+	v := a.configGet(a.ctx, cfgGroqChavesExtra)
+	if v == "" {
+		return nil
+	}
+	var ch []string
+	if json.Unmarshal([]byte(v), &ch) != nil {
+		return nil
+	}
+	return ch
+}
+
+// salvarChavesExtra grava a lista de chaves adicionais.
+func (a *App) salvarChavesExtra(ch []string) error {
+	if ch == nil {
+		ch = []string{}
+	}
+	b, err := json.Marshal(ch)
+	if err != nil {
+		return err
+	}
+	return a.config.Set(a.ctx, cfgGroqChavesExtra, string(b))
+}
+
+// mascaraChave deixa a chave reconhecível sem expor o segredo.
+func mascaraChave(k string) string {
+	if len(k) <= 12 {
+		return strings.Repeat("•", len(k))
+	}
+	return k[:8] + "…" + k[len(k)-4:]
+}
+
+// groqChavesMascaradas devolve principal + extras para exibição.
+func (a *App) groqChavesMascaradas() []string {
+	var out []string
+	if p := a.configGet(a.ctx, cfgGroqChave); p != "" {
+		out = append(out, mascaraChave(p))
+	}
+	for _, k := range a.groqChavesExtra() {
+		out = append(out, mascaraChave(k))
+	}
+	return out
+}
+
+// groqChaves é a lista completa consultada a cada chamada de IA
+// (principal primeiro; a rotação segue a ordem).
+func (a *App) groqChaves() []string {
+	var ch []string
+	if p := a.groqChave(); p != "" {
+		ch = append(ch, p)
+	}
+	return append(ch, a.groqChavesExtra()...)
+}
+
+// AdicionarChaveGroq grava uma chave adicional (rotação quando a principal
+// bate no limite). Duplicata é rejeitada.
+func (a *App) AdicionarChaveGroq(chave string) error {
+	chave = strings.TrimSpace(chave)
+	if chave == "" {
+		return fmt.Errorf("cole a chave da API (gsk_…)")
+	}
+	if a.config == nil {
+		return fmt.Errorf("configuração indisponível")
+	}
+	if chave == a.configGet(a.ctx, cfgGroqChave) {
+		return fmt.Errorf("essa chave já é a principal")
+	}
+	extras := a.groqChavesExtra()
+	for _, k := range extras {
+		if k == chave {
+			return fmt.Errorf("essa chave já está na lista")
+		}
+	}
+	return a.salvarChavesExtra(append(extras, chave))
+}
+
+// RemoverChaveGroq apaga uma chave adicional pelo índice na lista
+// (0 = primeira depois da principal; a principal não entra aqui).
+func (a *App) RemoverChaveGroq(indice int) error {
+	if a.config == nil {
+		return fmt.Errorf("configuração indisponível")
+	}
+	extras := a.groqChavesExtra()
+	if indice < 0 || indice >= len(extras) {
+		return fmt.Errorf("chave não encontrada")
+	}
+	return a.salvarChavesExtra(append(extras[:indice:indice], extras[indice+1:]...))
 }
 
 // provedorIA devolve o provedor ativo ("groq" é o default; "auto" usa a Groq
