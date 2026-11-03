@@ -145,7 +145,8 @@ func TestMoverParaVisitaRealizadaMarca(t *testing.T) {
 		t.Fatalf("re-agendar deveria limpar a marca: %+v", t3)
 	}
 
-	// card sem visita agendada: mover não marca nem falha
+	// card sem visita agendada: mover marca do mesmo jeito (a coluna
+	// encerra a visita, agendada ou não) e não falha
 	tk2, err := a.SaveTicket(exemploTicket())
 	if err != nil {
 		t.Fatalf("SaveTicket 2: %v", err)
@@ -154,8 +155,24 @@ func TestMoverParaVisitaRealizadaMarca(t *testing.T) {
 		t.Fatalf("MoveTicket sem visita: %v", err)
 	}
 	t4, _ := ticketPorID(t, a, tk2.ID)
-	if t4.VisitaRealizada != "" {
-		t.Fatalf("card sem visita agendada não deveria ser marcado: %+v", t4)
+	if t4.VisitaRealizada == "" {
+		t.Fatalf("mover para Visitas Realizadas deveria marcar sempre: %+v", t4)
+	}
+
+	// Ticket Fechado também marca a visita como realizada
+	if _, err := a.colunas.Add(a.ctx, ColunaTicketFechado); err != nil {
+		t.Fatalf("criar coluna Ticket Fechado: %v", err)
+	}
+	tk3, err := a.SaveTicket(exemploTicket())
+	if err != nil {
+		t.Fatalf("SaveTicket 3: %v", err)
+	}
+	if err := a.MoveTicket(tk3.ID, ColunaTicketFechado, 0); err != nil {
+		t.Fatalf("MoveTicket fechado: %v", err)
+	}
+	t5, _ := ticketPorID(t, a, tk3.ID)
+	if t5.VisitaRealizada == "" {
+		t.Fatalf("mover para Ticket Fechado deveria marcar a visita: %+v", t5)
 	}
 }
 

@@ -252,9 +252,10 @@ func (a *App) MoveTicket(id int64, coluna string, posicao int) error {
 	if err := a.tickets.Move(a.ctx, id, t.ColunaAtual, coluna, posicao); err != nil {
 		return friendly("MoveTicket", err)
 	}
-	// Chegou à coluna "Visita Realizada" com visita agendada e sem marca:
-	// grava a data-hora da realização (idempotente; re-agendar limpa).
-	if t.VisitaData != "" && t.VisitaRealizada == "" && service.EhColunaVisitaRealizada(coluna) {
+	// Chegou a uma coluna que fecha a visita ("Visita Realizada" ou
+	// "Ticket Fechado"): grava a data-hora da realização — sempre que ainda
+	// não há marca, com ou sem agendamento (idempotente; re-agendar limpa).
+	if t.VisitaRealizada == "" && (service.EhColunaVisitaRealizada(coluna) || coluna == ColunaTicketFechado) {
 		quando := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		if err := a.tickets.MarcarVisitaRealizada(a.ctx, id, quando); err != nil {
 			return friendly("MoveTicket", err)
