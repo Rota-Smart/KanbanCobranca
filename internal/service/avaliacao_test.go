@@ -177,7 +177,7 @@ func TestRenegociacaoPorBoletos(t *testing.T) {
 			// único e antigo. Não é renegociação.
 			nome: "mensalidade deduzida dos boletos: futuro igual não marca mesmo com produto divergente",
 			faturas: []rota360.Fatura360{
-				{Vencimento: d(time.March, 5), ValorDuplicata: 62.1},  // proporcional da contratação (único)
+				{Vencimento: d(time.March, 5), ValorDuplicata: 62.1}, // proporcional da contratação (único)
 				{Vencimento: d(time.August, 5), ValorDuplicata: 99},
 				{Vencimento: d(time.September, 5), ValorDuplicata: 99},
 				{Vencimento: d(time.October, 5), ValorDuplicata: 99},
@@ -373,5 +373,52 @@ func TestAvaliarClienteSemCache(t *testing.T) {
 		if !strings.Contains(o, "não sincronizado") {
 			t.Errorf("observação inesperada: %s", o)
 		}
+	}
+}
+
+func TestRenegociacaoIgnoraCobrancaOS(t *testing.T) {
+	agora := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	d := func(m time.Month, dia int) time.Time { return time.Date(2026, m, dia, 0, 0, 0, 0, time.UTC) }
+
+	// Caso real do 27456: duas taxas de instalação (Gerado por OS) atrasadas
+	// junto com as mensalidades — não é renegociação, é cobrança normal de OS.
+	faturas := []rota360.Fatura360{
+		{Vencimento: d(time.August, 10), ValorDuplicata: 98, Categoria: "os", Itens: []rota360.FaturaItem360{{Descricao: "TAXA DE INSTALAÇÃO - ALARME SEM FIO (OS 387258)", Tipo: "os", Origem: "ordem_de_servico"}}},
+		{Vencimento: d(time.September, 10), ValorDuplicata: 98, Categoria: "os", Itens: []rota360.FaturaItem360{{Descricao: "TAXA DE INSTALAÇÃO - CÂMERA WIFI (OS 387259)", Tipo: "os", Origem: "ordem_de_servico"}}},
+		{Vencimento: d(time.August, 10), ValorDuplicata: 90.53, Categoria: "mensalidade"},
+		{Vencimento: d(time.September, 10), ValorDuplicata: 97, Categoria: "mensalidade"},
+		{Vencimento: d(time.October, 10), ValorDuplicata: 97, Categoria: "mensalidade"},
+	}
+	if motivo := renegociacaoPorBoletos(faturas, 9700, agora); motivo != "" {
+		t.Fatalf("boletos de OS não devem marcar renegociação, marcaram: %s", motivo)
+	}
+
+	// Sem categoria e sem itens, a taxa de instalação na descrição do item
+	// também exclui (categoria do ERP pode não chegar).
+	semCategoria := []rota360.Fatura360{
+		{Vencimento: d(time.August, 5), ValorDuplicata: 100, Itens: []rota360.FaturaItem360{{Descricao: "TAXA DE INSTALAÇÃO - CERCA ELÉTRICA", Origem: "ordem_de_servico"}}},
+		{Vencimento: d(time.August, 15), ValorDuplicata: 57.6, Itens: []rota360.FaturaItem360{{Descricao: "TAXA DE INSTALAÇÃO - ALARME", Origem: "ordem_de_servico"}}},
+	}
+	if motivo := renegociacaoPorBoletos(semCategoria, 0, agora); motivo != "" {
+		t.Fatalf("taxas de instalação não devem marcar renegociação, marcaram: %s", motivo)
+	}
+}
+
+func TestEhCobrancaOS(t *testing.T) {
+	os := rota360.Fatura360{Categoria: "os"}
+	if !rota360.EhCobrancaOS(os) {
+		t.Fatal("categoria os deve ser cobrança de OS")
+	}
+	if !rota360.EhCobrancaOS(rota360.Fatura360{Categoria: "Gerado por OS"}) {
+		t.Fatal("selo Gerado por OS deve ser cobrança de OS")
+	}
+	if !rota360.EhCobrancaOS(rota360.Fatura360{Itens: []rota360.FaturaItem360{{Descricao: "MONITORAMENTO", Origem: "ordem_de_servico"}}}) {
+		t.Fatal("item de ordem de serviço deve ser cobrança de OS")
+	}
+	if rota360.EhCobrancaOS(rota360.Fatura360{Categoria: "mensalidade"}) {
+		t.Fatal("mensalidade não é cobrança de OS")
+	}
+	if rota360.EhCobrancaOS(rota360.Fatura360{}) {
+		t.Fatal("fatura sem categoria/item não é cobrança de OS")
 	}
 }

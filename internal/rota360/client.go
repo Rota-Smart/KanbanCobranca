@@ -140,6 +140,16 @@ type Fatura360 struct {
 	// vira selo na tela de financeiro do portal ("Mensalidade", "Boleto
 	// agrupado", "Avulso", "Gerado por OS"...). Vazia = o ERP não classificou.
 	Categoria string `json:"categoria"`
+	// Itens é o que está sendo cobrado no boleto (endpoint /faturas — o
+	// dashboard360 não manda). Ex.: "TAXA DE INSTALAÇÃO - ALARME (OS 387258)".
+	Itens []FaturaItem360 `json:"itens"`
+}
+
+// FaturaItem360 é uma linha do que está sendo cobrado numa fatura.
+type FaturaItem360 struct {
+	Descricao string `json:"descricao"`
+	Tipo      string `json:"tipo"`   // ex. "mensalidade", "locacao", "os"
+	Origem    string `json:"origem"` // ex. "servicos_da_duplicata", "ordem_de_servico"
 }
 
 // CategoriaEhMensalidade diz se a categoria do ERP indica a cobrança
@@ -154,6 +164,33 @@ func CategoriaEhMensalidade(categoria string) bool {
 		return true
 	}
 	return strings.Contains(s, "mensal") // ex. "boleto_mensal", "mes_mensalidade" ("bimestral" não casa)
+}
+
+// CategoriaEhOS diz se a categoria do ERP indica cobrança originada de uma
+// ordem de serviço — o selo "Gerado por OS" da tela de financeiro.
+func CategoriaEhOS(categoria string) bool {
+	s := slugCategoria(categoria)
+	return s == "os" || strings.Contains(s, "_os")
+}
+
+// EhCobrancaOS diz se a fatura é cobrança de ordem de serviço (taxa de
+// instalação, visita técnica cobrada etc.): pelo selo do ERP ("Gerado por
+// OS") ou pelos itens do boleto (tipo "os", origem "ordem_de_servico" ou
+// descrição de taxa de instalação). É cobrança pontual normal — nunca
+// indício de renegociação.
+func EhCobrancaOS(f Fatura360) bool {
+	if CategoriaEhOS(f.Categoria) {
+		return true
+	}
+	for _, it := range f.Itens {
+		if slugCategoria(it.Tipo) == "os" || slugCategoria(it.Origem) == "ordem_de_servico" {
+			return true
+		}
+		if strings.Contains(strings.ToLower(semAcento.Replace(it.Descricao)), "taxa de instalacao") {
+			return true
+		}
+	}
+	return false
 }
 
 // slugCategoria normaliza a categoria como o portal faz: minúsculas, sem
@@ -295,15 +332,20 @@ func (c *Cliente) enriquecerCategorias(ctx context.Context, codService string, f
 	if err := c.get(ctx, "/api/cliente/"+codService+"/faturas", &det); err != nil {
 		return
 	}
-	porDoc := make(map[string]string, len(det))
+	porDoc := make(map[string]Fatura360, len(det))
 	for _, f := range det {
-		if f.Categoria != "" {
-			porDoc[f.NumeroDoc] = f.Categoria
+		if f.Categoria != "" || len(f.Itens) > 0 {
+			porDoc[f.NumeroDoc] = f
 		}
 	}
 	for i := range faturas {
-		if faturas[i].Categoria == "" {
-			faturas[i].Categoria = porDoc[faturas[i].NumeroDoc]
+		if det, ok := porDoc[faturas[i].NumeroDoc]; ok {
+			if faturas[i].Categoria == "" {
+				faturas[i].Categoria = det.Categoria
+			}
+			if len(faturas[i].Itens) == 0 {
+				faturas[i].Itens = det.Itens
+			}
 		}
 	}
 }
@@ -403,11 +445,11 @@ type OSItem360 struct {
 type OSFunil360 struct {
 	Itens    []OSItem360 `json:"itens"`
 	Contagem struct {
-		Concluida              int `json:"concluida"`
-		Cancelada              int `json:"cancelada"`
-		FechadaSemProcessam    int `json:"fechada_sem_processamento"`
-		AtendidaSemFechamento  int `json:"atendida_sem_fechamento"`
-		SemAtendimento         int `json:"sem_atendimento"`
+		Concluida             int `json:"concluida"`
+		Cancelada             int `json:"cancelada"`
+		FechadaSemProcessam   int `json:"fechada_sem_processamento"`
+		AtendidaSemFechamento int `json:"atendida_sem_fechamento"`
+		SemAtendimento        int `json:"sem_atendimento"`
 	} `json:"contagem"`
 }
 

@@ -153,6 +153,10 @@ func faturasDoCache(cli *db.Cliente360) []rota360.Fatura360 {
 // acréscimo, reajuste — são só variação do valor da mensalidade. Saem de
 // TODAS as regras e, quando presentes, definem sozinhos a referência.
 //
+// Boletos "Gerado por OS" no 360 (categoria "os", item "TAXA DE INSTALAÇÃO")
+// são cobrança pontual normal do serviço e também saem de TODAS as regras —
+// dois deles atrasados no mesmo mês não são renegociação.
+//
 // Um único mês passado (nem atual/anterior, nem em atraso) com dois valores
 // é cobrança pontual e não conta. Tudo pago = renegociação quitada, que
 // também não conta.
@@ -164,6 +168,9 @@ func renegociacaoPorBoletos(faturas []rota360.Fatura360, mensalidadeCents int64,
 	var mensalidadeValores []int64   // valores das parcelas com selo Mensalidade
 	for _, f := range faturas {
 		if f.Vencimento.IsZero() || f.ValorDuplicata <= 0 {
+			continue
+		}
+		if rota360.EhCobrancaOS(f) {
 			continue
 		}
 		valor := int64(math.Round(f.ValorDuplicata * 100))
@@ -217,7 +224,7 @@ func renegociacaoPorBoletos(faturas []rota360.Fatura360, mensalidadeCents int64,
 		futuros := 0
 		divergente := int64(0)
 		for _, f := range faturas {
-			if !f.Vencimento.After(agora) || rota360.CategoriaEhMensalidade(f.Categoria) {
+			if !f.Vencimento.After(agora) || rota360.CategoriaEhMensalidade(f.Categoria) || rota360.EhCobrancaOS(f) {
 				continue
 			}
 			valor := int64(math.Round(f.ValorDuplicata * 100))
