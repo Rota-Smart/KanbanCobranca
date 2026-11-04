@@ -197,6 +197,12 @@ func TestResolverCardNoTexto(t *testing.T) {
 		{"falei do Batista ontem", 3},         // pedaço único do nome
 		{"a cliente Rejane reclamou", 0},      // nada casa
 		{"os dois clientes 24755 e 11223", 1}, // dois códigos: o primeiro citado vence
+		// Briefing do Shift+F2: cita código de quem NÃO tem card e o texto do
+		// ticket contém pedaço do nome de card alheio — o código manda e,
+		// sem card com ele, NADA casa por nome (v1.44.0: "adicione em
+		// cobrança" moveu card de cliente sem nada a ver).
+		{"Analise o ticket #7777 (Sem sinal) do cliente Maria Souza (código service 555), assunto alarme do Resolute sem imagem.", 0},
+		{"o cliente 11223 falou do alarme do Resolute", 2}, // código rotulado vence o nome citado no texto
 	}
 	for _, tc := range casos {
 		card, ok := ResolverCardNoTexto(tc.texto, cards)
@@ -357,5 +363,17 @@ func TestExtrairCodigoNoTexto(t *testing.T) {
 	// número solto é ignorado de propósito (mesma regra do ResolverCardNoTexto).
 	if got := ExtrairCodigoNoTexto("valor de 5000 reais"); got != "" {
 		t.Errorf("número solto = %q, queria vazio", got)
+	}
+}
+
+func TestCodigoRotuladoNoTexto(t *testing.T) {
+	if cod := CodigoRotuladoNoTexto("Analise o ticket #7777 do cliente Maria (código service 555), assunto X."); cod != "555" {
+		t.Errorf("briefing: quer 555, veio %q", cod)
+	}
+	if cod := CodigoRotuladoNoTexto("ticket #7777 sem rótulo nenhum"); cod != "" {
+		t.Errorf("cerilha sozinha é ticket, não card: quer vazio, veio %q", cod)
+	}
+	if cod := CodigoRotuladoNoTexto("mova o cliente 1234 para Cobrança"); cod != "1234" {
+		t.Errorf("rotulado: quer 1234, veio %q", cod)
 	}
 }

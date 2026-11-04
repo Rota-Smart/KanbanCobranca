@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"strconv"
 	"regexp"
 	"strings"
 	"time"
@@ -1781,6 +1782,25 @@ func (a *App) cardDoContextoChat(chatID int64) (service.CardResumo, string, bool
 	for _, t := range ts {
 		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
 	}
+	// Prioridade absoluta: código service rotulado numa mensagem do USUÁRIO.
+	// No fluxo Shift+F2 o briefing abre com "código service X" — é o cliente
+	// da conversa, card ele tenha ou não. O texto do ticket está cheio de
+	// palavras que casam pedaço de nome de card alheio, então quando há
+	// código citado a busca por nome NÃO roda (v1.44.0: "adicione em
+	// cobrança" moveu card de cliente que não tinha nada a ver).
+	for i := len(ms) - 1; i >= 0; i-- {
+		if ms[i].Papel != "user" {
+			continue
+		}
+		if cod := service.CodigoRotuladoNoTexto(ms[i].Conteudo); cod != "" {
+			for _, c := range cards {
+				if c.CodService == cod || strconv.FormatInt(c.ID, 10) == cod {
+					return c, "", true
+				}
+			}
+			return service.CardResumo{}, cod, false
+		}
+	}
 	cod := ""
 	for _, papel := range []string{"user", "assistant"} {
 		for i := len(ms) - 1; i >= 0; i-- {
@@ -1819,8 +1839,9 @@ func respostaContextoSemCard(cod, oQueFalta string) *service.ChatResultado {
 // importarCardDoContexto cria o card do cliente citado na conversa (código
 // service identificado sem card correspondente) direto na coluna pedida —
 // o mesmo fluxo do "adicione o cliente X em Y", sem perguntar nada. Precisa
-// de sessão no 360.
-func (a *App) importarCardDoContexto(cod, colunaDita string, abrirNoFim bool) *service.ChatResultado {
+// de sessão no 360. Depois de criar, vincula o ticket citado na conversa
+// (fluxo Shift+F2), para o card nascer já ligado ao ticket que o originou.
+func (a *App) importarCardDoContexto(chatID int64, cod, colunaDita string, abrirNoFim bool) *service.ChatResultado {
 	colunas, err := a.colunas.List(a.ctx)
 	if err != nil {
 		return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error(), Acoes: []service.AcaoDoAgente{}}
@@ -1845,11 +1866,62 @@ func (a *App) importarCardDoContexto(cod, colunaDita string, abrirNoFim bool) *s
 	if abrirNoFim {
 		a.emitirAbrirCard(t.ID)
 	}
-	return &service.ChatResultado{
-		Resposta: fmt.Sprintf("O cliente não tinha card: criei o card %d (%s, código %s) direto em %s.", t.ID, t.NomeCliente, t.CodService, t.ColunaAtual),
-		Acoes: []service.AcaoDoAgente{{Ferramenta: "importar_cliente",
-			Resumo: fmt.Sprintf("criou o card %d (%s) em %s via contexto do chat", t.ID, t.NomeCliente, t.ColunaAtual)}},
+	resposta := fmt.Sprintf("O cliente não tinha card: criei o card %d (%s, código %s) direto em %s.", t.ID, t.NomeCliente, t.CodService, t.ColunaAtual)
+	acoes := []service.AcaoDoAgente{{Ferramenta: "importar_cliente",
+		Resumo: fmt.Sprintf("criou o card %d (%s) em %s via contexto do chat", t.ID, t.NomeCliente, t.ColunaAtual)}}
+	numero, errV := a.vincularTicketDoChat(chatID, t.ID)
+	switch {
+	case numero != "":
+		resposta += "\n🔗 Vinculei o ticket #" + numero + " ao card."
+		acoes = append(acoes, service.AcaoDoAgente{Ferramenta: "vincular_ticket",
+			Resumo: fmt.Sprintf("vinculou o ticket #%s ao card %d (%s) criado via contexto do chat", numero, t.ID, t.NomeCliente)})
+	case errV != nil:
+		resposta += "\n⚠ Não consegui vincular o ticket da conversa ao card: " + errV.Error()
 	}
+	return &service.ChatResultado{Resposta: resposta, Acoes: acoes}
+}
+
+// reTicketNoChat acha o nº do ticket 360 citado na conversa ("ticket #123")
+// — no Shift+F2 o briefing abre com ele.
+var reTicketNoChat = regexp.MustCompile(`(?i)\bticket\s*#?\s*(\d{1,10})\b`)
+
+// vincularTicketDoChat liga ao card o ticket citado na conversa (o briefing
+// do Shift+F2). Devolve o nº vinculado; sem ticket citado ou já vinculado,
+// numero="" e err=nil.
+func (a *App) vincularTicketDoChat(chatID, cardID int64) (string, error) {
+	numero := a.numeroTicketNoChat(chatID)
+	if numero == "" {
+		return "", nil
+	}
+	if vs, err := a.VinculosDoCard(cardID); err == nil {
+		for _, v := range vs {
+			if v.Ticket360Numero == numero {
+				return "", nil
+			}
+		}
+	}
+	if _, err := a.VincularTicket360(cardID, numero); err != nil {
+		return "", err
+	}
+	return numero, nil
+}
+
+// numeroTicketNoChat devolve o nº do primeiro ticket citado na conversa (a
+// mensagem mais antiga é o briefing do Shift+F2).
+func (a *App) numeroTicketNoChat(chatID int64) string {
+	if a.chats == nil {
+		return ""
+	}
+	ms, err := a.chats.Mensagens(a.ctx, chatID)
+	if err != nil {
+		return ""
+	}
+	for _, m := range ms {
+		if loc := reTicketNoChat.FindStringSubmatch(m.Conteudo); loc != nil {
+			return loc[1]
+		}
+	}
+	return ""
 }
 
 // executarComandoApagar roda o "/apagar" do chat (sem IA): com cliente no
@@ -1981,14 +2053,14 @@ func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.Cha
 		card, cod, achou := a.cardDoContextoChat(chatID)
 		if !achou {
 			if cod != "" {
-				return a.importarCardDoContexto(cod, colunaDita, abrirNoFim), true
+				return a.importarCardDoContexto(chatID, cod, colunaDita, abrirNoFim), true
 			}
 			return &service.ChatResultado{
 				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"coloque o cliente João em Cobrança\".",
 				Acoes:    []service.AcaoDoAgente{},
 			}, true
 		}
-		return a.moverCardResolvido(card, colunaDita, abrirNoFim), true
+		return a.moverEvincularDoChat(chatID, card, colunaDita, abrirNoFim), true
 	}
 
 	in, ok := service.ParseIntencaoCard(mensagem)
@@ -2013,7 +2085,7 @@ func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.Cha
 				if in.Apagar {
 					return respostaContextoSemCard(cod, "card para apagar"), true
 				}
-				return a.importarCardDoContexto(cod, in.Coluna, abrirNoFim), true
+				return a.importarCardDoContexto(chatID, cod, in.Coluna, abrirNoFim), true
 			}
 			return &service.ChatResultado{
 				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"coloque o cliente João em Cobrança\".",
@@ -2023,7 +2095,7 @@ func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.Cha
 		if in.Apagar {
 			return a.apagarCardResolvido(card, in.Coluna), true
 		}
-		return a.moverCardResolvido(card, in.Coluna, abrirNoFim), true
+		return a.moverEvincularDoChat(chatID, card, in.Coluna, abrirNoFim), true
 	}
 	card, err := service.ResolverCard(in.Alvo, cards)
 	switch {
@@ -2078,6 +2150,23 @@ func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.Cha
 				Resumo: fmt.Sprintf("criou o card %d (%s) em %s via comando local", t.ID, t.NomeCliente, t.ColunaAtual)}},
 		}, true
 	}
+}
+
+// moverEvincularDoChat move o card do contexto e, se a conversa citou um
+// ticket do 360 (Shift+F2) que o card ainda não tem, vincula — o card certo
+// pode existir sem estar ligado ao ticket que o trouxe ao chat.
+func (a *App) moverEvincularDoChat(chatID int64, card service.CardResumo, colunaDita string, abrirNoFim bool) *service.ChatResultado {
+	res := a.moverCardResolvido(card, colunaDita, abrirNoFim)
+	numero, errV := a.vincularTicketDoChat(chatID, card.ID)
+	switch {
+	case numero != "":
+		res.Resposta += "\n🔗 Vinculei o ticket #" + numero + " ao card."
+		res.Acoes = append(res.Acoes, service.AcaoDoAgente{Ferramenta: "vincular_ticket",
+			Resumo: fmt.Sprintf("vinculou o ticket #%s ao card %d (%s) via contexto do chat", numero, card.ID, card.NomeCliente)})
+	case errV != nil:
+		res.Resposta += "\n⚠ Não consegui vincular o ticket da conversa ao card: " + errV.Error()
+	}
+	return res
 }
 
 // moverCardResolvido move o card já identificado para a coluna pedida

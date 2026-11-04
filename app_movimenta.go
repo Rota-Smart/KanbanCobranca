@@ -110,7 +110,7 @@ func (a *App) executarComandoMove(mensagem string, chatID int64) (*service.ChatR
 			if cod != "" {
 				// Cliente citado na conversa sem card no quadro: cria direto
 				// na coluna pedida (mesmo fluxo do "adicione o cliente X em Y").
-				return a.importarCardDoContexto(cod, coluna, false), true
+				return a.importarCardDoContexto(chatID, cod, coluna, false), true
 			}
 			return &service.ChatResultado{
 				Resposta: fmt.Sprintf("Não identifiquei o cliente em discussão nesta conversa. Diga: /move <cliente> para %s (ou cite o código service antes).", coluna),

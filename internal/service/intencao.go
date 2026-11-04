@@ -234,15 +234,26 @@ var reNumeroRotulado = regexp.MustCompile(`(?i)\b(?:c[óo]d(?:igo)?(?:\s+service
 // único card. ok=false quando nada casa ou o casamento é ambíguo — agir no
 // card errado é pior que pedir de novo.
 func ResolverCardNoTexto(texto string, cards []CardResumo) (CardResumo, bool) {
+	// Código citado com referência explícita manda SOZINHO: se o texto diz
+	// "cod/cliente/card 123" (ou "#123") e nenhum card casa, não adianta
+	// procurar por nome — o texto de um ticket no 360 está cheio de palavras
+	// que casam pedaço de nome de card alheio (v1.44.0: o briefing do
+	// Shift+F2 dizia "código service X" de quem não tinha card e o pedaço de
+	// nome moveu o card de outro cliente).
+	temCodigo := false
 	for _, re := range []*regexp.Regexp{reNumeroRotulado, reNumeroCard} {
 		for _, m := range re.FindAllStringSubmatch(texto, -1) {
 			n := m[1]
+			temCodigo = true
 			for _, c := range cards {
 				if c.CodService == n || strconv.FormatInt(c.ID, 10) == n {
 					return c, true
 				}
 			}
 		}
+	}
+	if temCodigo {
+		return CardResumo{}, false
 	}
 	textoN := " " + normalizar(texto) + " "
 	var porNome, porPedaço []CardResumo
@@ -269,6 +280,19 @@ func ResolverCardNoTexto(texto string, cards []CardResumo) (CardResumo, bool) {
 		return porPedaço[0], true
 	}
 	return CardResumo{}, false
+}
+
+// CodigoRotuladoNoTexto devolve o último código service/id citado COM
+// referência rotulada ("cod 123", "cliente 123", "card 123") num texto —
+// a cerilha "#123" fica de fora de propósito: no briefing do Shift+F2 o
+// "#N" é o NÚMERO DO TICKET, não de card/cliente. É a busca decisiva do
+// cardDoContextoChat: o que o usuário citou com rótulo é o cliente da
+// conversa, card ele tenha ou não.
+func CodigoRotuladoNoTexto(texto string) string {
+	if ms := reNumeroRotulado.FindAllStringSubmatch(texto, -1); len(ms) > 0 {
+		return ms[len(ms)-1][1]
+	}
+	return ""
 }
 
 // ExtrairCodigoNoTexto devolve o último código service/id citado COM
