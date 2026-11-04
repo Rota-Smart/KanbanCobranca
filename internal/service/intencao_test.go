@@ -377,3 +377,19 @@ func TestCodigoRotuladoNoTexto(t *testing.T) {
 		t.Errorf("rotulado: quer 1234, veio %q", cod)
 	}
 }
+
+func TestCodigoRotuladoPrefereCodigoService(t *testing.T) {
+	// Corpo do ticket cita outro rótulo DEPOIS do código service do briefing:
+	// o "código service" manda (é formato que só o app/briefing usa).
+	texto := "Analise o ticket #7777 do cliente Maria (código service 555). " +
+		"Cliente informou: sou o cliente 999 e o card 888 é meu."
+	if cod := CodigoRotuladoNoTexto(texto); cod != "555" {
+		t.Errorf("quer código service 555 do briefing, veio %q", cod)
+	}
+	if cod := CodigoRotuladoNoTexto("sem rótulo forte, só 'sou o cliente 999'"); cod != "999" {
+		t.Errorf("sem rótulo forte cai no rotulado comum: quer 999, veio %q", cod)
+	}
+	if cod := CodigoRotuladoNoTexto("codigoservice23233 colado sem espaço"); cod != "23233" {
+		t.Errorf("colado sem espaço: quer 23233, veio %q", cod)
+	}
+}

@@ -288,7 +288,16 @@ func ResolverCardNoTexto(texto string, cards []CardResumo) (CardResumo, bool) {
 // "#N" é o NÚMERO DO TICKET, não de card/cliente. É a busca decisiva do
 // cardDoContextoChat: o que o usuário citou com rótulo é o cliente da
 // conversa, card ele tenha ou não.
+// reCodigoService é o rótulo forte: "código service 12345" (ou "cod service
+// 12345", com colar sem espaço incluso) — só o briefing do Shift+F2 e o app
+// usam esse formato exato, então qualquer OUTRO rótulo citado no corpo do
+// ticket ("sou o cliente 999") não pode vencê-lo.
+var reCodigoService = regexp.MustCompile(`(?i)\bc[óo]d(?:igo)?\s*service\s*[:#]?\s*(\d{3,10})\b`)
+
 func CodigoRotuladoNoTexto(texto string) string {
+	if ms := reCodigoService.FindAllStringSubmatch(texto, -1); len(ms) > 0 {
+		return ms[len(ms)-1][1]
+	}
 	if ms := reNumeroRotulado.FindAllStringSubmatch(texto, -1); len(ms) > 0 {
 		return ms[len(ms)-1][1]
 	}
