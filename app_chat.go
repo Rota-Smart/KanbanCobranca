@@ -660,11 +660,7 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 		}
 		hora, turno := atual.VisitaHora, atual.VisitaTurno
 		if quando := argStr("quando"); quando != "" {
-			if len(quando) == 5 && quando[2] == ':' {
-				hora, turno = quando, ""
-			} else {
-				turno, hora = quando, ""
-			}
+			hora, turno = service.NormalizarQuando(quando)
 		}
 		endereco := argStr("endereco")
 		if endereco == "" {

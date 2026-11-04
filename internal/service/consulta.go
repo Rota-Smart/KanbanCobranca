@@ -74,7 +74,7 @@ var (
 var ferramentasDaAcao = map[ClasseConsulta][]string{
 	AcaoCard: {"listar_tickets", "listar_colunas", "mover_card", "apagar_card",
 		"observacao_card", "agendar_visita", "vincular_ticket", "verificar_tickets_fechados",
-		"avaliar_cliente", "gerar_proposta"},
+		"avaliar_cliente", "gerar_proposta", "buscar_cliente_360", "importar_cliente"},
 	AcaoTicket: {"pesquisar_tickets", "detalhe_ticket_360", "abrir_ticket_360",
 		"responder_ticket_360", "alterar_status_ticket_360", "listar_tickets",
 		"vincular_ticket", "verificar_tickets_fechados"},

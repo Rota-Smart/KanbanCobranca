@@ -1,6 +1,10 @@
 package service
 
-import "strings"
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
 
 // TurnoVisitaValido informa se o turno existe.
 func TurnoVisitaValido(t string) bool {
@@ -10,6 +14,55 @@ func TurnoVisitaValido(t string) bool {
 		}
 	}
 	return false
+}
+
+// reHoraVisita aceita as variações de horário que o modelo/usuário costuma
+// mandar no `quando` da visita: 8:45, 08:45, 8h45, 8h45min, 8h (hora cheia).
+var reHoraVisita = regexp.MustCompile(`(?i)(\d{1,2})\s*(?::|h)\s*(\d{2})?`)
+
+// NormalizarQuando converte o `quando` do agendamento de visita em
+// (hora HH:MM, turno). Aceita "08:45", "8:45", "8h45", "8h", "9 horas" e os
+// turnos Manhã/Tarde/Noite com caixa/acento variáveis (inclusive junto:
+// "manhã 8:45" vira hora). Texto sem hora nem turno conhecido volta vazio —
+// quem chama decide erro ou preservação do valor atual.
+func NormalizarQuando(quando string) (hora, turno string) {
+	s := strings.TrimSpace(quando)
+	if s == "" {
+		return "", ""
+	}
+	norm := normalizar(s) // sem acentos, minúsculo
+	for _, t := range TurnosVisitaValidos {
+		if strings.Contains(norm, normalizar(t)) {
+			turno = t
+			break
+		}
+	}
+	if m := reHoraVisita.FindStringSubmatch(s); m != nil {
+		h, min := atoiVisita(m[1]), atoiVisita(m[2])
+		if m[2] == "" {
+			min = 0
+		}
+		if h >= 0 && h <= 23 && min >= 0 && min <= 59 {
+			hora = fmt.Sprintf("%02d:%02d", h, min)
+			turno = "" // hora específica vence o turno citado junto
+		}
+	}
+	if hora == "" && turno == "" {
+		// não é hora nem turno: devolve como veio para o chamador decidir
+		return "", s
+	}
+	return hora, turno
+}
+
+func atoiVisita(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return -1
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
 }
 
 // EhColunaVisitaRealizada reconhece a coluna de destino que marca a visita

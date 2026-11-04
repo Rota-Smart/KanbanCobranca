@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // Agente de chat: o Groq recebe ferramentas (function calling) e age no
@@ -12,9 +13,10 @@ import (
 // A execução das ferramentas fica no ToolExecutor (implementado em main),
 // para este pacote não depender do banco.
 
-// 4 rodadas cobrem as tarefas reais (ler ticket → responder → status); cada
+// 5 rodadas: o fluxo de visita com card novo (importar → mover → agendar →
+// responder) usa 4; a rodada extra dá folga a uma conferência antes. Cada
 // rodada extra reenvia todo o contexto e custa ~2-4k tokens do limite diário.
-const MaxIteracoesAgente = 4
+const MaxIteracoesAgente = 5
 
 // System prompt enxuto: cada token daqui é reenviado em TODA rodada do loop
 // (e em toda mensagem do usuário), então economia aqui multiplica.
@@ -25,7 +27,7 @@ const systemAgente = `Você é o assistente do app Kanban de Cobrança da Rota S
 	`Prompt da proposta: para ver ou melhorar as instruções que a IA segue ao redigir a proposta de renegociação, use editar_prompt_proposta (acao=ler mostra o atual; acao=salvar grava o texto novo — mande o prompt completo, não só o trecho). ` +
 	`Responda em português do Brasil, curto e direto, confirmando o que fez com os dados obtidos. ` +
 	`Coluna Upgrade (a última): para "mover para upgrade" use registrar_comissao — ela move o card e grava o comissionamento (serviço rende 5%, parcela do upgrade rende 75%); se o usuário não informar os valores, pergunte antes; "recebida" = comissao_recebida. ` +
-	`Detalhes: agendar_visita aceita quando=HH:MM ou Manhã/Tarde/Noite (o que falta mantém o atual); observacao_card tem modo substituir (padrão) ou acrescentar; registrar_comissao aceita dataRegistro AAAA-MM-DD e observacoes; tentativa_contato (canal e nota opcionais, data automática) registra tentativa de contato — use quando o usuário disser que tentou/ligou/chamou o cliente ou pedir para registrar/anotar o contato; canal = ligação/WhatsApp/e-mail; tentativas_contato devolve o histórico de contatos do card (data, canal, nota) — consulte-o antes de falar sobre tentativas anteriores.`
+	`Detalhes: Visita — para "agende a visita (do cliente) para <data> [HH:MM]": 1) se o cliente não tem card, importe com importar_cliente; 2) mova o card para a coluna "Visita Agendada" com mover_card; 3) agende com agendar_visita. agendar_visita aceita quando=HH:MM (hora EXATA — "amanhã 8:45" vira data=amanhã, quando=08:45, NUNCA converta horário específico em Manhã/Tarde/Noite) ou Manhã/Tarde/Noite (o que falta mantém o atual); observacao_card tem modo substituir (padrão) ou acrescentar; registrar_comissao aceita dataRegistro AAAA-MM-DD e observacoes; tentativa_contato (canal e nota opcionais, data automática) registra tentativa de contato — use quando o usuário disser que tentou/ligou/chamou o cliente ou pedir para registrar/anotar o contato; canal = ligação/WhatsApp/e-mail; tentativas_contato devolve o histórico de contatos do card (data, canal, nota) — consulte-o antes de falar sobre tentativas anteriores.`
 
 // Ferramentas disponíveis para o agente (formato tools da API OpenAI).
 func AgentTools() []map[string]any {
@@ -84,7 +86,7 @@ func AgentTools() []map[string]any {
 				"cardId": map[string]any{"type": "number"},
 				"coluna": map[string]any{"type": "string"},
 			}, []string{"cardId", "coluna"}),
-		tool("agendar_visita", "Visita do card; data AAAA-MM-DD.",
+		tool("agendar_visita", "Visita do card; data AAAA-MM-DD; quando=HH:MM/turno.",
 			map[string]any{
 				"cardId":   map[string]any{"type": "number"},
 				"data":     map[string]any{"type": "string"},
@@ -182,13 +184,15 @@ type OpcoesConversa struct {
 	FerramentasRemovidas []string
 }
 
-// SystemComPadroes monta o system prompt com os padrões salvos embutidos —
-// eles valem para o loop com ferramentas e para o fast-path sem ferramentas.
+// SystemComPadroes monta o system prompt com a data de hoje e os padrões
+// salvos embutidos — eles valem para o loop com ferramentas e para o
+// fast-path sem ferramentas.
 func SystemComPadroes(padroes string) string {
+	base := "Hoje é " + time.Now().Format("2006-01-02") + "; calcule datas relativas (hoje, amanhã, próxima semana) a partir desta data e passe AAAA-MM-DD nas ferramentas.\n\n" + systemAgente
 	if strings.TrimSpace(padroes) == "" {
-		return systemAgente
+		return base
 	}
-	return systemAgente + "\n\nPadrões definidos pelo usuário — siga em TODA resposta:\n" + padroes
+	return base + "\n\nPadrões definidos pelo usuário — siga em TODA resposta:\n" + padroes
 }
 
 // Heurística do fast-path: responde sem o loop de ferramentas (1 requisição,
