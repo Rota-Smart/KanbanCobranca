@@ -591,6 +591,7 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
               {ticket.tipoTicket}
               {ticket.numeroTicket ? ` · Ticket ${ticket.numeroTicket}` : ''}
               {ticket.telefone ? ` · ${ticket.telefone}` : ''}
+              {ticket.codService ? ` · Cód service #${ticket.codService}` : ''}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
