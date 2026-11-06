@@ -1348,18 +1348,27 @@ func (a *App) vincularTicket360(ticketID int64, entrada string) (db.Ticket, stri
 	if det != nil {
 		cod = det.CodService
 	}
+	// Re-vinculação pelo número com a sessão do 360 caída chega aqui com uuid
+	// vazio — regravar apagaria o uuid que o card já tem para o mesmo ticket
+	// (e "abrir ticket" pararia de funcionar). Mantém o uuid existente.
+	if uuid == "" && numero != "" && t.Ticket360Numero == numero {
+		uuid = t.Ticket360ID
+	}
 	if err := a.tickets.VincularTicket360(a.ctx, t.ID, uuid, numero, cod); err != nil {
 		return db.Ticket{}, "", friendly("VincularTicket360", err)
 	}
 	// Vínculos múltiplos: registra também na lista (com o título do 360 como
-	// assunto) para a aba Cliente exibir e abrir cada ticket.
+	// assunto) para a aba Cliente exibir e abrir cada ticket. O vínculo
+	// principal já foi gravado — falha aqui não pode virar "não consegui
+	// vincular" (o card fica vinculado e o chat acusando erro); vira aviso.
 	if a.vinculos != nil {
 		assunto := ""
 		if det != nil {
 			assunto = det.Titulo
 		}
 		if err := a.vinculos.Upsert(a.ctx, t.ID, uuid, numero, assunto); err != nil {
-			return db.Ticket{}, "", friendly("VincularTicket360", err)
+			slog.Warn("vínculo múltiplo não registrado", "card", t.ID, "ticket", numero, "err", err)
+			aviso = "O card foi vinculado, mas o ticket não entrou na lista de vínculos do card: " + err.Error()
 		}
 	}
 	t, err = a.tickets.Get(a.ctx, t.ID)
