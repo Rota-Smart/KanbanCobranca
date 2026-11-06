@@ -401,10 +401,13 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 				}
 			}
 			if !cabeNoCtx(ctx, espera) {
-				return respostaRodada{}, fmt.Errorf("%s: HTTP 429 — sem tempo de esperar a janela de TPM; tente de novo em ~%s", alvo.provedor, espera.Truncate(time.Second))
+				return respostaRodada{}, fmt.Errorf("%s: HTTP 429 — %w", alvo.provedor, ErrTetoTPM)
 			}
 			select {
 			case <-ctx.Done():
+				if errors.Is(ultimoErr, ErrTetoTPM) {
+					return respostaRodada{}, fmt.Errorf("%s: %w", alvo.provedor, ErrTetoTPM)
+				}
 				return respostaRodada{}, ctx.Err()
 			case <-time.After(espera):
 			}

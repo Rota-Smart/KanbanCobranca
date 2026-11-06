@@ -265,6 +265,9 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		if errors.Is(err, service.ErrTetoTPM) {
 			return service.ChatResultado{}, errors.New("a Groq bateu o limite de tokens por minuto do plano free — o app já esperou a janela reabrir e tentou de novo. Aguarde ~1 minuto ou mande mensagens mais curtas; o que você pediu não foi acionado")
 		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return service.ChatResultado{}, errors.New("o assistente demorou demais (90s) e a requisição foi abandonada — geralmente é a Groq enrolando para liberar a janela de tokens. Tente de novo em instantes")
+		}
 		return service.ChatResultado{}, friendly("EnviarChat", err)
 	}
 	a.registrarStatsPrebusca(pre, res.Acoes)
