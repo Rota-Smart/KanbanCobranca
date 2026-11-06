@@ -52,6 +52,11 @@ const (
 // ErrGroqSemChave sinaliza ausência de chave — não é erro para o usuário.
 var ErrGroqSemChave = errors.New("chave da IA não configurada")
 
+// ErrTetoTPM sinaliza que a Groq recusou a requisição por limite de tokens
+// por minuto (429) mesmo após esperas e rotação de chaves. EnviarChat converte
+// para uma mensagem clara — não pode virar o genérico do friendly().
+var ErrTetoTPM = errors.New("teto de tokens por minuto")
+
 // GroqCliente chama a API da Groq. ChaveInjetavel/ModeloInjetavel são
 // consultados a cada chamada (vêm das configurações, podem mudar em tempo real).
 // OnUsage (opcional) é chamado após cada resposta bem-sucedida com os tokens
@@ -434,7 +439,7 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 		resp.Body.Close()
 		switch {
 		case resp.StatusCode == http.StatusTooManyRequests:
-			ultimoErr = fmt.Errorf("%s: HTTP 429 — limite de tokens por minuto atingido", alvo.provedor)
+			ultimoErr = fmt.Errorf("%s: HTTP 429 — %w", alvo.provedor, ErrTetoTPM)
 			// Rotação de chaves: a próxima chave tem janela de TPM própria —
 			// entra na hora, sem esperar; a rotação não gasta tentativa.
 			if alvo.provedor == ProvedorGroq && idxChave < len(chaves)-1 {

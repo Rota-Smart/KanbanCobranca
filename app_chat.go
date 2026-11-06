@@ -201,7 +201,7 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		return service.ChatResultado{}, fmt.Errorf("configure a chave da IA em ⚙ Configurações para usar o assistente")
 	}
 
-	historico, err := a.historicoRecente(chatID)
+	historico, err := a.historicoRecente(chatID, 0)
 	if err != nil {
 		return service.ChatResultado{}, err
 	}
@@ -225,6 +225,24 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		}
 		return service.ChatResultado{}, friendly("EnviarChat", err)
 	}
+
+	// Modo econômico: a Groq reporta no header o saldo de tokens da janela
+	// de 1 minuto (8K no plano free). Com saldo baixo, o request tem que
+	// caber no que sobrou — encurta o histórico e, no aperto, descarta o
+	// bloco pré-coletado (que pode valer 3-4K sozinho; as tools de leitura
+	// voltam e o modelo busca por conta própria, em rodadas menores).
+	if saldo := a.groq.SaldoTPM(); saldo >= 0 {
+		if saldo < 2000 {
+			if historico, err = a.historicoRecente(chatID, 2); err != nil {
+				return service.ChatResultado{}, err
+			}
+			pre = nil
+		} else if saldo < 3000 {
+			if historico, err = a.historicoRecente(chatID, 4); err != nil {
+				return service.ChatResultado{}, err
+			}
+		}
+	}
 	if pre != nil {
 		a.muPrebusca.Lock()
 		a.cachePrebusca = pre.cache
@@ -244,6 +262,9 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		// Falha da IA também entra no log — 429/timeout é exatamente o tipo
 		// de dado que alimenta a análise de redução do uso de IA.
 		a.registrarAuditoria(chatID, db.OrigemIA, "", mensagem, "ERRO: "+err.Error(), nil, time.Since(inicio))
+		if errors.Is(err, service.ErrTetoTPM) {
+			return service.ChatResultado{}, errors.New("a Groq bateu o limite de tokens por minuto do plano free — o app já esperou a janela reabrir e tentou de novo. Aguarde ~1 minuto ou mande mensagens mais curtas; o que você pediu não foi acionado")
+		}
 		return service.ChatResultado{}, friendly("EnviarChat", err)
 	}
 	a.registrarStatsPrebusca(pre, res.Acoes)
@@ -282,13 +303,19 @@ func (a *App) comandoLocal(mensagem string, chatID int64) (string, *service.Chat
 }
 
 // historicoRecente devolve as últimas 10 mensagens persistidas do chat.
-func (a *App) historicoRecente(chatID int64) ([]service.MensagemDeChat, error) {
+// historicoRecente devolve o rabinho do histórico da conversa para o request:
+// por padrão as 10 últimas mensagens; limite > 0 encurta (modo econômico,
+// quando o saldo de TPM da janela está baixo).
+func (a *App) historicoRecente(chatID int64, limite int) ([]service.MensagemDeChat, error) {
 	persistidas, err := a.chats.Mensagens(a.ctx, chatID)
 	if err != nil {
 		return nil, friendly("EnviarChat", err)
 	}
-	if len(persistidas) > 10 {
-		persistidas = persistidas[len(persistidas)-10:]
+	if limite <= 0 {
+		limite = 10
+	}
+	if len(persistidas) > limite {
+		persistidas = persistidas[len(persistidas)-limite:]
 	}
 	historico := make([]service.MensagemDeChat, 0, len(persistidas))
 	for _, m := range persistidas {
