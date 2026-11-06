@@ -73,6 +73,9 @@ export default function ChatDrawer(props: {
   const [enviando, setEnviando] = useState(false);
   const [gravando, setGravando] = useState(false);
   const [parcial, setParcial] = useState('');
+  // Fila: mensagens enviadas enquanto o assistente ainda estava respondendo.
+  // Guardam o chat de origem e saem automaticamente quando a resposta termina.
+  const [fila, setFila] = useState<{ texto: string; chat: number | null }[]>([]);
   const pararVoz = useRef<(() => void) | null>(null);
   const fimRef = useRef<HTMLDivElement>(null);
   const inicialEnviada = useRef(false);
@@ -188,10 +191,15 @@ export default function ChatDrawer(props: {
     }
   }
 
-  async function enviar(textoForcado?: string) {
+  async function enviar(textoForcado?: string, chatDaFila?: number | null) {
     const m = (textoForcado ?? texto).trim();
-    if (!m || enviando) return;
-    let id = chatID;
+    if (!m) return;
+    if (enviando) {
+      setFila((f) => [...f, { texto: m, chat: chatIDRef.current }]);
+      if (textoForcado === undefined) setTexto('');
+      return;
+    }
+    let id = chatDaFila !== undefined ? chatDaFila : chatID;
     if (id === null) {
       try {
         const c = await App.CriarChat();
@@ -203,7 +211,8 @@ export default function ChatDrawer(props: {
         return;
       }
     }
-    setTexto('');
+    if (chatDaFila !== undefined && id !== null && id !== chatIDRef.current) await abrir(id);
+    if (textoForcado === undefined) setTexto('');
     setMsgs((ms) => [...ms, { papel: 'user', conteudo: m }, { papel: 'assistant', conteudo: '…' }]);
     setEnviando(true);
     try {
@@ -218,6 +227,14 @@ export default function ChatDrawer(props: {
       setEnviando(false);
     }
   }
+
+  useEffect(() => {
+    if (enviando || fila.length === 0) return;
+    const [proxima, ...resto] = fila;
+    setFila(resto);
+    void enviar(proxima.texto, proxima.chat);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enviando]);
 
   useEffect(() => {
     if (inicialEnviada.current) return;
@@ -355,6 +372,28 @@ export default function ChatDrawer(props: {
               ))}
             </div>
           )}
+          {fila.length > 0 && (
+            <div className="mt-2 flex flex-col gap-1" aria-label="Mensagens na fila">
+              {fila.map((f, i) => (
+                <div
+                  key={i}
+                  className="self-end flex items-center gap-2 max-w-[22rem] rounded-lg border border-dashed border-blue-400/60 bg-blue-600/10 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200"
+                  title="Será enviada automaticamente quando o assistente terminar de responder"
+                >
+                  <span className="text-xs text-blue-600 dark:text-blue-300 shrink-0">⏳ fila {i + 1}</span>
+                  <span className="truncate">{f.texto}</span>
+                  <button
+                    type="button"
+                    aria-label="Tirar da fila"
+                    className="text-slate-400 hover:text-red-500 shrink-0"
+                    onClick={() => setFila((fs) => fs.filter((_, j) => j !== i))}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <form
             className="mt-2 flex gap-1 items-center"
             onSubmit={(e) => {
@@ -377,14 +416,21 @@ export default function ChatDrawer(props: {
             </button>
             <input
               className="flex-1 border rounded px-2 py-1.5 text-sm"
-              placeholder={gravando ? 'Ouvindo… fale sua mensagem' : 'Peça uma ação ao assistente…'}
+              placeholder={
+                gravando
+                  ? 'Ouvindo… fale sua mensagem'
+                  : enviando
+                    ? 'Digite — a mensagem entra na fila e sai quando ele terminar…'
+                    : 'Peça uma ação ao assistente…'
+              }
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
             />
             <button
               type="submit"
               className="bg-blue-600 text-white rounded px-3 py-1.5 text-sm disabled:opacity-50"
-              disabled={enviando || !texto.trim()}
+              disabled={!texto.trim()}
+              title={enviando ? 'O assistente está respondendo: a mensagem vai para a fila' : undefined}
             >
               Enviar
             </button>
