@@ -38,6 +38,8 @@ func TestCardsQueNaoMexer(t *testing.T) {
 		{ID: 1, ColunaAtual: "Fazer contato"},     // ticket aberto: pode mover
 		{ID: 2, ColunaAtual: ColunaTicketFechado}, // já está na coluna: ignora
 		{ID: 3, ColunaAtual: "Cobrança"},          // puxado de volta à mão: sem histórico, pode mover
+		{ID: 5, ColunaAtual: "Aguardando Assinatura"}, // negociação viva: não fecha
+		{ID: 6, ColunaAtual: "Aguardando Pagamento"},  // idem
 	}
 	hist := []db.MovimentoFechado{
 		{CardID: 3}, // passou pela coluna antes — usuário puxou de volta, não mexe
@@ -56,6 +58,17 @@ func TestCardsQueNaoMexer(t *testing.T) {
 	}
 	if !naoMexer[4] {
 		t.Error("card 4 do histórico deveria ser ignorado mesmo sem estar no board")
+	}
+	if !naoMexer[5] {
+		t.Error("card 5 em Aguardando Assinatura deveria ser protegido da verificação")
+	}
+	if !naoMexer[6] {
+		t.Error("card 6 em Aguardando Pagamento deveria ser protegido da verificação")
+	}
+	// variação de caixa/espaço também protege
+	extra := []db.Ticket{{ID: 7, ColunaAtual: "aguardando assinatura"}}
+	if !cardsQueNaoMexer(extra, nil)[7] {
+		t.Error("coluna digitada com caixa diferente deveria proteger igual")
 	}
 }
 

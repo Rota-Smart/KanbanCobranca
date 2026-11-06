@@ -38,12 +38,27 @@ type ResultadoVerificacao struct {
 // cardsQueNaoMexer junta os cards que a verificação de fechados não pode
 // desfazer: quem já está na coluna de fechados agora e quem já passou por ela
 // alguma vez (movimentações) — se o usuário arrastou um desses de volta para
-// outra coluna, foi decisão manual e o card fica onde está.
+// outra coluna, foi decisão manual e o card fica onde está. Também protege os
+// cards em colunas de negociação (colunasProtegidasFechado): mesmo com todos
+// os tickets fechados no 360, card em Aguardando Assinatura/Pagamento fica
+// onde está.
+// colunasProtegidasFechado são colunas de negociação em andamento: card nelas
+// não é fechado pela verificação, independente do status dos tickets no 360 —
+// assinatura e pagamento pendentes significam negócio vivo.
+var colunasProtegidasFechado = []string{"Aguardando Assinatura", "Aguardando Pagamento"}
+
 func cardsQueNaoMexer(ts []db.Ticket, hist []db.MovimentoFechado) map[int64]bool {
 	naoMexer := map[int64]bool{}
 	for _, t := range ts {
 		if t.ColunaAtual == ColunaTicketFechado {
 			naoMexer[t.ID] = true
+			continue
+		}
+		for _, col := range colunasProtegidasFechado {
+			if strings.EqualFold(strings.TrimSpace(t.ColunaAtual), col) {
+				naoMexer[t.ID] = true
+				break
+			}
 		}
 	}
 	for _, m := range hist {
