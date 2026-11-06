@@ -478,10 +478,22 @@ func CasarColuna(texto string, colunas []string) (string, error) {
 	if t == "" {
 		return "", fmt.Errorf("diga a coluna de destino. Colunas: %s", lista)
 	}
+	// O parser de contexto consome a preposição ("adicione EM contato" vira
+	// pedido "contato"), mas a coluna pode se chamar "Em contato". Exato
+	// também ignora a preposição da frente do nome da coluna.
+	exatas := 0
+	exata := ""
 	for _, c := range colunas {
-		if normalizar(c) == t {
-			return c, nil
+		if casaColunaExata(t, normalizar(c)) {
+			exatas++
+			exata = c
 		}
+	}
+	if exatas == 1 {
+		return exata, nil
+	}
+	if exatas > 1 {
+		return "", fmt.Errorf("%d colunas casam com %q — seja mais específico", exatas, texto)
 	}
 	var achadas []string
 	for _, c := range colunas {
@@ -497,6 +509,20 @@ func CasarColuna(texto string, colunas []string) (string, error) {
 	default:
 		return "", fmt.Errorf("%d colunas casam com %q: %s — seja mais específico", len(achadas), texto, strings.Join(achadas, "; "))
 	}
+}
+
+// casaColunaExata diz se o pedido casa exato com o nome da coluna, tolerando
+// preposição na frente do nome ("em contato" ≡ "contato").
+func casaColunaExata(t, nomeColuna string) bool {
+	if nomeColuna == t {
+		return true
+	}
+	for _, p := range []string{"em ", "na ", "no ", "para ", "pra ", "pro "} {
+		if s, ok := strings.CutPrefix(nomeColuna, p); ok && s == t {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- Comando "abra o card do cliente X" (texto livre) ----

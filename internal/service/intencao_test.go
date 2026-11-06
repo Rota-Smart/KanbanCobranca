@@ -119,6 +119,26 @@ func TestCasarColuna(t *testing.T) {
 	}
 }
 
+// v1.49.0: "adicione em contato" com a coluna "Em contato" — o parser come o
+// "em" e o pedido vira "contato"; exato precisa tolerar a preposição da
+// coluna em vez de cair no casamento por contém (que ambigua com "Sem
+// contato", "Fazer contato"…).
+func TestCasarColunaPreposicao(t *testing.T) {
+	colunas := []string{"Em contato", "Sem contato", "Fazer contato", "Cobrança"}
+	if got, err := CasarColuna("contato", colunas); err != nil || got != "Em contato" {
+		t.Errorf(`"contato": veio %q (%v), quer "Em contato"`, got, err)
+	}
+	if got, err := CasarColuna("em contato", colunas); err != nil || got != "Em contato" {
+		t.Errorf(`"em contato": veio %q (%v), quer "Em contato"`, got, err)
+	}
+	if got, err := CasarColuna("sem contato", colunas); err != nil || got != "Sem contato" {
+		t.Errorf(`"sem contato": veio %q (%v), quer "Sem contato"`, got, err)
+	}
+	if got, err := CasarColuna("fazer", colunas); err != nil || got != "Fazer contato" {
+		t.Errorf(`"fazer": veio %q (%v), quer "Fazer contato" (única por contém)`, got, err)
+	}
+}
+
 func TestResolverCard(t *testing.T) {
 	cards := []CardResumo{
 		{1, "João da Silva", "123", ""},
