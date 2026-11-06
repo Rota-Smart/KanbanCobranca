@@ -42,6 +42,7 @@ type App struct {
 	groq       *service.GroqCliente
 	avaliador  *service.Avaliador
 	chats      *db.ChatRepo
+	auditoria  *db.AuditoriaRepo
 	padroes    *db.PadraoRepo
 	stats      *db.AgenteStatsRepo // aprendizado da pré-busca (classe → ferramentas)
 
@@ -112,6 +113,7 @@ func NewApp(database *sql.DB, propostas *service.PropostaService) *App {
 		colunas:    db.NewColumnRepo(database),
 		comissoes:  db.NewComissaoRepo(database),
 		chats:      db.NewChatRepo(database),
+		auditoria:  db.NewAuditoriaRepo(database),
 		padroes:    db.NewPadraoRepo(database),
 		stats:      db.NewAgenteStatsRepo(database),
 		propostas:  propostas,

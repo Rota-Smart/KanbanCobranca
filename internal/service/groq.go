@@ -194,6 +194,9 @@ func (g *GroqCliente) TemChave() bool {
 type respostaRodada struct {
 	Content   string
 	ToolCalls []groqToolCall
+	// Tokens reportados pelo provedor nesta rodada (0 se ausente).
+	PromptTokens     int
+	CompletionTokens int
 }
 
 // alvoChamada é o destino de uma tentativa: provedor + endpoint/chave/modelo
@@ -499,7 +502,12 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 			g.registrarSaldoTPM(resp)
 			g.reportarUsage(&out)
 		}
-		return respostaRodada{Content: strings.TrimSpace(content), ToolCalls: msg.ToolCalls}, nil
+		rodada := respostaRodada{Content: strings.TrimSpace(content), ToolCalls: msg.ToolCalls}
+		if out.Usage != nil {
+			rodada.PromptTokens = out.Usage.PromptTokens
+			rodada.CompletionTokens = out.Usage.CompletionTokens
+		}
+		return rodada, nil
 	}
 	return respostaRodada{}, ultimoErr
 }
@@ -551,19 +559,13 @@ func effortPara(modelo string) string {
 	return ""
 }
 
-func (g *GroqCliente) chatComTools(ctx context.Context, mensagens []groqMensagem) (struct {
-	Content   string
-	ToolCalls []groqToolCall
-}, error) {
-	return g.chatUmaRodada(ctx, mensagens, AgentTools())
-}
-
-func (g *GroqCliente) chatSemTools(ctx context.Context, mensagens []groqMensagem) (string, error) {
+// chatSemTools devolve (resposta, promptTokens, completionTokens, erro).
+func (g *GroqCliente) chatSemTools(ctx context.Context, mensagens []groqMensagem) (string, int, int, error) {
 	out, err := g.chatUmaRodada(ctx, mensagens, nil)
 	if err != nil {
-		return "", err
+		return "", 0, 0, err
 	}
-	return out.Content, nil
+	return out.Content, out.PromptTokens, out.CompletionTokens, nil
 }
 
 // ---- Prompt de polimento da proposta ----

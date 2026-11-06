@@ -165,22 +165,8 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 	// vem primeiro; "/move" (ticket do 360 ou card) e "/apagar" depois;
 	// "apague o card do João" / "mova o card 123 para Cobrança" por último.
 	// Frases fora do molde caem no fluxo normal do agente.
-	local, reconhecido := a.executarComandoVincular(mensagem)
-	if !reconhecido {
-		local, reconhecido = a.executarComandoMove(mensagem, chatID)
-	}
-	if !reconhecido {
-		local, reconhecido = a.executarComandoApagar(mensagem, chatID)
-	}
-	if !reconhecido {
-		local, reconhecido = a.executarComandoRealizada(mensagem, chatID)
-	}
-	if !reconhecido {
-		local, reconhecido = a.executarIntencaoAbrir(mensagem, chatID)
-	}
-	if !reconhecido {
-		local, reconhecido = a.executarIntencaoLocal(mensagem, chatID)
-	}
+	inicio := time.Now()
+	comandoNome, local, reconhecido := a.comandoLocal(mensagem, chatID)
 	if reconhecido {
 		if err := a.chats.AddMensagem(a.ctx, chatID, "user", mensagem, ""); err != nil {
 			return service.ChatResultado{}, friendly("EnviarChat", err)
@@ -193,6 +179,7 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		if err := a.gravarResposta(chatID, local); err != nil {
 			return service.ChatResultado{}, err
 		}
+		a.registrarAuditoria(chatID, db.OrigemLocalComando, comandoNome, mensagem, local.Resposta, local, time.Since(inicio))
 		return *local, nil
 	}
 
@@ -208,6 +195,7 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 			if err := a.gravarResposta(chatID, res); err != nil {
 				return service.ChatResultado{}, err
 			}
+			a.registrarAuditoria(chatID, db.OrigemLocalSemIA, "listar_tickets_sem_ia", mensagem, res.Resposta, res, time.Since(inicio))
 			return *res, nil
 		}
 		return service.ChatResultado{}, fmt.Errorf("configure a chave da IA em ⚙ Configurações para usar o assistente")
@@ -253,6 +241,9 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		if err == service.ErrGroqSemChave {
 			return service.ChatResultado{}, err
 		}
+		// Falha da IA também entra no log — 429/timeout é exatamente o tipo
+		// de dado que alimenta a análise de redução do uso de IA.
+		a.registrarAuditoria(chatID, db.OrigemIA, "", mensagem, "ERRO: "+err.Error(), nil, time.Since(inicio))
 		return service.ChatResultado{}, friendly("EnviarChat", err)
 	}
 	a.registrarStatsPrebusca(pre, res.Acoes)
@@ -262,7 +253,32 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 	if err := a.gravarResposta(chatID, res); err != nil {
 		return service.ChatResultado{}, err
 	}
+	a.registrarAuditoria(chatID, db.OrigemIA, "", mensagem, res.Resposta, res, time.Since(inicio))
 	return *res, nil
+}
+
+// comandoLocal roda a cadeia de comandos rígidos (sem IA) e devolve o nome
+// do comando que reconheceu a mensagem, o resultado e se houve reconhecimento.
+func (a *App) comandoLocal(mensagem string, chatID int64) (string, *service.ChatResultado, bool) {
+	casos := []struct {
+		nome string
+		roda func(string, int64) (*service.ChatResultado, bool)
+	}{
+		{"vincular", func(m string, chatID int64) (*service.ChatResultado, bool) {
+			return a.executarComandoVincular(m)
+		}},
+		{"move", a.executarComandoMove},
+		{"apagar", a.executarComandoApagar},
+		{"realizada", a.executarComandoRealizada},
+		{"abrir", a.executarIntencaoAbrir},
+		{"intencao_local", a.executarIntencaoLocal},
+	}
+	for _, c := range casos {
+		if res, ok := c.roda(mensagem, chatID); ok {
+			return c.nome, res, true
+		}
+	}
+	return "", nil, false
 }
 
 // historicoRecente devolve as últimas 10 mensagens persistidas do chat.

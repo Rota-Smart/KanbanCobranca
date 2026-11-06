@@ -37,6 +37,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   const [syncInfo, setSyncInfo] = useState<SyncInfo | null>(null);
   const [syncOcupado, setSyncOcupado] = useState(false);
   const [usoGroq, setUsoGroq] = useState<import('../wails-types').UsoGroq | null>(null);
+  const [exportandoAuditoria, setExportandoAuditoria] = useState(false);
   // Versão já baixada e trocada no disco esperando reinício ("Depois" no
   // aviso): enquanto existir, o botão de reiniciar fica fixo aqui.
   const [prontaReinicio, setProntaReinicio] = useState<string | null>(null);
@@ -549,6 +550,33 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
             O assistente resume o ticket com a descrição e a última mensagem que não é sua; diga aqui
             quem é você para ele filtrar direito.
           </p>
+        </section>
+
+        {/* Histórico do assistente (auditoria append-only) */}
+        <section className="mt-3 border rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-slate-700">Histórico do assistente</h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Toda mensagem enviada ao assistente fica registrada — inclusive de conversas apagadas: o
+            que foi pedido, se resolveu sem IA ou passou pela IA, as ferramentas usadas e os tokens
+            gastos. Salve o arquivo para analisar quais pedidos podem virar automações sem IA.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button
+              className="border rounded px-3 py-1 text-sm disabled:opacity-50"
+              disabled={exportandoAuditoria}
+              onClick={() => {
+                setExportandoAuditoria(true);
+                App.ExportarAuditoria()
+                  .then((caminho: string) => {
+                    if (caminho) props.onToast('Histórico salvo em ' + caminho);
+                  })
+                  .catch((e: unknown) => props.onToast(String(e)))
+                  .finally(() => setExportandoAuditoria(false));
+              }}
+            >
+              {exportandoAuditoria ? 'Salvando…' : '💾 Salvar histórico como…'}
+            </button>
+          </div>
         </section>
 
         {/* Parâmetros de negociação */}

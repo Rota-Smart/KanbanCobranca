@@ -492,3 +492,22 @@ func TestContextoSemCardImportaOuInforma(t *testing.T) {
 		t.Fatalf("conversa vazia: ok=%v resposta=%q", ok, res.Resposta)
 	}
 }
+
+func TestEnviarChatComandoLocalEntraNaAuditoria(t *testing.T) {
+	a := newTestApp(t)
+	chat, err := a.CriarChat()
+	if err != nil {
+		t.Fatalf("CriarChat: %v", err)
+	}
+	if _, err := a.EnviarChat(chat.ID, "/apagar"); err != nil {
+		t.Fatalf("EnviarChat: %v", err)
+	}
+	linhas, err := a.auditoria.Listar(a.ctx)
+	if err != nil || len(linhas) != 1 {
+		t.Fatalf("esperava 1 linha de auditoria: %v %d", err, len(linhas))
+	}
+	l := linhas[0]
+	if l.Origem != db.OrigemLocalComando || l.Comando != "apagar" || l.Mensagem != "/apagar" || l.Resposta == "" {
+		t.Fatalf("linha errada: %+v", l)
+	}
+}

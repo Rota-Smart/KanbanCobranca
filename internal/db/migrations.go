@@ -23,7 +23,30 @@ var migrations = []string{
 	migration013,
 	migration014,
 	migration015,
+	migration016,
 }
+
+// migration016: auditoria append-only do assistente — cada mensagem enviada
+// vira uma linha imutável com a origem (comando local / sem IA / IA), as
+// ferramentas chamadas com argumentos, tokens consumidos e duração. Serve de
+// base para análise futura de redução do uso de IA; NADA apaga daqui.
+const migration016 = `
+CREATE TABLE chat_auditoria (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    chat_id           INTEGER NOT NULL,
+    origem            TEXT    NOT NULL,
+    comando           TEXT    NOT NULL DEFAULT '',
+    mensagem          TEXT    NOT NULL,
+    resposta          TEXT    NOT NULL DEFAULT '',
+    ferramentas       TEXT    NOT NULL DEFAULT '',
+    prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    rodadas           INTEGER NOT NULL DEFAULT 0,
+    duracao_ms        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_chat_auditoria_criado ON chat_auditoria(created_at);
+`
 
 // migration015: tentativas de contato do card — cada tentativa é uma linha
 // com data-hora automática, canal opcional (ligação/WhatsApp/e-mail…) e nota

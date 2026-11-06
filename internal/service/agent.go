@@ -250,6 +250,20 @@ type AcaoDoAgente struct {
 type ChatResultado struct {
 	Resposta string         `json:"resposta"`
 	Acoes    []AcaoDoAgente `json:"acoes"`
+	// Auditoria da troca: ferramentas com argumentos (para o log append-only,
+	// não exibido na UI) e consumo de tokens somado das rodadas.
+	Ferramentas      []FerramentaAuditada `json:"ferramentas,omitempty"`
+	PromptTokens     int                  `json:"promptTokens,omitempty"`
+	CompletionTokens int                  `json:"completionTokens,omitempty"`
+	Rodadas          int                  `json:"rodadas,omitempty"`
+}
+
+// FerramentaAuditada registra uma chamada de ferramenta com os argumentos
+// que o modelo enviou (para a auditoria; AcaoDoAgente segue só com resumo).
+type FerramentaAuditada struct {
+	Nome string `json:"nome"`
+	Args string `json:"args,omitempty"`
+	Erro string `json:"erro,omitempty"`
 }
 
 // ToolExecutor executa uma ferramenta pelo nome com argumentos JSON.
@@ -309,11 +323,12 @@ func (g *GroqCliente) ConversarCom(ctx context.Context, historico []MensagemDeCh
 			msgs = append(msgs, groqMensagem{Role: m.Papel, Content: m.Conteudo})
 		}
 		msgs = append(msgs, groqMensagem{Role: "user", Content: mensagem})
-		resp, err := g.chatSemTools(ctx, msgs)
+		resp, prompt, completion, err := g.chatSemTools(ctx, msgs)
 		if err != nil {
 			return nil, err
 		}
-		return &ChatResultado{Resposta: resp, Acoes: []AcaoDoAgente{}}, nil
+		return &ChatResultado{Resposta: resp, Acoes: []AcaoDoAgente{},
+			PromptTokens: prompt, CompletionTokens: completion, Rodadas: 1}, nil
 	}
 
 	msgs := []groqMensagem{{Role: "system", Content: sistema}}
@@ -326,21 +341,34 @@ func (g *GroqCliente) ConversarCom(ctx context.Context, historico []MensagemDeCh
 	msgs = append(msgs, groqMensagem{Role: "user", Content: mensagem})
 
 	acoes := []AcaoDoAgente{}
-	for rodada := 0; rodada < MaxIteracoesAgente; rodada++ {
+	ferramentas := []FerramentaAuditada{}
+	promptTotal, completionTotal := 0, 0
+	for rodadas := 0; rodadas < MaxIteracoesAgente; rodadas++ {
 		resp, err := g.chatUmaRodada(ctx, msgs, tools)
 		if err != nil {
 			return nil, err
 		}
+		promptTotal += resp.PromptTokens
+		completionTotal += resp.CompletionTokens
 		if len(resp.ToolCalls) == 0 {
-			return &ChatResultado{Resposta: strings.TrimSpace(resp.Content), Acoes: acoes}, nil
+			return &ChatResultado{Resposta: strings.TrimSpace(resp.Content), Acoes: acoes,
+				Ferramentas: ferramentas, PromptTokens: promptTotal,
+				CompletionTokens: completionTotal, Rodadas: rodadas + 1}, nil
 		}
 		msgs = append(msgs, groqMensagem{Role: "assistant", Content: resp.Content, ToolCalls: resp.ToolCalls})
 		for _, tc := range resp.ToolCalls {
+			argsAudit := tc.Function.Arguments
+			if len(argsAudit) > 500 {
+				argsAudit = argsAudit[:500]
+			}
 			resultado, resumo, err := exec.ExecutarAgente(ctx, tc.Function.Name, tc.Function.Arguments)
+			fa := FerramentaAuditada{Nome: tc.Function.Name, Args: argsAudit}
 			if err != nil {
+				fa.Erro = err.Error()
 				resultado = "ERRO: " + err.Error()
 				resumo = tc.Function.Name + " falhou: " + err.Error()
 			}
+			ferramentas = append(ferramentas, fa)
 			if progresso != nil {
 				progresso(AcaoDoAgente{Ferramenta: tc.Function.Name, Resumo: resumo})
 			}
@@ -362,11 +390,13 @@ func (g *GroqCliente) ConversarCom(ctx context.Context, historico []MensagemDeCh
 	}
 	// Esgotou as rodadas: pede o resumo final sem ferramentas.
 	msgs = append(msgs, groqMensagem{Role: "user", Content: "Resuma o que foi feito sem usar mais ferramentas."})
-	resp, err := g.chatSemTools(ctx, msgs)
+	resp, prompt, completion, err := g.chatSemTools(ctx, msgs)
 	if err != nil {
 		return nil, err
 	}
-	return &ChatResultado{Resposta: strings.TrimSpace(resp), Acoes: acoes}, nil
+	return &ChatResultado{Resposta: strings.TrimSpace(resp), Acoes: acoes,
+		Ferramentas: ferramentas, PromptTokens: promptTotal + prompt,
+		CompletionTokens: completionTotal + completion, Rodadas: MaxIteracoesAgente + 1}, nil
 }
 
 // historicoCompacto devolve as últimas MaxMensagensHistorico mensagens do

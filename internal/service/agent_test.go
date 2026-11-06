@@ -342,3 +342,36 @@ func TestRegistrarSaldoTPM(t *testing.T) {
 		t.Errorf("SaldoTPM = %d; quero 5664", got)
 	}
 }
+
+func TestConversarAuditaFerramentasETokens(t *testing.T) {
+	respostas := []map[string]any{
+		{"tool_calls": []map[string]any{{
+			"id": "call_1", "type": "function",
+			"function": map[string]any{"name": "criar_coluna", "arguments": `{"nome":"Renegociação"}`},
+		}}},
+		{"content": "Coluna criada!"},
+	}
+	i := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := respostas[min(i, len(respostas)-1)]
+		i++
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": resp}},
+			"usage":   map[string]any{"prompt_tokens": 100, "completion_tokens": 7},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	g := groqParaTeste(t, srv)
+
+	res, err := g.Conversar(context.Background(), nil, "crie a coluna Renegociação", "", &executorDeTeste{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Ferramentas) != 1 || res.Ferramentas[0].Nome != "criar_coluna" ||
+		!strings.Contains(res.Ferramentas[0].Args, "Renegociação") {
+		t.Errorf("ferramentas auditadas: %+v", res.Ferramentas)
+	}
+	if res.PromptTokens != 200 || res.CompletionTokens != 14 || res.Rodadas != 2 {
+		t.Errorf("tokens/rodadas: prompt=%d completion=%d rodadas=%d", res.PromptTokens, res.CompletionTokens, res.Rodadas)
+	}
+}
