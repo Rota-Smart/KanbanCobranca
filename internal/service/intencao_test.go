@@ -331,6 +331,9 @@ func TestParseIntencaoAdicionar(t *testing.T) {
 		{"adicione em aguardando assinatura", "aguardando assinatura"},
 		{"adicione na Cobrança", "Cobrança"},
 		{"adiciona o cliente em Negociando", "Negociando"},
+		{"mova para fazer visita", "fazer visita"},
+		{"mova pra Fazer Visita", "Fazer Visita"},
+		{"move pro Negociando", "Negociando"},
 	}
 	for _, c := range casos {
 		if col, ok := ParseIntencaoMoverContexto(c.msg); !ok || col != c.coluna {

@@ -591,10 +591,12 @@ func ParseIntencaoAbrir(msg string) (IntencaoAbrir, bool) {
 // ---- Mover pelo contexto do chat: "coloque em cobrança" ----
 
 // reMoverContexto reconhece mover SEM citar o nome: "coloque em cobrança",
-// "põe o cliente em Cobrança", "mova pra Negociando". A coluna vem do texto;
-// o cliente é o que está em discussão na conversa.
+// "põe o cliente em Cobrança", "mova pra Negociando", "mova para Fazer
+// Visita". A coluna vem do texto; o cliente é o que está em discussão na
+// conversa. Aceita em/na/no e também para/pro/pra (v1.54.0: "mova para X"
+// ia pra IA porque a regex só tinha em/na/no).
 var reMoverContexto = regexp.MustCompile(
-	`(?i)^\s*(?:mov\w+|arrast\w+|passe|passar|lev\w+|mand\w+|mud\w+|jog\w+|pux\w+|coloc\w+|coloque|coloq\w+|ponh\w+|p[õo]e|pôr|por|deix\w+|mex\w+|adic\w+)\s+(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|um\s+|uma\s+)?(?:card\s+|cliente\s+|ticket\s+)?(?:d[oa]\s+)?(?:cliente\s+)?(?:d[oa]\s+(?:chat|conversa)\s+)?(?:em|na|no)\s+(?:a\s+coluna\s+|coluna\s+|o\s+|a\s+)?(.+?)\s*[.!?]*$`)
+	`(?i)^\s*(?:mov\w+|arrast\w+|passe|passar|lev\w+|mand\w+|mud\w+|jog\w+|pux\w+|coloc\w+|coloque|coloq\w+|ponh\w+|p[õo]e|pôr|por|deix\w+|mex\w+|adic\w+)\s+(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|um\s+|uma\s+)?(?:card\s+|cliente\s+|ticket\s+)?(?:d[oa]\s+)?(?:cliente\s+)?(?:d[oa]\s+(?:chat|conversa)\s+)?(?:para|pro|pra|em|na|no)\s+(?:a\s+coluna\s+|coluna\s+|o\s+|a\s+)?(.+?)\s*[.!?]*$`)
 
 // ehAlvoDeContexto diz se o "alvo" extraído de um comando é uma referência
 // ao cliente em discussão na conversa ("esse cliente", "do chat", "da

@@ -222,7 +222,9 @@ export default function ChatDrawer(props: {
       if (acoes.length > 0) props.onMutou();
       App.ListarChats().then((cs) => setChats(cs ?? [])); // reordena pela atividade + título auto
     } catch (e) {
-      setMsgs((ms) => [...ms.slice(0, -1), { papel: 'assistant', conteudo: `⚠ ${String(e)}` }]);
+      const msg = String(e);
+      const conteudo = msg.includes('cancelado') ? `⏹ ${msg}` : `⚠ ${msg}`;
+      setMsgs((ms) => [...ms.slice(0, -1), { papel: 'assistant', conteudo }]);
     } finally {
       setEnviando(false);
     }
@@ -343,7 +345,19 @@ export default function ChatDrawer(props: {
                 )}
               </div>
             ))}
-            {enviando && <p className="text-xs text-slate-400 self-start">pensando…</p>}
+            {enviando && (
+              <div className="self-start flex items-center gap-2">
+                <p className="text-xs text-slate-400">pensando…</p>
+                <button
+                  type="button"
+                  className="text-xs rounded border border-slate-300 dark:border-slate-500 px-1.5 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-red-500/10 hover:text-red-600 hover:border-red-400"
+                  title="Cancela o pedido à IA: nada é enviado e a mensagem continua no histórico"
+                  onClick={() => { const c = chatIDRef.current; if (c !== null) App.CancelarChat(c); }}
+                >
+                  ⏹ Cancelar
+                </button>
+              </div>
+            )}
             <div ref={fimRef} />
           </div>
 

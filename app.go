@@ -51,6 +51,11 @@ type App struct {
 	muPrebusca    sync.Mutex
 	cachePrebusca map[string]string
 
+	// Cancelamento do pedido ao assistente: enquanto a IA responde, o
+	// CancelFunc da conversa fica aqui — o ⏹ do chat chama CancelarChat.
+	muCancela   sync.Mutex
+	cancelaChat map[int64]context.CancelFunc
+
 	muRota        sync.Mutex
 	rota          *rota360.Cliente // sessão ativa do 360; nil se desconectado
 	muConectando  sync.Mutex

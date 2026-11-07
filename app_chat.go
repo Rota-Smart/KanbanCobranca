@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
-	"strconv"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -211,12 +211,26 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 
 	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
 	defer cancel()
+	a.muCancela.Lock()
+	if a.cancelaChat == nil {
+		a.cancelaChat = map[int64]context.CancelFunc{}
+	}
+	a.cancelaChat[chatID] = cancel
+	a.muCancela.Unlock()
+	defer func() {
+		a.muCancela.Lock()
+		delete(a.cancelaChat, chatID)
+		a.muCancela.Unlock()
+	}()
 
 	// Pré-busca: mensagem que pede dados do 360 sai com o contexto já
 	// coletado (1 requisição HTTP) e sem as tools de leitura no request.
 	// Sessão expirada/ausente PARA AQUI — a IA não é acionada.
 	pre, err := a.prepararPrebusca(ctx, mensagem)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return service.ChatResultado{}, errors.New("⏹ pedido cancelado — nada foi enviado à IA; sua mensagem continua no histórico da conversa")
+		}
 		if errors.Is(err, rota360.ErrSessaoExpirada) {
 			return service.ChatResultado{}, errors.New("sessão do 360 expirada — o portal rejeitou o cookie. Reconecte-se em ⚙ Configurações; o assistente não foi acionado")
 		}
@@ -265,6 +279,9 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 		if errors.Is(err, service.ErrTetoTPM) {
 			return service.ChatResultado{}, errors.New("a Groq bateu o limite de tokens por minuto do plano free — o app já esperou a janela reabrir e tentou de novo. Aguarde ~1 minuto ou mande mensagens mais curtas; o que você pediu não foi acionado")
 		}
+		if errors.Is(err, context.Canceled) {
+			return service.ChatResultado{}, errors.New("⏹ pedido cancelado — nada foi enviado à IA; sua mensagem continua no histórico da conversa")
+		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			return service.ChatResultado{}, errors.New("o assistente demorou demais (90s) e a requisição foi abandonada — geralmente é a Groq enrolando para liberar a janela de tokens. Tente de novo em instantes")
 		}
@@ -279,6 +296,18 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 	}
 	a.registrarAuditoria(chatID, db.OrigemIA, "", mensagem, res.Resposta, res, time.Since(inicio))
 	return *res, nil
+}
+
+// CancelarChat aborta o pedido que o assistente está processando na conversa
+// chatID (botão ⏹ do chat). Se não há pedido em andamento, é um no-op — não
+// cancela nada que já terminou.
+func (a *App) CancelarChat(chatID int64) {
+	a.muCancela.Lock()
+	cancel := a.cancelaChat[chatID]
+	a.muCancela.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // comandoLocal roda a cadeia de comandos rígidos (sem IA) e devolve o nome
