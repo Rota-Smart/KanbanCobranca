@@ -351,6 +351,16 @@ func (a *App) GetHistoricoCobrancas(ticketID int64) ([]db.Cobranca, error) {
 	return list, nil
 }
 
+// ContagemAcordos devolve quantos acordos salvos cada card tem (ativa e
+// histórico): alimenta o selo 🤝 do card. Chaves JSON são o id do card.
+func (a *App) ContagemAcordos() map[int64]int {
+	m, err := a.cobrancas.ContagemPorTicket(a.ctx)
+	if err != nil || m == nil {
+		return map[int64]int{}
+	}
+	return m
+}
+
 // ValorAtualCliente reconsulta o 360 e devolve o total em aberto de agora
 // (com encargos), em centavos — o "depois do giro dos juros".
 func (a *App) ValorAtualCliente(ticketID int64) (int64, error) {

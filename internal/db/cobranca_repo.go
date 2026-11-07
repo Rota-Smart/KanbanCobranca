@@ -52,6 +52,27 @@ func (r *CobrancaRepo) SaveAtiva(ctx context.Context, c *Cobranca) (int64, error
 	return id, nil
 }
 
+// ContagemPorTicket devolve quantos acordos salvos cada ticket tem (ativas
+// e do histórico): alimenta o selo 🤝 dos cards sem N consultas.
+func (r *CobrancaRepo) ContagemPorTicket(ctx context.Context) (map[int64]int, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT ticket_id, COUNT(*) FROM cobrancas GROUP BY ticket_id`)
+	if err != nil {
+		return nil, fmt.Errorf("contar acordos por ticket: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
 // GetAtiva devolve a cobrança ativa do ticket, ou nil se ainda não houver acordo.
 func (r *CobrancaRepo) GetAtiva(ctx context.Context, ticketID int64) (*Cobranca, error) {
 	var c Cobranca

@@ -36,6 +36,112 @@ function iniciais(nome: string): string {
   return ((partes[0][0] ?? '') + (partes.length > 1 ? partes[partes.length - 1][0] ?? '' : '')).toUpperCase();
 }
 
+// SeloItem é um símbolo do card (ticket, visita, acordo...): ícone curto
+// exibido no card e nome completo mostrado no popover do overflow.
+export interface SeloItem {
+  key: string;
+  icone: string;
+  titulo: string;
+  /** Pílula completa (modo resumido); se ausente, mostra só o ícone. */
+  node?: React.ReactNode;
+}
+
+const LIMITE_SELOS = 2;
+
+// Selos do card com overflow: mostra os 2 primeiros e, se houver mais, um
+// botão "…+" que abre um popover com TODOS os selos e seus nomes (o nome
+// também aparece no tooltip de cada linha e de cada ícone visível).
+function Selos({ itens }: { itens: SeloItem[] }) {
+  const [aberto, setAberto] = useState(false);
+  const ancora = useRef<HTMLSpanElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  if (itens.length === 0) return null;
+  const visiveis = itens.slice(0, LIMITE_SELOS);
+  const extras = itens.length - visiveis.length;
+
+  function alternar() {
+    if (aberto) {
+      setAberto(false);
+      return;
+    }
+    const r = ancora.current?.getBoundingClientRect();
+    if (r) {
+      setPos({
+        left: Math.max(8, Math.min(r.left, window.innerWidth - 232)),
+        top: Math.min(r.bottom + 4, window.innerHeight - 200),
+      });
+    }
+    setAberto(true);
+  }
+
+  return (
+    <span ref={ancora} className="relative inline-flex items-center gap-1 shrink-0">
+      {visiveis.map((s) =>
+        s.node ? (
+          <span key={s.key}>{s.node}</span>
+        ) : (
+          <span key={s.key} className="text-[11px] shrink-0" title={s.titulo}>
+            {s.icone}
+          </span>
+        )
+      )}
+      {extras > 0 && (
+        <button
+          aria-label={`Mais ${extras} selo(s) — ver todos`}
+          title={`Mais ${extras} selo(s) — clique para ver todos`}
+          className="text-[10px] leading-none px-1 py-0.5 rounded-full bg-slate-200/80 text-slate-600 dark:bg-slate-500/25 dark:text-slate-300 hover:bg-slate-300/80 dark:hover:bg-slate-500/40 shrink-0 touch-none"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            alternar();
+          }}
+        >
+          …+
+        </button>
+      )}
+      {aberto &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-[99]"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setAberto(false);
+              }}
+            />
+            <div
+              className="fixed z-[100] rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-600/60 shadow-xl p-1.5 min-w-[13rem]"
+              style={{ left: pos?.left ?? 8, top: pos?.top ?? 8 }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="px-2 py-1 text-[10px] font-medium text-slate-400">Selos do card</p>
+              {itens.map((s) =>
+                s.node ? (
+                  <div key={s.key} className="px-2 py-1 flex items-center gap-2" title={s.titulo}>
+                    {s.node}
+                  </div>
+                ) : (
+                  <div
+                    key={s.key}
+                    className="px-2 py-1 flex items-center gap-2 rounded-lg hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+                    title={s.titulo}
+                  >
+                    <span className="text-[13px] w-5 text-center shrink-0">{s.icone}</span>
+                    <span className="min-w-0">{s.titulo}</span>
+                  </div>
+                )
+              )}
+            </div>
+          </>,
+          document.body
+        )}
+    </span>
+  );
+}
+
 // visitaResumo junta dia/turno/horário para o badge 📅 do card.
 function visitaResumo(t: Ticket): string {
   const dia = t.visitaData ? t.visitaData.slice(8, 10) + '/' + t.visitaData.slice(5, 7) : '';
@@ -393,6 +499,127 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
       </div>
     </>, document.body);
 
+  // Selos do card: símbolos ao lado do nome (modo min) e pílulas (resumo).
+  // O 🤝 novo marca acordo de renegociação salvo (ativa ou histórico).
+  const selosMin: SeloItem[] = [];
+  if (ticket.ticket360Numero) {
+    selosMin.push({ key: 'ticket360', icone: '🎫', titulo: `Ticket 360 #${ticket.ticket360Numero}` });
+  }
+  if (ticket.observacoes?.trim()) {
+    selosMin.push({ key: 'obs', icone: '🗒️', titulo: 'Tem observações internas' });
+  }
+  if ((ticket.tentativas ?? 0) > 0) {
+    selosMin.push({
+      key: 'tentativas',
+      icone: `📞${ticket.tentativas}`,
+      titulo: `${ticket.tentativas} tentativa(s) de contato${ticket.ultimaTentativa ? ` — última: ${ticket.ultimaTentativa.slice(8, 10)}/${ticket.ultimaTentativa.slice(5, 7)}` : ''}`,
+    });
+  }
+  if (ticket.visitaData) {
+    selosMin.push({
+      key: 'visita',
+      icone: ticket.visitaRealizada ? '✅' : '📅',
+      titulo: `Visita ${ticket.visitaRealizada ? 'realizada' : `agendada: ${visitaResumo(ticket)}`}`,
+    });
+  }
+  if (qtdAcordos > 0) {
+    selosMin.push({
+      key: 'acordo',
+      icone: `🤝${qtdAcordos > 1 ? qtdAcordos : ''}`,
+      titulo: `Acordo de renegociação salvo (${qtdAcordos})`,
+    });
+  }
+  if (comissao) {
+    selosMin.push({
+      key: 'comissao',
+      icone: comissao.recebido ? '✅' : '💰',
+      titulo: comissao.recebido
+        ? `Comissão recebida: ${formatCents(comissao.comissaoCents)}`
+        : `Comissão a receber: ${formatCents(comissao.comissaoCents)}`,
+    });
+  }
+  const selosResumo: SeloItem[] = [];
+  if (ticket.ticket360Numero) {
+    selosResumo.push({
+      key: 'ticket360',
+      icone: '🎫',
+      titulo: `Ticket 360 #${ticket.ticket360Numero} — clique para abrir no navegador`,
+      node: (
+        <button
+          className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-indigo-100/80 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200 hover:bg-indigo-200/80"
+          onClick={(e) => {
+            e.stopPropagation();
+            abrirTicket360();
+          }}
+        >
+          🎫 #{ticket.ticket360Numero}
+        </button>
+      ),
+    });
+  }
+  if (qtdAcordos > 0) {
+    selosResumo.push({
+      key: 'acordo',
+      icone: '🤝',
+      titulo: `Acordo de renegociação salvo (${qtdAcordos})`,
+      node: (
+        <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200">
+          🤝 {qtdAcordos} acordo{qtdAcordos > 1 ? 's' : ''}
+        </span>
+      ),
+    });
+  }
+  if (ticket.observacoes?.trim()) {
+    selosResumo.push({
+      key: 'obs',
+      icone: '🗒️',
+      titulo: ticket.observacoes,
+      node: (
+        <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-slate-200/80 text-slate-700 dark:bg-slate-500/25 dark:text-slate-200" title={ticket.observacoes}>
+          🗒️ obs
+        </span>
+      ),
+    });
+  }
+  if (ticket.visitaData) {
+    selosResumo.push({
+      key: 'visita',
+      icone: ticket.visitaRealizada ? '✅' : '📅',
+      titulo: `Visita ${visitaResumo(ticket)}${ticket.visitaEndereco ? ` — ${ticket.visitaEndereco}` : ''} — clique para editar`,
+      node: (
+        <button
+          className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-orange-100/80 text-orange-800 dark:bg-orange-500/20 dark:text-orange-200 hover:bg-orange-200/80"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAgendarVisita?.(ticket);
+          }}
+        >
+          {ticket.visitaRealizada ? '✅' : '📅'} {visitaResumo(ticket)}
+        </button>
+      ),
+    });
+  }
+  if (comissao && onEditarComissao) {
+    selosResumo.push({
+      key: 'comissao',
+      icone: comissao.recebido ? '✅' : '💰',
+      titulo: comissao.recebido
+        ? `Comissão recebida em ${comissao.recebidoEm} — clique para ver`
+        : `Comissão a receber: ${formatCents(comissao.comissaoCents)} — clique para editar`,
+      node: (
+        <button
+          className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${comissao.recebido ? 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200' : 'bg-teal-100/80 text-teal-800 dark:bg-teal-500/20 dark:text-teal-200'} hover:brightness-95`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!comissao.recebido) onEditarComissao(ticket);
+          }}
+        >
+          {comissao.recebido ? '✅ Recebida' : `💰 ${formatCents(comissao.comissaoCents)}`}
+        </button>
+      ),
+    });
+  }
+
   if (modo === 'min') {
     return (
       <div
@@ -419,41 +646,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           <span className="font-semibold text-slate-800 dark:text-slate-100 truncate flex-1 min-w-0">
             {ticket.nomeCliente || 'Sem nome'}
           </span>
-          {ticket.ticket360Numero && (
-            <span className="text-[11px] shrink-0" title={`Ticket 360 #${ticket.ticket360Numero}`}>🎫</span>
-          )}
-          {ticket.observacoes?.trim() && (
-            <span className="text-[11px] shrink-0" title="Tem observações internas">🗒️</span>
-          )}
-          {(ticket.tentativas ?? 0) > 0 && (
-            <span
-              className="text-[11px] px-1.5 rounded-full font-medium bg-sky-100/80 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200 shrink-0"
-              title={`${ticket.tentativas} tentativa(s) de contato${ticket.ultimaTentativa ? ` — última: ${ticket.ultimaTentativa.slice(8, 10)}/${ticket.ultimaTentativa.slice(5, 7)}` : ''}`}
-            >
-              📞{ticket.tentativas}
-            </span>
-          )}
-          {ticket.visitaData && (
-            <span
-              className={`text-[11px] px-1.5 rounded-full font-medium shrink-0 ${ticket.visitaRealizada ? 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200' : 'bg-orange-100/80 text-orange-800 dark:bg-orange-500/20 dark:text-orange-200'}`}
-              title={`Visita ${ticket.visitaRealizada ? 'realizada' : `agendada: ${visitaResumo(ticket)}`}`}
-            >
-              {ticket.visitaRealizada ? '✅' : '📅'}
-            </span>
-          )}
-          {qtdAcordos > 0 && (
-            <span className="text-[11px] px-1.5 rounded-full font-medium bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200 shrink-0">
-              ✓{qtdAcordos}
-            </span>
-          )}
-          {comissao && (
-            <span
-              className={`text-[11px] px-1.5 rounded-full font-medium shrink-0 ${comissao.recebido ? 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200' : 'bg-teal-100/80 text-teal-800 dark:bg-teal-500/20 dark:text-teal-200'}`}
-              title={comissao.recebido ? `Comissão recebida: ${formatCents(comissao.comissaoCents)}` : `Comissão a receber: ${formatCents(comissao.comissaoCents)}`}
-            >
-              {comissao.recebido ? '✅' : '💰'}
-            </span>
-          )}
+          <Selos itens={selosMin} />
           {(emSelecao || selecionado) && onAlternarSelecao && (
             <CheckSelecao ticket={ticket} selecionado={selecionado} onAlternar={onAlternarSelecao} />
           )}
@@ -527,57 +720,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
               <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${cor.pill}`}>
                 {ticket.tipoTicket}
               </span>
-              {ticket.ticket360Numero && (
-                <button
-                  title={`Ticket 360 #${ticket.ticket360Numero} — clique para abrir no navegador`}
-                  className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-indigo-100/80 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200 hover:bg-indigo-200/80"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    abrirTicket360();
-                  }}
-                >
-                  🎫 #{ticket.ticket360Numero}
-                </button>
-              )}
-              {qtdAcordos > 0 && (
-                <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200">
-                  ✓ {qtdAcordos} acordo{qtdAcordos > 1 ? 's' : ''}
-                </span>
-              )}
-              {ticket.observacoes?.trim() && (
-                <span
-                  className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-slate-200/80 text-slate-700 dark:bg-slate-500/25 dark:text-slate-200"
-                  title={ticket.observacoes}
-                >
-                  🗒️ obs
-                </span>
-              )}
-              {ticket.visitaData && (
-                <button
-                  className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-orange-100/80 text-orange-800 dark:bg-orange-500/20 dark:text-orange-200 hover:bg-orange-200/80"
-                  title={`Visita ${visitaResumo(ticket)}${ticket.visitaEndereco ? ` — ${ticket.visitaEndereco}` : ''} — clique para editar`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAgendarVisita?.(ticket);
-                  }}
-                >
-                  📅 {visitaResumo(ticket)}
-                </button>
-              )}
-              {comissao && onEditarComissao && (
-                <button
-                  className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${comissao.recebido ? 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200' : 'bg-teal-100/80 text-teal-800 dark:bg-teal-500/20 dark:text-teal-200'} hover:brightness-95`}
-                  title={comissao.recebido
-                    ? `Comissão recebida em ${comissao.recebidoEm} — clique para ver`
-                    : `Comissão a receber: ${formatCents(comissao.comissaoCents)} — clique para editar`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!comissao.recebido) onEditarComissao(ticket);
-                  }}
-                >
-                  {comissao.recebido ? '✅ Recebida' : `💰 ${formatCents(comissao.comissaoCents)}`}
-                </button>
-              )}
+              <Selos itens={selosResumo} />
             </div>
 
             {/* Linhas de "entrega": endereço e telefone, como no card do pedido */}

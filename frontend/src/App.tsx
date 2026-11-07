@@ -223,6 +223,8 @@ export default function App() {
   const [colunas, setColunas] = useState<string[]>(fallbackColunas);
   const [board, setBoard] = useState<Board>({});
   const [carregando, setCarregando] = useState(true);
+  // Quantidade de acordos salvos por card: alimenta o selo 🤝 dos cards.
+  const [acordosPorTicket, setAcordosPorTicket] = useState<Record<number, number>>({});
   const [erro, setErro] = useState('');
   const [toast, setToast] = useState('');
   // Aviso de versão nova achada pelo monitor: {versao, progresso} com
@@ -604,6 +606,10 @@ export default function App() {
     }
     void carregarVinculos();
     void carregarHistoricoFechados();
+    // Acordo salvo/alterado atualiza o selo 🤝 junto (onSalvou passa aqui).
+    bindings.ContagemAcordos()
+      .then((m) => setAcordosPorTicket(m as Record<number, number>))
+      .catch(() => {});
   }
 
   async function persistMove(id: number, coluna: string, posicao: number, snapshot: Board) {
@@ -1213,7 +1219,7 @@ ${txt.trim()}` : txt.trim());
                     ordenacaoModo={ordenacaoDe(c).modo}
                     ordenacaoDesc={ordenacaoDe(c).desc}
                     onOrdenacao={(modo, desc) => setOrdenacaoColuna(c, modo, desc)}
-                    acordosPorTicket={{}}
+                    acordosPorTicket={acordosPorTicket}
                     modoDoCard={modoDoCard}
                     onModoCard={setModoCard}
                     modoColuna={modos.colunas[c] ?? modos.global}

@@ -24,6 +24,20 @@ func (a *App) executarIntencaoAbrir(mensagem string, chatID int64) (*service.Cha
 	if !ok {
 		return nil, false
 	}
+	// "abra o card em visita" / "abra o card do João em Cobrança": a coluna
+	// citada tem de casar com uma coluna real do quadro; senão é só nome com
+	// "em" no meio e segue sem filtro.
+	if in.Coluna != "" {
+		if colunas, err := a.colunas.List(a.ctx); err == nil {
+			if certa, err := service.CasarColuna(in.Coluna, colunas); err == nil {
+				in.Coluna = certa
+			} else {
+				// Não é coluna: "em contato" pode até ser nome. Volta a ser
+				// texto livre (o contexto continua valendo).
+				in.Coluna = ""
+			}
+		}
+	}
 	// "esse cliente possui card aberto?": o alvo é o cliente em discussão
 	// na conversa (mesma memória do /apagar e do /realizada). Sem card, a
 	// resposta diz quem é o cliente (código service citado na conversa) em
@@ -38,8 +52,23 @@ func (a *App) executarIntencaoAbrir(mensagem string, chatID int64) (*service.Cha
 				}, true
 			}
 			return &service.ChatResultado{
-				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"o card do João tem card?\".",
+				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"abra o card do João\".",
 				Acoes:    []service.AcaoDoAgente{},
+			}, true
+		}
+		// "abra o card em visita": se o card não está na coluna pedida,
+		// abre assim mesmo e avisa onde ele está — abrir sempre ajuda mais
+		// que negar.
+		notaColuna := ""
+		if in.Coluna != "" && in.Coluna != card.ColunaAtual {
+			notaColuna = fmt.Sprintf(" — atenção: ele está na coluna %s, não em %s", card.ColunaAtual, in.Coluna)
+		}
+		if in.Abrir {
+			a.emitirAbrirCard(card.ID)
+			return &service.ChatResultado{
+				Resposta: fmt.Sprintf("Abrindo o card #%d — %s (coluna %s)%s", card.ID, card.NomeCliente, card.ColunaAtual, notaColuna),
+				Acoes: []service.AcaoDoAgente{{Ferramenta: "abrir_card",
+					Resumo: fmt.Sprintf("abriu o card %d (%s, coluna %s) via comando local", card.ID, card.NomeCliente, card.ColunaAtual)}},
 			}, true
 		}
 		return &service.ChatResultado{
@@ -59,6 +88,9 @@ func (a *App) executarIntencaoAbrir(mensagem string, chatID int64) (*service.Cha
 	if card.ID == 0 {
 		// Vários matches: a resposta lista os cards; abrir nenhum.
 		return &service.ChatResultado{Resposta: resposta, Acoes: []service.AcaoDoAgente{}}, true
+	}
+	if in.Coluna != "" && in.Coluna != card.ColunaAtual {
+		resposta += fmt.Sprintf(" — atenção: ele está na coluna %s, não em %s", card.ColunaAtual, in.Coluna)
 	}
 	a.emitirAbrirCard(card.ID)
 	return &service.ChatResultado{

@@ -533,7 +533,18 @@ type IntencaoAbrir struct {
 	Alvo     string // nome, código service, id do card ou nº do ticket 360
 	Contexto bool   // alvo é pronome ("esse cliente", "ele"): quem resolve é o contexto da conversa
 	Abrir    bool   // comando de abertura ("abra o card"): abre o modal, não só responde
+	Coluna   string // coluna citada ("abra o card em visita"): filtra/confere onde o card está
 }
+
+// reColunaDoAlvo separa um "nome em coluna" ("João em Cobrança"): o grupo 1 é
+// o nome, o 2 a coluna. Se a coluna não casar com nenhuma do quadro, quem
+// decide é o chamador — pode ser nome com "em" no meio.
+var reColunaDoAlvo = regexp.MustCompile(`(?i)^(.+?)\s+(?:em|na|no)\s+(.+)$`)
+
+// reSoColuna reconhece alvo que é SÓ a referência de coluna: "em visita",
+// "na Cobrança", "no orçamento" (ex.: "abra o card do cliente em contato" —
+// o regex do card já comeu "do cliente").
+var reSoColuna = regexp.MustCompile(`(?i)^(?:em|na|no)\s+(.+)$`)
 
 // reAbrirCard: verbo de abertura + palavra-chave obrigatória (card/cliente/
 // ticket) — "abra o orçamento" não é card.
@@ -551,7 +562,7 @@ var reTemCard = regexp.MustCompile(
 // "abrir o card", "abre o card do cliente", "me mostre o card". O card é o
 // do cliente em discussão na conversa e o modal abre de verdade.
 var reAbrirCardContexto = regexp.MustCompile(
-	`(?i)^\s*(?:abra|abre|abrir|abri|expand\w*|mostre|mostra|me\s+mostre|me\s+mostra|visualiz\w*|vejo|veja)\s+(?:o\s+|esse\s+|este\s+|aquele\s+)?cards?\s*(?:d[oa]\s+)?(?:cliente\b)?\s*[.!?]?\s*$`)
+	`(?i)^\s*(?:abra|abre|abrir|abri|expand\w*|mostre|mostra|me\s+mostre|me\s+mostra|visualiz\w*|vejo|veja)\s+(?:o\s+|esse\s+|este\s+|aquele\s+)?cards?\s*(?:d[oa]\s+)?(?:cliente\b)?\s*(?:(?:em|na|no)\s+(?:a\s+coluna\s+|coluna\s+|o\s+|a\s+)?(.+?))?\s*[.!?]?\s*$`)
 
 var reContextoCard = regexp.MustCompile(
 	`(?i)^\s*(?:(?:verifi\w+|confer\w+|confira|veja|checa|checar|olha|olhe)\s+)?(?:se\s+)?(?:o\s+|a\s+|esse\s+|este\s+|aquele\s+|ele\s+|ela\s+)?(?:card\s+|cliente\s+|ticket\s+)?(?:d[oa]\s+)?(?:cliente\s+)?(?:tem|possui|poss\w+|existe)\s+(?:um\s+|algum\s+)?cards?\s*(?:abertos?|em\s+aberto)?\s*[.!?]*$`)
@@ -559,8 +570,14 @@ var reContextoCard = regexp.MustCompile(
 // ParseIntencaoAbrir reconhece os pedidos de abrir/verificar card no texto;
 // ok=false quando não é um deles.
 func ParseIntencaoAbrir(msg string) (IntencaoAbrir, bool) {
-	if reAbrirCardContexto.MatchString(msg) {
-		return IntencaoAbrir{Contexto: true, Abrir: true}, true
+	if m := reAbrirCardContexto.FindStringSubmatch(msg); m != nil {
+		in := IntencaoAbrir{Contexto: true, Abrir: true}
+		if col := limparBordas(m[1]); col != "" {
+			// "abra o card em visita": a coluna vem do texto; o card é o do
+			// cliente em discussão na conversa.
+			in.Coluna = col
+		}
+		return in, true
 	}
 	if reContextoCard.MatchString(msg) {
 		return IntencaoAbrir{Contexto: true}, true
@@ -582,7 +599,21 @@ func ParseIntencaoAbrir(msg string) (IntencaoAbrir, bool) {
 				"do chat", "da conversa", "do chat atual", "da conversa atual":
 				return IntencaoAbrir{Contexto: true}, true
 			}
-			return IntencaoAbrir{Alvo: alvo}, true
+			in := IntencaoAbrir{Alvo: alvo}
+			// "abra o card do João em Cobrança": se o resto depois do "em/na/no"
+			// parecer coluna, sai do alvo — o chamador confere com as colunas
+			// reais do quadro (nome com "em" no meio continua nome).
+			if s := reSoColuna.FindStringSubmatch(alvo); s != nil {
+				in.Coluna = limparBordas(s[1])
+				in.Alvo = ""
+				in.Contexto = true
+				return in, true
+			}
+			if s := reColunaDoAlvo.FindStringSubmatch(alvo); s != nil {
+				in.Coluna = limparBordas(s[2])
+				in.Alvo = limparBordas(s[1])
+			}
+			return in, true
 		}
 	}
 	return IntencaoAbrir{}, false

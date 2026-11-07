@@ -277,6 +277,35 @@ func TestParseIntencaoAbrir(t *testing.T) {
 	}
 }
 
+func TestParseIntencaoAbrirColuna(t *testing.T) {
+	casos := []struct {
+		msg      string
+		alvo     string
+		coluna   string
+		contexto bool
+		abrir    bool
+	}{
+		{"abra o card", "", "", true, true},
+		{"abra o card em visita", "", "visita", true, true},
+		{"abra o card na Cobrança", "", "Cobrança", true, true},
+		{"abre o card no orçamento", "", "orçamento", true, true},
+		{"abra o card em contatos.", "", "contatos", true, true},
+		{"abra o card do João em Cobrança", "João", "Cobrança", false, false},
+		{"abra o cliente Maria Souza na Visita Agendada", "Maria Souza", "Visita Agendada", false, false},
+	}
+	for _, c := range casos {
+		in, ok := ParseIntencaoAbrir(c.msg)
+		if !ok {
+			t.Errorf("ParseIntencaoAbrir(%q) não reconheceu", c.msg)
+			continue
+		}
+		if in.Alvo != c.alvo || in.Coluna != c.coluna || in.Contexto != c.contexto || in.Abrir != c.abrir {
+			t.Errorf("ParseIntencaoAbrir(%q) = %+v; quero alvo=%q coluna=%q contexto=%v abrir=%v",
+				c.msg, in, c.alvo, c.coluna, c.contexto, c.abrir)
+		}
+	}
+}
+
 func TestParseIntencaoAbrirContexto(t *testing.T) {
 	for _, msg := range []string{
 		"esse cliente possui card aberto?",

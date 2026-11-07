@@ -276,3 +276,44 @@ func ticketExemploPtr() *Ticket {
 	tk := ticketExemplo()
 	return &tk
 }
+
+func TestContagemPorTicket(t *testing.T) {
+	_, tr, cr := newTestDB(t)
+	ctx := context.Background()
+
+	id, err := tr.Save(ctx, ticketExemploPtr())
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	id2, err := tr.Save(ctx, ticketExemploPtr())
+	if err != nil {
+		t.Fatalf("Save 2: %v", err)
+	}
+
+	m, err := cr.ContagemPorTicket(ctx)
+	if err != nil {
+		t.Fatalf("ContagemPorTicket: %v", err)
+	}
+	if len(m) != 0 {
+		t.Errorf("banco sem acordos deveria devolver mapa vazio, veio %v", m)
+	}
+
+	c := &Cobranca{TicketID: id, TotalAbertoCents: 10000, NumeroVezes: 2, ParceladoCents: 5000, UltimaParcelaCents: 5000, FinalCents: 5000}
+	if _, err := cr.SaveAtiva(ctx, c); err != nil {
+		t.Fatalf("SaveAtiva: %v", err)
+	}
+	if _, err := cr.SaveAtiva(ctx, c); err != nil {
+		t.Fatalf("SaveAtiva 2: %v", err)
+	}
+
+	m, err = cr.ContagemPorTicket(ctx)
+	if err != nil {
+		t.Fatalf("ContagemPorTicket: %v", err)
+	}
+	if m[id] != 2 {
+		t.Errorf("esperava 2 acordos para o ticket %d, veio %d", id, m[id])
+	}
+	if m[id2] != 0 {
+		t.Errorf("ticket sem acordo deveria estar ausente do mapa, veio %d", m[id2])
+	}
+}
