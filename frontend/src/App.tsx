@@ -1362,7 +1362,7 @@ ${txt.trim()}` : txt.trim());
           onClick={() => setHistoricoAberto(false)}
         >
           <div
-            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[26rem] max-w-full max-h-[70vh] flex flex-col"
+            className="painel-modal rounded-3xl w-[26rem] max-w-full max-h-[70vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0">
@@ -1473,7 +1473,7 @@ ${txt.trim()}` : txt.trim());
           onClick={() => setComissoesAberto(false)}
         >
           <div
-            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[26rem] max-w-full max-h-[70vh] flex flex-col"
+            className="painel-modal rounded-3xl w-[26rem] max-w-full max-h-[70vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0">

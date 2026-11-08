@@ -32,7 +32,7 @@ export default function MovimentarTicketDialog(props: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
       <div
-        className="glass rounded-2xl w-[28rem] max-w-full p-4 shadow-xl"
+        className="painel-modal rounded-3xl w-[28rem] max-w-full p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">

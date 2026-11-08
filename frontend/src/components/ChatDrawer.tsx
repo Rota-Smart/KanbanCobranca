@@ -251,7 +251,7 @@ export default function ChatDrawer(props: {
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
       <aside
-        className="glass h-full shadow-xl flex relative"
+        className="painel-modal rounded-3xl overflow-hidden m-3 h-[calc(100%-1.5rem)] flex relative"
         style={{ width: largura, maxWidth: '100%' }}
         onClick={(e) => e.stopPropagation()}
       >

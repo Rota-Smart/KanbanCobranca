@@ -78,7 +78,7 @@ export default function VisitaModal({ ticket, onSalvo, onFechar }: Props) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={onFechar}>
       <div
-        className="glass rounded-2xl w-[26rem] max-w-full p-4 shadow-xl"
+        className="painel-modal rounded-3xl w-[26rem] max-w-full p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
