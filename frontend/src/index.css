@@ -183,3 +183,31 @@ html.dark body {
     linear-gradient(180deg, rgba(51, 65, 120, 0.7) 0%, rgba(30, 41, 85, 0.62) 100%);
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
+
+/* ===== Paleta azul-escuro (visual único) =====
+   Fundo, painéis, cards, menus e modais em tons de azul-marinho. */
+html.dark body {
+  background-color: #071233;
+  background-image:
+    radial-gradient(120% 90% at 85% -10%, rgba(45, 80, 190, 0.45) 0%, rgba(45, 80, 190, 0) 55%),
+    radial-gradient(90% 80% at -10% 100%, rgba(25, 50, 140, 0.5) 0%, rgba(25, 50, 140, 0) 60%),
+    linear-gradient(160deg, #10215a 0%, #0a1740 50%, #050d28 100%);
+}
+.dark .glass {
+  background: rgba(14, 30, 78, 0.62);
+  border: 1px solid rgba(120, 150, 255, 0.16);
+}
+.dark .glass-soft {
+  background: rgba(18, 38, 96, 0.42);
+  border: 1px solid rgba(120, 150, 255, 0.14);
+}
+.dark .card-tile {
+  background: linear-gradient(180deg, rgba(32, 58, 140, 0.78) 0%, rgba(20, 40, 104, 0.72) 100%);
+  border: 1px solid rgba(130, 160, 255, 0.2);
+}
+/* Superfícies sólidas dos menus, modais e chat: troca cinza por marinho */
+.dark .bg-slate-900, .dark .dark\:bg-slate-900 { background-color: #081436 !important; }
+.dark .dark\:bg-slate-800, .dark .dark\:bg-slate-800\/95 { background-color: rgba(13, 28, 74, 0.97) !important; }
+.dark .dark\:bg-slate-800\/80, .dark .dark\:bg-slate-800\/70, .dark .dark\:bg-slate-800\/60 { background-color: rgba(20, 40, 100, 0.75) !important; }
+.dark .dark\:bg-slate-700, .dark .dark\:bg-slate-700\/50 { background-color: #1a3480 !important; }
+.dark .dark\:border-slate-700, .dark .dark\:border-slate-600, .dark .dark\:border-slate-600\/60 { border-color: rgba(120, 150, 255, 0.22) !important; }

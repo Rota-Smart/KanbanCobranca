@@ -156,13 +156,6 @@ function mensagemChatDaTela(d: TicketDaTela): string | null {
   return null;
 }
 
-// Tema claro/escuro persistido; aplicado na <html> via classe 'dark'.
-function temaInicial(): 'claro' | 'escuro' {
-  const salvo = localStorage.getItem('tema');
-  if (salvo === 'claro' || salvo === 'escuro') return salvo;
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro';
-}
-
 // colunaDisparaCobranca: mover para cá puxa o financeiro do 360 e gera a proposta.
 const colunaDisparaCobranca = 'Cobrança';
 
@@ -245,7 +238,6 @@ export default function App() {
   const [chatAberto, setChatAberto] = useState(false);
   const [chatMsgInicial, setChatMsgInicial] = useState<string | null>(null);
   const [chatKey, setChatKey] = useState(0); // cada Shift+F2 remonta o drawer p/ reenviar
-  const [tema, setTema] = useState<'claro' | 'escuro'>(temaInicial);
   const [sincronizando, setSincronizando] = useState(false);
   const [modos, setModos] = useState<ModosCards>(modosDoStorage);
   const [ordenacoes, setOrdenacoes] = useState<Record<string, Ordenacao>>(ordenacoesDoStorage);
@@ -391,9 +383,9 @@ export default function App() {
   );
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', tema === 'escuro');
-    localStorage.setItem('tema', tema);
-  }, [tema]);
+    // Visual único em azul escuro: o tema escuro fica sempre ligado.
+    document.documentElement.classList.add('dark');
+  }, []);
 
   useEffect(() => {
     Promise.all([bindings.GetColunas(), bindings.GetTickets()])
@@ -1043,14 +1035,6 @@ ${txt.trim()}` : txt.trim());
           onClick={sincronizar}
         >
           <span className={sincronizando ? 'animate-spin inline-block' : ''}>⟳</span>
-        </button>
-        <button
-          className="rail-btn"
-          aria-label={tema === 'escuro' ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
-          title={tema === 'escuro' ? 'Tema claro' : 'Tema escuro'}
-          onClick={() => setTema(tema === 'escuro' ? 'claro' : 'escuro')}
-        >
-          {tema === 'escuro' ? '☀️' : '🌙'}
         </button>
         <button className="rail-btn" title="Configurações" aria-label="Configurações" onClick={() => setConfigAberta(true)}>
           ⚙
