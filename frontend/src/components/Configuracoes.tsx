@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as App from '../../wailsjs/go/main/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
-import type { ConfigApp, ParametroNegociacao, SyncInfo } from '../wails-types';
+import type { ConfigApp, NuvemInfo, ParametroNegociacao, SyncInfo } from '../wails-types';
 
 const MODELOS_SUGERIDOS = [
   'openai/gpt-oss-120b',
@@ -36,6 +36,9 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   const [syncRepo, setSyncRepo] = useState('');
   const [syncInfo, setSyncInfo] = useState<SyncInfo | null>(null);
   const [syncOcupado, setSyncOcupado] = useState(false);
+  const [nuvemDSN, setNuvemDSN] = useState('');
+  const [nuvemInfo, setNuvemInfo] = useState<NuvemInfo | null>(null);
+  const [nuvemOcupado, setNuvemOcupado] = useState(false);
   const [usoGroq, setUsoGroq] = useState<import('../wails-types').UsoGroq | null>(null);
   const [exportandoAuditoria, setExportandoAuditoria] = useState(false);
   // Versão já baixada e trocada no disco esperando reinício ("Depois" no
@@ -49,6 +52,34 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
 
   function recarregarSync() {
     App.SyncStatus().then(setSyncInfo).catch(() => setSyncInfo(null));
+    App.NuvemStatus().then(setNuvemInfo).catch(() => setNuvemInfo(null));
+  }
+
+  async function salvarNuvem() {
+    setNuvemOcupado(true);
+    try {
+      await App.SetNuvemConfig(nuvemDSN.trim());
+      setNuvemDSN('');
+      props.onToast('Conexão com a nuvem salva e testada.');
+      recarregarSync();
+    } catch (e) {
+      props.onToast(String(e));
+    } finally {
+      setNuvemOcupado(false);
+    }
+  }
+
+  async function enviarNuvem() {
+    if (!window.confirm('Enviar TODOS os dados deste PC para a nuvem? O que estiver lá é sobrescrito com os dados daqui.')) return;
+    setNuvemOcupado(true);
+    try {
+      props.onToast((await App.EnviarParaNuvem()).mensagem);
+      recarregarSync();
+    } catch (e) {
+      props.onToast(String(e));
+    } finally {
+      setNuvemOcupado(false);
+    }
   }
 
   function recarregar() {
@@ -683,6 +714,49 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
                     Baixar dados
                   </button>
                 </>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Nuvem (Supabase) — Etapa 1 do RotaSuite Web */}
+        <section className="mt-3 border rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-slate-700">Nuvem (site RotaSuite)</h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Sobe os dados deste PC para o banco na nuvem, que alimenta o site{' '}
+            <strong>360.foundrycode.com.br</strong>. Pode repetir quando quiser: o envio mais recente
+            vale.
+            {nuvemInfo?.ultimoEnvio && (
+              <> Último envio: <strong>{nuvemInfo.ultimoEnvio}</strong> ({nuvemInfo.ultimoTotal} registros).</>
+            )}
+          </p>
+          <div className="mt-2 flex flex-col gap-2">
+            {!nuvemInfo?.configurado && (
+              <input
+                className="border rounded px-2 py-1 text-sm"
+                type="password"
+                placeholder="Conexão da nuvem (postgresql://…)"
+                value={nuvemDSN}
+                onChange={(e) => setNuvemDSN(e.target.value)}
+              />
+            )}
+            <div className="flex gap-2">
+              {!nuvemInfo?.configurado ? (
+                <button
+                  className="bg-blue-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
+                  disabled={nuvemOcupado || !nuvemDSN.trim()}
+                  onClick={salvarNuvem}
+                >
+                  {nuvemOcupado ? 'Testando…' : 'Salvar e testar'}
+                </button>
+              ) : (
+                <button
+                  className="bg-blue-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
+                  disabled={nuvemOcupado}
+                  onClick={enviarNuvem}
+                >
+                  {nuvemOcupado ? 'Enviando…' : '☁️ Enviar dados para a nuvem'}
+                </button>
               )}
             </div>
           </div>

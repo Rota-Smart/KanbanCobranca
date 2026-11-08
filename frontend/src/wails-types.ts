@@ -39,6 +39,11 @@ export interface SyncInfo {
   pendenteBaixar: boolean;
   localAlterado: boolean;
 }
+export interface NuvemInfo {
+  configurado: boolean;
+  ultimoEnvio: string;
+  ultimoTotal: number;
+}
 export interface ResultadoSync {
   acao: 'enviado' | 'recebido' | 'em-dia' | 'conflito' | 'configurar';
   mensagem: string;

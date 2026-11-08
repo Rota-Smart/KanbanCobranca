@@ -7,6 +7,7 @@ toolchain go1.27.3
 require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
+	github.com/lib/pq v1.10.9
 	github.com/wailsapp/wails/v2 v2.17.0
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/sys v0.49.0
