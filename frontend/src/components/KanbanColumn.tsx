@@ -17,7 +17,7 @@ const corPorColuna: Record<string, string> = {
 function Seta({ aberta }: { aberta: boolean }) {
   return (
     <svg
-      className={`seta-coluna w-4 h-4 text-slate-400 hover:text-slate-600 dark:hover:text-white ${aberta ? '' : 'rotate-180'}`}
+      className={`seta-coluna w-4 h-4 text-white/60 hover:text-white ${aberta ? '' : 'rotate-180'}`}
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
@@ -82,8 +82,8 @@ function BotaoModo({ ativo, titulo, children, onClick }: { ativo: boolean; titul
       onClick={onClick}
       className={`p-0.5 rounded text-[13px] leading-none transition ${
         ativo
-          ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300'
-          : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'
+          ? 'bg-white/25 text-white'
+          : 'text-white/60 hover:text-white'
       }`}
     >
       {children}
@@ -111,7 +111,7 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
 
   if (recolhida) {
     return (
-      <div className="glass-soft rounded-2xl w-12 shrink-0 flex flex-col items-center py-3 gap-3">
+      <div className="glass-soft rounded-3xl w-12 shrink-0 flex flex-col items-center py-3 gap-3">
         <button
           aria-label={`Expandir coluna ${coluna}`}
           onClick={() => setRecolhida(false)}
@@ -119,7 +119,7 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
         >
           <Seta aberta={false} />
         </button>
-        <span className="text-xs text-slate-500 [writing-mode:vertical-rl] font-medium tracking-wide">
+        <span className="titulo-coluna text-white/90 [writing-mode:vertical-rl]">
           {coluna} ({contagem ?? tickets.length})
         </span>
       </div>
@@ -128,14 +128,14 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
 
   return (
     <div
-      className={`glass rounded-2xl w-72 shrink-0 flex flex-col p-2.5 transition-shadow ${
-        isOver ? 'ring-2 ring-sky-400/70' : ''
+      className={`group/coluna glass-soft rounded-3xl w-72 shrink-0 flex flex-col p-3 transition-shadow ${
+        isOver ? 'ring-2 ring-white/70' : ''
       }`}
     >
-      <div className="flex items-center justify-between px-1.5 pb-2.5">
+      <div className="flex items-center justify-between px-1 pb-3 pt-0.5">
         <div className="flex items-center gap-2 min-w-0">
           {alca}
-          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${corPorColuna[coluna] ?? 'bg-slate-400'}`} aria-hidden />
+          <span className={`w-2 h-2 rounded-full shrink-0 ring-2 ring-white/40 ${corPorColuna[coluna] ?? 'bg-slate-300'}`} aria-hidden />
           {editando ? (
             <form
               className="flex items-center gap-1 min-w-0"
@@ -156,19 +156,21 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
             </form>
           ) : (
             <>
-              <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{coluna}</h2>
-              <span className="text-[11px] font-medium text-slate-500 bg-slate-500/10 rounded-full px-2 py-0.5 shrink-0">
-                {contagem ?? tickets.length}
+              <h2 className="titulo-coluna text-white truncate">{coluna}</h2>
+              <span className="text-xs font-medium text-white/70 shrink-0">
+                ({contagem ?? tickets.length})
               </span>
             </>
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {/* Controles finos aparecem ao passar o mouse; o título fica inteiro. */}
+          <div className="hidden group-hover/coluna:flex group-focus-within/coluna:flex items-center gap-1">
           {onOrdenacao && (
-            <div className="flex items-center rounded-lg bg-slate-500/10 overflow-hidden" title="Ordenar os cards da coluna">
+            <div className="flex items-center rounded-lg bg-white/15 overflow-hidden" title="Ordenar os cards da coluna">
               <select
                 aria-label={`Ordenar cards de ${coluna}`}
-                className="border-0 bg-transparent text-[11px] text-slate-500 dark:text-slate-300 py-0.5 pl-1.5 pr-0.5 outline-none cursor-pointer appearance-none max-w-[72px]"
+                className="border-0 bg-transparent text-[11px] text-white/85 py-0.5 pl-1.5 pr-0.5 outline-none cursor-pointer appearance-none max-w-[72px] [&>option]:text-slate-800"
                 value={ordenacaoModo}
                 onChange={(e) => onOrdenacao(e.target.value as OrdenacaoModo, ordenacaoDesc)}
               >
@@ -179,7 +181,7 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
               <button
                 aria-label={ordenacaoDesc ? `Ordem decrescente em ${coluna}` : `Ordem crescente em ${coluna}`}
                 title={ordenacaoDesc ? 'Decrescente (clique p/ crescente)' : 'Crescente (clique p/ decrescente)'}
-                className="px-1 py-0.5 text-[11px] leading-none text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                className="px-1 py-0.5 text-[11px] leading-none text-white/70 hover:text-white"
                 onClick={() => onOrdenacao(ordenacaoModo, !ordenacaoDesc)}
               >
                 {ordenacaoDesc ? '↓' : '↑'}
@@ -192,11 +194,12 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
           <BotaoModo ativo={modoColuna === 'resumo'} titulo={`Deixar resumidos todos os cards de ${coluna}`} onClick={() => onModoColuna(coluna, 'resumo')}>
             ▤
           </BotaoModo>
+          </div>
           <div className="relative">
             <button
               aria-label={`Opções da coluna ${coluna}`}
               title="Renomear, mover ou apagar a coluna"
-              className="p-0.5 rounded text-[13px] leading-none text-slate-400 hover:text-slate-600 dark:hover:text-white"
+              className="px-1 rounded text-base leading-none text-white/70 hover:text-white"
               onClick={() => setMenuAberto((v) => !v)}
             >
               ⋯
@@ -204,7 +207,7 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
             {menuAberto && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setMenuAberto(false)} />
-                <div className="absolute right-0 top-6 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 w-44 text-sm">
+                <div className="absolute right-0 top-6 z-50 bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-white/60 dark:border-slate-700 rounded-2xl shadow-2xl py-1 w-48 text-sm text-slate-700 dark:text-slate-200">
                   <button
                     className="block w-full text-left px-3 py-1.5 hover:bg-sky-500/10"
                     onClick={() => {
@@ -257,7 +260,7 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
         </div>
       </div>
 
-      <div ref={setNodeRef} className="flex flex-col gap-2.5 flex-1 min-h-[4rem] overflow-y-auto scroll-hide pr-0.5">
+      <div ref={setNodeRef} className="flex flex-col gap-3 flex-1 min-h-[4rem] overflow-y-auto scroll-hide pr-0.5">
         <SortableContext items={tickets.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {tickets.map((t) => (
             <TicketCard
@@ -284,7 +287,7 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
 
       {novoAberto ? (
         <form
-          className="mt-2.5 flex flex-col gap-1.5 glass-soft rounded-xl p-2"
+          className="mt-2.5 flex flex-col gap-1.5 glass rounded-2xl p-2"
           onSubmit={(e) => {
             e.preventDefault();
             if (!nome.trim()) return;
@@ -317,7 +320,7 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
             >
               Criar
             </button>
-            <button type="button" className="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-white px-2" onClick={() => setNovoAberto(false)}>
+            <button type="button" className="text-sm text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-white px-2" onClick={() => setNovoAberto(false)}>
               Cancelar
             </button>
           </div>
@@ -325,13 +328,13 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
       ) : (
         <div className="mt-2.5 flex items-center justify-between px-1.5">
           <button
-            className="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-white py-1 text-left rounded font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+            className="text-sm text-white/80 hover:text-white py-1 text-left rounded font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
             onClick={() => setNovoAberto(true)}
           >
             + Novo card
           </button>
           <button
-            className="text-xs text-sky-600 dark:text-sky-300 hover:text-sky-700 dark:hover:text-sky-200 py-1 rounded font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+            className="text-xs text-white/80 hover:text-white bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-full font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
             aria-label={`Buscar cliente do 360 para a coluna ${coluna}`}
             onClick={() => onBuscar360(coluna)}
           >

@@ -11,22 +11,22 @@ const corPorTipo: Record<string, { faixa: string; avatar: string; pill: string }
   'Manutenção': {
     faixa: 'bg-gradient-to-b from-amber-400 to-orange-500',
     avatar: 'bg-gradient-to-br from-amber-400 to-orange-500',
-    pill: 'bg-amber-100/80 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200',
+    pill: 'bg-amber-400/75 text-white shadow-sm',
   },
   'Instalação': {
     faixa: 'bg-gradient-to-b from-sky-400 to-blue-500',
     avatar: 'bg-gradient-to-br from-sky-400 to-blue-500',
-    pill: 'bg-sky-100/80 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200',
+    pill: 'bg-teal-500/70 text-white shadow-sm',
   },
   'Suporte': {
     faixa: 'bg-gradient-to-b from-violet-400 to-purple-500',
     avatar: 'bg-gradient-to-br from-violet-400 to-purple-500',
-    pill: 'bg-violet-100/80 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200',
+    pill: 'bg-violet-500/65 text-white shadow-sm',
   },
   'Outro': {
     faixa: 'bg-gradient-to-b from-slate-400 to-slate-500',
     avatar: 'bg-gradient-to-br from-slate-400 to-slate-500',
-    pill: 'bg-slate-200/80 text-slate-700 dark:bg-slate-500/25 dark:text-slate-200',
+    pill: 'bg-slate-500/55 text-white shadow-sm',
   },
 };
 
@@ -625,7 +625,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
       <div
         ref={setNodeRef}
         style={{ transform: CSS.Translate.toString(transform), transition }}
-        className={`glass card-delivery rounded-2xl relative overflow-hidden text-sm cursor-pointer ${isDragging ? 'opacity-50 scale-95' : ''} ${selecionado ? 'ring-2 ring-indigo-500' : ''}`}
+        className={`glass card-tile card-delivery rounded-2xl relative overflow-hidden text-sm cursor-pointer ${isDragging ? 'opacity-50 scale-95' : ''} ${selecionado ? 'ring-2 ring-indigo-500' : ''}`}
         {...attributes}
         {...listeners}
         onClick={onAbrir}
@@ -635,8 +635,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
           if (e.key === 'Enter') onAbrir();
         }}
       >
-        <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${cor.faixa}`} />
-        <div className="pl-4 pr-2 py-2 flex items-center gap-2.5">
+        <div className="pl-3.5 pr-2 py-2.5 flex items-center gap-2.5">
           <div
             className={`shrink-0 w-7 h-7 rounded-full ${cor.avatar} text-white flex items-center justify-center text-[10px] font-bold shadow-inner select-none`}
             aria-hidden
@@ -668,7 +667,7 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={`glass card-delivery rounded-2xl relative overflow-hidden text-sm ${isDragging ? 'opacity-50 scale-95' : ''} ${selecionado ? 'ring-2 ring-indigo-500' : ''}`}
+      className={`glass card-tile card-delivery rounded-2xl relative overflow-hidden text-sm ${isDragging ? 'opacity-50 scale-95' : ''} ${selecionado ? 'ring-2 ring-indigo-500' : ''}`}
       {...attributes}
       {...listeners}
       onClick={onAbrir}
@@ -678,67 +677,61 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
         if (e.key === 'Enter') onAbrir();
       }}
     >
-      {/* Faixa colorida do tipo, como a tarja do card de pedido */}
-      <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${cor.faixa}`} />
+      <div className="px-3.5 pt-3 pb-2.5">
+        <div className="flex items-start justify-between gap-1">
+          <div className="min-w-0">
+            <span className="font-medium text-[15px] text-slate-800 dark:text-slate-100 break-words leading-snug block">
+              {ticket.nomeCliente || 'Sem nome'}
+            </span>
+            {ticket.codService && (
+              <span className="text-[11px] text-slate-500 font-mono">#{ticket.codService}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0 -mr-0.5">
+            {(emSelecao || selecionado) && onAlternarSelecao && (
+              <CheckSelecao ticket={ticket} selecionado={selecionado} onAlternar={onAlternarSelecao} />
+            )}
+            <button
+              aria-label="Opções do card"
+              className="text-slate-400 hover:text-slate-700 dark:hover:text-white px-1 rounded shrink-0 touch-none"
+              onPointerDown={pararDrag}
+              onClick={abrirMenu}
+            >
+              ⋯
+            </button>
+          </div>
+        </div>
 
-      <div className="pl-4 pr-2 py-3">
-        <div className="flex items-start gap-2.5">
-          {/* Avatar com iniciais do cliente */}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${cor.pill}`}>
+            {ticket.tipoTicket}
+          </span>
+          <Selos itens={selosResumo} />
+        </div>
+
+        {/* Rodapé: linhas de contato à esquerda e avatar do cliente à direita */}
+        <div className="mt-2.5 flex items-end justify-between gap-2">
+          <div className="min-w-0 space-y-0.5">
+            {ticket.endereco && (
+              <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                <span aria-hidden>📍</span>
+                <span className="truncate">{ticket.endereco}</span>
+              </div>
+            )}
+            {ticket.telefone && (
+              <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                <span aria-hidden>📞</span>
+                <span className="truncate">{ticket.telefone}</span>
+              </div>
+            )}
+          </div>
           <div
-            className={`shrink-0 w-9 h-9 rounded-full ${cor.avatar} text-white flex items-center justify-center text-xs font-bold shadow-inner select-none`}
+            className={`relative shrink-0 w-8 h-8 rounded-full ${cor.avatar} text-white flex items-center justify-center text-[11px] font-bold ring-2 ring-white/80 dark:ring-white/20 shadow select-none`}
             aria-hidden
           >
             {iniciais(ticket.nomeCliente || '?')}
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-1">
-              <div className="min-w-0">
-                <span className="font-semibold text-slate-800 dark:text-slate-100 break-words leading-tight block">
-                  {ticket.nomeCliente || 'Sem nome'}
-                </span>
-                {ticket.codService && (
-                  <span className="text-[11px] text-slate-500 font-mono">#{ticket.codService}</span>
-                )}
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {(emSelecao || selecionado) && onAlternarSelecao && (
-                  <CheckSelecao ticket={ticket} selecionado={selecionado} onAlternar={onAlternarSelecao} />
-                )}
-                <button
-                  aria-label="Opções do card"
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-white px-1 rounded shrink-0 touch-none"
-                  onPointerDown={pararDrag}
-                  onClick={abrirMenu}
-                >
-                  ⋯
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-1.5 flex flex-wrap items-center gap-1">
-              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${cor.pill}`}>
-                {ticket.tipoTicket}
-              </span>
-              <Selos itens={selosResumo} />
-            </div>
-
-            {/* Linhas de "entrega": endereço e telefone, como no card do pedido */}
-            {(ticket.endereco || ticket.telefone) && (
-              <div className="mt-2 space-y-0.5">
-                {ticket.endereco && (
-                  <div className="flex items-center gap-1 text-[11px] text-slate-500">
-                    <span aria-hidden>📍</span>
-                    <span className="truncate">{ticket.endereco}</span>
-                  </div>
-                )}
-                {ticket.telefone && (
-                  <div className="flex items-center gap-1 text-[11px] text-slate-500">
-                    <span aria-hidden>📞</span>
-                    <span className="truncate">{ticket.telefone}</span>
-                  </div>
-                )}
-              </div>
+            {(ticket.tentativas ?? 0) > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-sky-400 ring-2 ring-white dark:ring-slate-800" />
             )}
           </div>
         </div>

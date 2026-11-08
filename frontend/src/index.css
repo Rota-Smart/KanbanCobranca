@@ -14,30 +14,56 @@
 .dark .text-slate-500 { color: #b8c0cc !important; }
 .dark .text-slate-400 { color: #a8b1bf !important; }
 
-/* ===== Glassmorphism ===== */
+/* ===== Fundo do app =====
+   Gradiente azul profundo (estilo quadro da referência) com manchas radiais;
+   o painel de vidro por cima dá o efeito fosco. Fixo no body para o
+   overscroll do WebView2 nunca revelar canvas branco. */
+html,
+body {
+  overscroll-behavior: none;
+  min-height: 100%;
+}
+body {
+  background-color: #2e3d8f;
+  background-image:
+    radial-gradient(120% 90% at 85% -10%, rgba(96, 125, 255, 0.55) 0%, rgba(96, 125, 255, 0) 55%),
+    radial-gradient(90% 80% at -10% 100%, rgba(56, 80, 190, 0.6) 0%, rgba(56, 80, 190, 0) 60%),
+    radial-gradient(60% 55% at 55% 60%, rgba(140, 110, 255, 0.18) 0%, rgba(140, 110, 255, 0) 70%),
+    linear-gradient(160deg, #3b4ba8 0%, #2c3a8c 45%, #1d2a6e 100%);
+  background-attachment: fixed;
+}
+html.dark body {
+  background-color: #0b1232;
+  background-image:
+    radial-gradient(120% 90% at 85% -10%, rgba(64, 90, 200, 0.35) 0%, rgba(64, 90, 200, 0) 55%),
+    radial-gradient(90% 80% at -10% 100%, rgba(30, 45, 120, 0.5) 0%, rgba(30, 45, 120, 0) 60%),
+    linear-gradient(160deg, #141d4d 0%, #0e1638 50%, #080d24 100%);
+}
+
+/* ===== Glassmorphism (painéis foscos sobre o fundo azul) ===== */
 .glass {
   background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(18px) saturate(1.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(22px) saturate(1.6);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
   border: 1px solid rgba(255, 255, 255, 0.55);
-  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.12);
+  box-shadow: 0 12px 40px rgba(10, 16, 60, 0.28);
 }
 .glass-soft {
-  background: rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(12px) saturate(1.3);
-  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  background: rgba(255, 255, 255, 0.32);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
   border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 0 4px 20px rgba(31, 38, 135, 0.08);
+  box-shadow: 0 6px 24px rgba(10, 16, 60, 0.18);
 }
 .dark .glass {
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  background: rgba(20, 28, 62, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 .dark .glass-soft {
-  background: rgba(30, 41, 59, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  background: rgba(30, 41, 80, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
 }
 
 /* Card estilo delivery: elevação e lift no hover */
@@ -46,17 +72,46 @@
 }
 .card-delivery:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 28px rgba(31, 38, 135, 0.18);
+  box-shadow: 0 16px 36px rgba(10, 16, 60, 0.35);
 }
 .dark .card-delivery:hover {
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+}
+
+/* ===== Barra lateral de ícones (rail) ===== */
+.rail-btn {
+  position: relative;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.9rem;
+  font-size: 1rem;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.75);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.rail-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+.rail-btn.ativo {
+  background: rgba(255, 255, 255, 0.85);
+  color: #2c3a8c;
+  box-shadow: 0 4px 14px rgba(10, 16, 60, 0.3);
+}
+.dark .rail-btn.ativo {
+  background: rgba(99, 122, 235, 0.35);
+  color: #ffffff;
 }
 
 /* ===== Scrollbars no tema do kanban =====
-   Póleo fino estilo delivery: índigo no claro, slate translúcido no escuro. */
+   Póleo fino estilo delivery: branco translúcido no fundo azul. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #818cf8 transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.45) transparent;
 }
 ::-webkit-scrollbar {
   width: 10px;
@@ -66,13 +121,13 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(129, 140, 248, 0.55);
+  background: rgba(255, 255, 255, 0.4);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.8);
+  background: rgba(255, 255, 255, 0.65);
   background-clip: content-box;
 }
 ::-webkit-scrollbar-corner {
@@ -108,18 +163,23 @@
   cursor: pointer;
 }
 
-/* Fundo do documento acompanha o tema: o gradiente fica no div raiz do app,
-   então arrastar além do fim do conteúdo (overscroll do WebView2) revelaria
-   o canvas branco padrão do navegador. Também cobre a tela "Carregando…". */
-html {
-  overscroll-behavior: none;
-  background-color: #eef2ff;
+/* Cabeçalho de coluna em caixa-alta, como na referência */
+.titulo-coluna {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
-body {
-  overscroll-behavior: none;
-  background-color: #eef2ff;
+
+/* Card dentro da coluna: vidro mais claro que o painel da coluna,
+   com brilho sutil no topo (como na referência). */
+.card-tile {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(235, 240, 255, 0.68) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
 }
-html.dark,
-html.dark body {
-  background-color: #020617;
+.dark .card-tile {
+  background:
+    linear-gradient(180deg, rgba(51, 65, 120, 0.7) 0%, rgba(30, 41, 85, 0.62) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
