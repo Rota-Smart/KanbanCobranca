@@ -80,7 +80,9 @@ func (a *App) EnviarParaNuvem() (ResultadoNuvem, error) {
 	}
 	r, err := nuvem.Enviar(a.ctx, a.db, dsn)
 	if err != nil {
-		return res, friendly("EnviarParaNuvem", err)
+		// Mostra o erro real (tabela + motivo): é o que permite diagnosticar.
+		slog.Error("nuvem: envio falhou", "err", err)
+		return res, fmt.Errorf("envio para a nuvem falhou em %v", err)
 	}
 	quando := time.Now().Format("02/01/2006 15:04")
 	if err := a.config.Set(a.ctx, cfgNuvemEnvio, quando); err != nil {
