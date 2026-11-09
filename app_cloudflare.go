@@ -132,6 +132,8 @@ func modelosComFerramentas(cat cfCatalogo) []ModeloCloudflare {
 				if json.Unmarshal(p.Value, &precos) == nil {
 					for _, pr := range precos {
 						switch {
+						case strings.Contains(pr.Unit, "cached"):
+							// preço de cache não vale pra estimativa
 						case strings.Contains(pr.Unit, "input"):
 							ent = pr.Price
 						case strings.Contains(pr.Unit, "output"):
