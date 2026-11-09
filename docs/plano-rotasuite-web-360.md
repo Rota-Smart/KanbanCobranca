@@ -1,6 +1,6 @@
 # Plano — RotaSuite Web + Nuvem + Integração 360
 
-> Criado em 2026-11-08. Status: **Etapas 0–5 no código** (2026-11-09). Etapa 1 fecha quando o PC principal apertar ☁️ Enviar dados para a nuvem. Etapa 4 sincroniza o quadro em segundo plano; o pareamento na API ainda não existe (o app já chama o contrato). A Etapa 5 deixa o quadro legível no celular e no PC; o site publicado ainda é a versão anterior (o login da Cloudflare expirou). O backup pelo GitHub continua até validar com dois PCs de verdade — depois desligamos.
+> Criado em 2026-11-08. Status: **Etapas 0–6 no código** (2026-11-09). Etapa 1 fecha quando o PC principal apertar ☁️ Enviar dados para a nuvem. Etapa 4 sincroniza o quadro em segundo plano; o pareamento na API ainda não existe (o app já chama o contrato). A Etapa 6 edita o quadro no site (criar, mover, observação, visita, excluir e ações em massa) pela sessão, sem atalho de PC. Acordo e tentativas de contato continuam pendentes: a API não tem a rota de escrita. A API publicada responde 503 `login ainda não configurado` (chave de sessão vazia), então o login real ainda não abre sessão. O site publicado continua na versão anterior (o login da Cloudflare expirou). O backup pelo GitHub continua até validar com dois PCs de verdade — depois desligamos.
 
 ## 1. Objetivo
 
@@ -139,9 +139,34 @@ npx wrangler deploy
 Build local: `npm run build`, saída `dist`, comando de deploy `npx wrangler deploy` (já está no `wrangler.jsonc`).
 
 ### Etapa 6 — Site: editar o kanban (sem atalhos)
-- [ ] Mover card, criar card, observação, tentativas de contato, acordos (valores), marcar visita, ações em massa. São dados do RotaSuite, não do 360.
-- [ ] Não colocar no site o que depende do PC: Shift+F2, voz, controle do Chrome e qualquer atalho de automação. Sem botão que peça para o app executar isso.
+- [x] Mover card, criar card, observação, tentativas de contato, acordos (valores), marcar visita, ações em massa. São dados do RotaSuite, não do 360. Acordo e tentativas chamam a API e, quando a rota não existe, a tela avisa em frase simples — o front não calcula a soma nem grava tentativa só na memória fingindo a nuvem.
+- [x] Não colocar no site o que depende do PC: Shift+F2, voz, controle do Chrome e qualquer atalho de automação. Sem botão que peça para o app executar isso.
 - **Entrega:** uso do quadro pelo site, no mesmo nível do app, sem as automações.
+
+#### O que ficou pronto (2026-11-09)
+- Toda escrita passa por `api.ts` com `credentials: 'include'`. Não há `API_TOKEN` no JavaScript. Sem cookie, POST/PATCH/DELETE de `/cards`, `/colunas`, `/acordos` e `/historico` respondem 401 `não autorizado` — a mesma porta da sessão, não um caminho só de Bearer. Um cookie no formato da sessão (e o próprio `POST /auth/login`) responde 503 `login ainda não configurado`: no código isso acontece quando `CHAVE_SESSAO` está vazia, antes de procurar a sessão. A escrita não foi recusada em favor do token; a sessão é que ainda não pode ser criada na API publicada.
+- No PC o card se arrasta entre colunas. No celular (aba, uma coluna por vez) o card tem o menu "Mover para…", sem arrastar no toque. O menu abre por cima da página (o card com efeito de hover não prende o painel).
+- Botão "+ Novo card": cliente, código service e coluna inicial. A frase da tela deixa claro que isso cria card no quadro do RotaSuite e não abre ticket no 360.
+- Observação salva com PATCH e mostra "Salvo". Visita salva data, turno, hora e endereço, e o endereço abre no mapa.
+- Seleção por checkbox e barra com mover, observação e excluir, com confirmação. Excluir um card também pede confirmação. Erro da API vira uma frase simples.
+- Mover para "Visitas Realizadas" ou "Ticket Fechado" não marca visita realizada no front: o PATCH do card na API não faz isso sozinho.
+- Conferido na prévia `/?previa` (memória, sem escrever no 360): criar card, arrastar no PC, menu no celular (390 px), observação, visita, tentativa listada com data na prévia, confirmação de exclusão (cancelar), mover 2 cards com confirmação. A tela de login sem prévia continua com `noindex`. Login real não foi exercido (senha não fica em arquivo).
+
+#### Pendências de backend
+- `POST /acordos` não existe (só `GET /acordos`). A aba Acordo deixa os campos visíveis e diz: "O servidor ainda não grava acordo." A soma e a renegociação só aparecem quando a API devolver o acordo calculado. O front não recalcula.
+- Não existe rota de tentativas de contato (`/contatos` ou `/tentativas`). `POST /sync` grava `tentativas_contato` só no lote do app, e o site não usa isso. A aba diz: "O servidor ainda não grava tentativas de contato. Nada foi salvo." `GET /cards` não traz as datas, então o telefone do card não lista tentativas até existir a rota.
+- Não há POST/PATCH/DELETE em `/historico`. Mover o card não grava histórico no tratador da API.
+- Ao mudar a coluna para "Visitas Realizadas" ou "Ticket Fechado", a API não preenche `visita_realizada_em`. Fica pendente no servidor.
+- `GET /clientes360/<código>` continua 404 (Etapa 5). O que existe é `GET /360/clientes?busca=`.
+- `POST /auth/parear` continua ausente (Etapa 4).
+- A API publicada não abre sessão enquanto `CHAVE_SESSAO` estiver vazia (503). Sem isso a Etapa 7 também não autentica.
+- Publicar: `npx wrangler whoami` nesta máquina devolve `Not logged in. Your auth token has expired and could not be refreshed`. https://360.foundrycode.com.br segue na versão anterior. Na pasta `Site/FrontEnd`, quando alguém estiver no terminal interativo:
+
+```
+npx wrangler login
+npm run build
+npx wrangler deploy
+```
 
 ### Etapa 7 — Integração 360 no site (somente leitura + visão pessoal)
 - [ ] Tela **Tickets**: fila aberta da conta, busca por texto, filtros (status, data, solicitante, unidade/cidade). Leitura do `/api/helpdesk/tickets`.
