@@ -1,6 +1,6 @@
 # Plano — RotaSuite Web + Nuvem + Integração 360
 
-> Criado em 2026-11-08. Status: **Etapas 0–6 no código** (2026-11-09). Etapa 1 fecha quando o PC principal apertar ☁️ Enviar dados para a nuvem. Etapa 4 sincroniza o quadro em segundo plano; o pareamento na API ainda não existe (o app já chama o contrato). A Etapa 6 edita o quadro no site (criar, mover, observação, visita, excluir e ações em massa) pela sessão, sem atalho de PC. Acordo e tentativas de contato continuam pendentes: a API não tem a rota de escrita. A API publicada responde 503 `login ainda não configurado` (chave de sessão vazia), então o login real ainda não abre sessão. O site publicado continua na versão anterior (o login da Cloudflare expirou). O backup pelo GitHub continua até validar com dois PCs de verdade — depois desligamos.
+> Criado em 2026-11-08. Status: **Etapas 0–8 no código** (2026-11-09). Etapa 1 fecha quando o PC principal apertar ☁️ Enviar dados para a nuvem. Etapa 4 sincroniza o quadro em segundo plano; o pareamento na API ainda não existe (o app já chama o contrato). A Etapa 6 edita o quadro no site (criar, mover, observação, visita, excluir e ações em massa) pela sessão, sem atalho de PC. Acordo e tentativas de contato continuam pendentes: a API não tem a rota de escrita. A API publicada responde 503 `login ainda não configurado` (chave de sessão vazia), então o login real ainda não abre sessão. A Etapa 8 reaproveita a Evolution que já está em `Site/Whatsapp`; o disparo só sai depois da revisão, e fica desligado até os Secret Files `WHATSAPP_BRIDGE_URL` e `WHATSAPP_BRIDGE_TOKEN` existirem no Site-Back. Nenhuma mensagem foi enviada. O site publicado continua na versão anterior (o login da Cloudflare expirou). O backup pelo GitHub continua até validar com dois PCs de verdade — depois desligamos.
 
 ## 1. Objetivo
 
@@ -15,7 +15,7 @@ Manter o **app desktop RotaSuite** fazendo tudo o que já faz hoje (inclusive os
 3. **App ligado à conta** — o desktop usa a mesma conta do site. Shift+F2, voz e controle do Chrome continuam só no PC.
 4. **Integração 360 no site, somente leitura** — fila, busca de cliente, unidade, financeiro/OS. Mudança oficial de ticket (status, resposta, novo ticket, responsável) continua no 360, por link.
 5. **Fidelidade de Ijuí** — na ficha do cliente, aba Financeiro → Contratos, a vigência é a data de assinatura mais o prazo em meses. O filtro lista os clientes da unidade pela data de término mais próxima.
-6. **Evolution API (etapa futura)** — filtrar do jeito que for preciso, marcar quem recebe e disparar num botão, com confirmação manual. Não envia sozinho.
+6. **Evolution API** — filtrar do jeito que for preciso, marcar quem recebe e disparar num botão, com confirmação manual. Não envia sozinho. Reaproveita a Evolution que já está em `Site/Whatsapp`.
 
 ## 2. Situação atual (ponto de partida)
 
@@ -189,11 +189,18 @@ npx wrangler deploy
 - Fila de pedidos do site para o PC executar atalhos do app.
 - Qualquer escrita no 360 (responder, mudar status, criar ticket, trocar responsável). Link "Abrir no 360" cobre esse caso.
 
-### Etapa 8 — Evolution API (futura, depois do site utilizável)
-- [ ] A partir de uma lista já filtrada (fila, clientes ou vigência de contrato perto de vencer), marcar quem recebe.
-- [ ] Um botão dispara a mensagem pela Evolution API (`Site/Whatsapp`), só depois de confirmação manual na tela.
-- [ ] Sem envio sozinho e sem agendamento que dispare sem alguém confirmar.
+### Etapa 8 — Evolution API (depois do site utilizável)
+- [x] A partir de uma lista já filtrada (fila, clientes ou vigência de contrato perto de vencer), marcar quem recebe.
+- [x] Um botão abre a revisão e, só nela, **Confirmar e enviar** dispara pela Evolution que já está em `Site/Whatsapp`.
+- [x] Sem envio sozinho e sem agendamento que dispare sem alguém confirmar.
 - **Entrega:** disparo semi-automático, com a pessoa escolhendo os destinatários e confirmando.
+
+#### O que ficou pronto (2026-11-09)
+- O site não fala com a Evolution. `GET /whatsapp/status` e `POST /whatsapp/enviar` ficam na API, com o cookie da sessão. A URL e a chave são os Secret Files que o outro site já usa: `WHATSAPP_BRIDGE_URL` e `WHATSAPP_BRIDGE_TOKEN` (o mesmo valor de `BRIDGE_TOKEN`). Sem esses arquivos no Site-Back, a rota responde que não está configurado e não chama a Evolution. A instância não é criada de novo: a API lê a que já existe.
+- Nas listas de tickets, clientes e fidelidade de Ijuí, a pessoa marca um por um e abre **Enviar WhatsApp**. A revisão mostra nome, número e texto. Dá para editar. O texto editado é o que sai. O botão **Confirmar e enviar** só existe nessa tela. Lista com mais de 50 pessoas mostra aviso. Entre um envio e outro, a API espera 2 segundos. Se um falha, os outros continuam. Se a página fecha, o resto para.
+- Cada tentativa fica em `whatsapp_disparos` no Supabase, com `usuario_id` e RLS (quem confirmou, destinatário, número, texto, resultado, filtro e data). Não grava nada no 360.
+- Conferido na prévia, no computador e num celular estreito: marcar, abrir a revisão, editar o texto, ver o aviso da lista grande e cancelar. O botão de confirmar fica desligado na prévia porque não há chave. Nenhuma mensagem foi enviada a cliente real.
+- Publicar o site continua pendente: `npx wrangler whoami` precisa estar logado. Na pasta `Site/FrontEnd`: `npx wrangler login`, `npm run build`, `npx wrangler deploy`.
 
 ## 5. Assistente (IA) na web
 - Fase 1: assistente continua só no app.
