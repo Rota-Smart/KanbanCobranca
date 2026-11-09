@@ -326,6 +326,11 @@ func lerEstado(ctx context.Context, db executor, tabela, id string) (string, int
 
 const faixaStride = 1_000_000
 
+// faixaAppMax: o app começa abaixo disto em cada bloco de um milhão. De
+// 500.000 a 999.999 ficam os ids criados pelo site (sequências do Postgres);
+// a folga de 100 mil cobre os cards que cada PC cria depois do começo da faixa.
+const faixaAppMax = 400_000
+
 // reservarFaixa afasta o próximo id deste PC dos ids dos outros.
 // Sem isso, dois computadores criariam o card 501 ao mesmo tempo.
 func reservarFaixa(ctx context.Context, db *sql.DB) error {
@@ -333,20 +338,15 @@ func reservarFaixa(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	var slot int64
-	if slotTxt == "" {
-		n, err := rand.Int(rand.Reader, big.NewInt(faixaStride-2))
+	slot, err := parseInt(slotTxt)
+	if slotTxt == "" || err != nil || slot <= 0 || slot > faixaAppMax {
+		n, err := rand.Int(rand.Reader, big.NewInt(faixaAppMax))
 		if err != nil {
 			return err
 		}
-		slot = n.Int64() + 1 // 1 .. stride-2
+		slot = n.Int64() + 1 // 1 .. faixaAppMax
 		if err := MetaSet(ctx, db, "faixa_slot", fmt.Sprintf("%d", slot)); err != nil {
 			return err
-		}
-	} else {
-		slot, err = parseInt(slotTxt)
-		if err != nil || slot <= 0 {
-			slot = 1
 		}
 	}
 	for _, nome := range ordemUpsert {
