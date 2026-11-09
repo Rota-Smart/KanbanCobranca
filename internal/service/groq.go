@@ -59,7 +59,10 @@ const (
 	ProvedorCloudflare = "cloudflare"
 	ProvedorAuto       = "auto"
 
-	esperaCurtaAuto  = 15 * time.Second
+	esperaCurtaAuto  = 5 * time.Second
+	// groqTimeoutAuto: no modo auto, a Groq que não responde em 5s (janela de
+	// TPM esgotada costuma segurar a resposta) perde a vez pro fallback.
+	groqTimeoutAuto = 5 * time.Second
 	cooldownFallback = 30 * time.Second
 )
 
@@ -101,6 +104,13 @@ type GroqCliente struct {
 	// CloudflareContaInjetavel devolve o Account ID da Cloudflare — parte do
 	// endpoint do Workers AI; consultado a cada chamada.
 	CloudflareContaInjetavel func() string
+	// Fallback do modo auto pela Cloudflare: chave e modelo do Workers AI,
+	// consultados mesmo com outro provedor escolhido. Com chave e conta, a
+	// Cloudflare é o fallback preferido (cota free); sem elas, DeepInfra.
+	CloudflareChaveInjetavel  func() string
+	CloudflareModeloInjetavel func() string
+	// EndpointCloudflare sobrescreve o endpoint do fallback (testes).
+	EndpointCloudflare string
 
 	// muFallback protege fallbackAte, o cooldown pós-429 do modo auto.
 	muFallback  sync.Mutex
@@ -230,7 +240,7 @@ func (g *GroqCliente) TemChave() bool {
 		return false
 	}
 	if g.emAuto() && g.chave() == "" && len(g.chaves()) == 0 {
-		return g.alvoDeepInfra().chave != ""
+		return g.alvoFallback().chave != ""
 	}
 	return g.chave() != "" || len(g.chaves()) > 0
 }
@@ -276,12 +286,44 @@ func (g *GroqCliente) alvoDeepInfra() alvoChamada {
 	return alvoChamada{provedor: ProvedorDeepInfra, endpoint: endpoint, chave: chave, modelo: modelo}
 }
 
+// alvoCloudflare resolve o fallback pela Cloudflare (chave vazia = indisponível).
+func (g *GroqCliente) alvoCloudflare() alvoChamada {
+	chave, modelo := "", ""
+	if g != nil && g.CloudflareChaveInjetavel != nil {
+		chave = strings.TrimSpace(g.CloudflareChaveInjetavel())
+	}
+	if g != nil && g.CloudflareModeloInjetavel != nil {
+		modelo = strings.TrimSpace(g.CloudflareModeloInjetavel())
+	}
+	if modelo == "" {
+		modelo = CloudflareModeloPadrao
+	}
+	conta := g.contaCloudflare()
+	if conta == "" {
+		chave = ""
+	}
+	endpoint := fmt.Sprintf(CloudflareEndpointBase, conta)
+	if g != nil && g.EndpointCloudflare != "" {
+		endpoint = g.EndpointCloudflare
+	}
+	return alvoChamada{provedor: ProvedorCloudflare, endpoint: endpoint, chave: chave, modelo: modelo}
+}
+
+// alvoFallback é o destino do modo auto quando a Groq não atende: Cloudflare
+// se configurada, senão DeepInfra.
+func (g *GroqCliente) alvoFallback() alvoChamada {
+	if cf := g.alvoCloudflare(); cf.chave != "" {
+		return cf
+	}
+	return g.alvoDeepInfra()
+}
+
 // alvoAtual diz para onde a chamada vai agora: no modo auto, cooldown ativo
 // (ou Groq sem chave) manda direto pro DeepInfra; fora disso, o destino é a
 // Groq (o principal do auto) ou o provedor escolhido nas Configurações.
 func (g *GroqCliente) alvoAtual() alvoChamada {
 	if g.emAuto() {
-		if fb := g.alvoDeepInfra(); fb.chave != "" && (g.emCooldown() || (g.chave() == "" && len(g.chaves()) == 0)) {
+		if fb := g.alvoFallback(); fb.chave != "" && (g.emCooldown() || (g.chave() == "" && len(g.chaves()) == 0)) {
 			return fb
 		}
 		alvo := alvoChamada{provedor: ProvedorGroq, endpoint: g.endpoint(), chave: g.chave(), modelo: g.modelo()}
@@ -425,6 +467,7 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 	}
 	idxChave := 0
 	esgotou := false // a última chave da Groq também recebeu 429
+	lenta := false   // a Groq não respondeu em groqTimeoutAuto (modo auto)
 	esperado := time.Duration(0) // soma das esperas por 429 nesta chamada
 	var ultimoErr error
 	espera := 2 * time.Second
@@ -433,15 +476,14 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 			// Teto da Groq no modo auto: orçamento de 15s estourado (ou todas
 			// as chaves já deram 429) — failover imediato, sem esperar a
 			// janela de uma chave que se sabe esgotada.
-			if g.emAuto() && alvo.provedor == ProvedorGroq && idxChave >= len(chaves)-1 &&
-				(esgotou || esperado+espera > esperaCurtaAuto) {
-				if fb := g.alvoDeepInfra(); fb.chave != "" {
+			if g.emAuto() && alvo.provedor == ProvedorGroq && (lenta || idxChave >= len(chaves)-1 &&
+				(esgotou || esperado+espera > esperaCurtaAuto)) {
+				if fb := g.alvoFallback(); fb.chave != "" {
 					alvo = fb
 					g.armarCooldown()
-					// A espera era da janela da Groq: na DeepInfra ela não
-					// se aplica — e dormir ela inteira faria o cooldown
-					// (30s) expirar antes da chamada voltar.
-					espera = 2 * time.Second
+					// A espera era da janela da Groq: no fallback ela não se
+					// aplica — a chamada sai na hora.
+					espera = 0
 					continue
 				}
 			}
@@ -464,8 +506,14 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 		if err != nil {
 			return respostaRodada{}, err
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, alvo.endpoint, bytes.NewReader(body))
+		ctxReq, cancelReq := ctx, context.CancelFunc(func() {})
+		comPrazo := g.emAuto() && alvo.provedor == ProvedorGroq && g.alvoFallback().chave != ""
+		if comPrazo {
+			ctxReq, cancelReq = context.WithTimeout(ctx, groqTimeoutAuto)
+		}
+		req, err := http.NewRequestWithContext(ctxReq, http.MethodPost, alvo.endpoint, bytes.NewReader(body))
 		if err != nil {
+			cancelReq()
 			return respostaRodada{}, err
 		}
 		chaveEnvio := alvo.chave
@@ -476,7 +524,13 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := g.HTTP.Do(req)
 		if err != nil {
+			cancelReq()
 			ultimoErr = err
+			if comPrazo && ctx.Err() == nil && errors.Is(ctxReq.Err(), context.DeadlineExceeded) {
+				lenta = true
+				espera = 0
+				continue
+			}
 			if tentativa >= 1 {
 				break
 			}
@@ -485,6 +539,13 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 		}
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, groqMaxResposta))
 		resp.Body.Close()
+		cancelReq()
+		if err != nil && comPrazo && ctx.Err() == nil && errors.Is(ctxReq.Err(), context.DeadlineExceeded) {
+			lenta = true
+			ultimoErr = err
+			espera = 0
+			continue
+		}
 		switch {
 		case resp.StatusCode == http.StatusTooManyRequests:
 			ultimoErr = fmt.Errorf("%s: HTTP 429 — %w", alvo.provedor, ErrTetoTPM)

@@ -22,22 +22,22 @@ import (
 
 // Chaves da tabela config.
 const (
-	cfgGroqChave       = "groq_chave"
-	cfgGroqChavesExtra = "groq_chaves_extras" // JSON: chaves adicionais (rotação no 429)
-	cfgGroqModelo      = "groq_modelo"
-	cfgDeepInfraChave  = "deepinfra_chave"
-	cfgDeepInfraModelo = "deepinfra_modelo"
-	cfgSambaNovaChave  = "sambanova_chave"
-	cfgSambaNovaModelo = "sambanova_modelo"
-	cfgCerebrasChave   = "cerebras_chave"
-	cfgCerebrasModelo  = "cerebras_modelo"
-	cfgCloudflareChave = "cloudflare_chave"
-	cfgCloudflareConta = "cloudflare_conta" // Account ID (parte do endpoint do Workers AI)
-	cfgCloudflareModelo= "cloudflare_modelo"
-	cfgIaProvedor      = "ia_provedor"
-	cfgRotaCookie   = "rota360_cookie"
-	cfgAutor360     = "autor_360" // nome do usuário logado no 360 (filtra o resumo do ticket)
-	evRotaConectado = "rota360:conectado"
+	cfgGroqChave        = "groq_chave"
+	cfgGroqChavesExtra  = "groq_chaves_extras" // JSON: chaves adicionais (rotação no 429)
+	cfgGroqModelo       = "groq_modelo"
+	cfgDeepInfraChave   = "deepinfra_chave"
+	cfgDeepInfraModelo  = "deepinfra_modelo"
+	cfgSambaNovaChave   = "sambanova_chave"
+	cfgSambaNovaModelo  = "sambanova_modelo"
+	cfgCerebrasChave    = "cerebras_chave"
+	cfgCerebrasModelo   = "cerebras_modelo"
+	cfgCloudflareChave  = "cloudflare_chave"
+	cfgCloudflareConta  = "cloudflare_conta" // Account ID (parte do endpoint do Workers AI)
+	cfgCloudflareModelo = "cloudflare_modelo"
+	cfgIaProvedor       = "ia_provedor"
+	cfgRotaCookie       = "rota360_cookie"
+	cfgAutor360         = "autor_360" // nome do usuário logado no 360 (filtra o resumo do ticket)
+	evRotaConectado     = "rota360:conectado"
 )
 
 // Rota360Status é o estado da sessão com o portal 360.
@@ -347,10 +347,10 @@ func (a *App) sincronizarCliente(ctx context.Context, c *rota360.Cliente, codSer
 
 // ResultadoCobranca é o pacote devolvido ao frontend ao arrastar para Cobrança.
 type ResultadoCobranca struct {
-	Ticket     db.Ticket             `json:"ticket"`
-	Cobranca   db.Cobranca           `json:"cobranca"`
-	Proposta   service.Proposta      `json:"proposta"`
-	Avaliacao  *service.Avaliacao    `json:"avaliacao"`
+	Ticket    db.Ticket          `json:"ticket"`
+	Cobranca  db.Cobranca        `json:"cobranca"`
+	Proposta  service.Proposta   `json:"proposta"`
+	Avaliacao *service.Avaliacao `json:"avaliacao"`
 	// Política v7: entrada mínima do cliente (20% ou 40% do total, múltiplo
 	// de R$ 50) — o acordo salvo pode usar outra entrada.
 	EntradaMinimaCents int64                 `json:"entradaMinimaCents"`
@@ -737,33 +737,41 @@ func faturasDoCache(cli *db.Cliente360) []rota360.Fatura360 {
 
 // ConfigApp é o estado não-sensível das configurações (a chave nunca volta).
 type ConfigApp struct {
-	GroqModelo        string   `json:"groqModelo"`
-	GroqTemChave      bool     `json:"groqTemChave"`
-	GroqChaves        []string `json:"groqChaves"` // todas as chaves, mascaradas (principal primeiro)
-	Provedor string `json:"provedor"` // "groq" (padrão), "deepinfra", "sambanova", "cerebras", "cloudflare" ou "auto"
-	DeepInfraTemChave bool `json:"deepInfraTemChave"`
-	SambaNovaTemChave bool `json:"sambaNovaTemChave"`
-	CerebrasTemChave  bool `json:"cerebrasTemChave"`
-	CloudflareTemChave bool `json:"cloudflareTemChave"`
-	Autor360      string `json:"autor360"`
-	RotaConectado bool   `json:"rotaConectado"`
-	RotaOrigem    string `json:"rotaOrigem"`
-	RotaMensagem  string `json:"rotaMensagem"`
+	GroqModelo         string   `json:"groqModelo"`
+	GroqTemChave       bool     `json:"groqTemChave"`
+	GroqChaves         []string `json:"groqChaves"` // todas as chaves, mascaradas (principal primeiro)
+	Provedor           string   `json:"provedor"`   // "groq" (padrão), "deepinfra", "sambanova", "cerebras", "cloudflare" ou "auto"
+	DeepInfraTemChave  bool     `json:"deepInfraTemChave"`
+	SambaNovaTemChave  bool     `json:"sambaNovaTemChave"`
+	CerebrasTemChave   bool     `json:"cerebrasTemChave"`
+	CloudflareTemChave bool     `json:"cloudflareTemChave"`
+	CloudflareModelo   string   `json:"cloudflareModelo"`
+	CloudflareTemConta bool     `json:"cloudflareTemConta"`
+	// CloudflareChavePropria: o usuário salvou um token próprio (false = usa
+	// o token padrão embutido no app).
+	CloudflareChavePropria bool   `json:"cloudflareChavePropria"`
+	Autor360               string `json:"autor360"`
+	RotaConectado          bool   `json:"rotaConectado"`
+	RotaOrigem             string `json:"rotaOrigem"`
+	RotaMensagem           string `json:"rotaMensagem"`
 }
 
 // GetConfig devolve as configurações atuais.
 func (a *App) GetConfig() ConfigApp {
 	return ConfigApp{
-		GroqModelo:        a.groqModeloAtual(),
-		GroqTemChave:      a.configGet(a.ctx, cfgGroqChave) != "",
-		GroqChaves:        a.groqChavesMascaradas(),
-		Provedor:          a.provedorIA(),
-		DeepInfraTemChave: a.configGet(a.ctx, cfgDeepInfraChave) != "",
-		SambaNovaTemChave: a.configGet(a.ctx, cfgSambaNovaChave) != "",
-		CerebrasTemChave:  a.configGet(a.ctx, cfgCerebrasChave) != "",
-		CloudflareTemChave: a.configGet(a.ctx, cfgCloudflareChave) != "" || cloudflareTokenPadrao() != "",
-		Autor360:          a.configGet(a.ctx, cfgAutor360),
-		RotaConectado:     a.rotaAtual() != nil,
+		GroqModelo:             a.groqModeloAtual(),
+		GroqTemChave:           a.configGet(a.ctx, cfgGroqChave) != "",
+		GroqChaves:             a.groqChavesMascaradas(),
+		Provedor:               a.provedorIA(),
+		DeepInfraTemChave:      a.configGet(a.ctx, cfgDeepInfraChave) != "",
+		SambaNovaTemChave:      a.configGet(a.ctx, cfgSambaNovaChave) != "",
+		CerebrasTemChave:       a.configGet(a.ctx, cfgCerebrasChave) != "",
+		CloudflareTemChave:     a.cloudflareToken() != "",
+		CloudflareModelo:       a.cloudflareModeloAtual(),
+		CloudflareTemConta:     a.cloudflareConta() != "",
+		CloudflareChavePropria: a.configGet(a.ctx, cfgCloudflareChave) != "",
+		Autor360:               a.configGet(a.ctx, cfgAutor360),
+		RotaConectado:          a.rotaAtual() != nil,
 	}
 }
 

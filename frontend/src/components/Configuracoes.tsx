@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import * as App from '../../wailsjs/go/main/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
-import type { ConfigApp, ContaStatus, NuvemInfo, ParametroNegociacao, SyncInfo } from '../wails-types';
+import type { ConfigApp, ModeloCloudflare, ContaStatus, NuvemInfo, ParametroNegociacao, SyncInfo } from '../wails-types';
 
 const MODELOS_SUGERIDOS = [
   'openai/gpt-oss-120b',
@@ -27,11 +27,22 @@ const MODELOS_CEREBRAS = [
   'qwen-3-32b',
 ];
 
-const MODELOS_CLOUDFLARE = [
-  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-  '@cf/meta/llama-4-scout-17b-16e-instruct',
-  '@cf/meta/llama-3.1-8b-instruct-fast',
-];
+
+// StatusChave: selo visível dizendo se o provedor tem chave salva.
+function StatusChave(props: { tem: boolean; texto?: string }) {
+  return (
+    <div
+      className={
+        'mt-2 inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ' +
+        (props.tem
+          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+          : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300')
+      }
+    >
+      {props.tem ? '✅ ' + (props.texto ?? 'Chave salva') : '⚠ Nenhuma chave salva'}
+    </div>
+  );
+}
 
 // SecaoProvedorPago: chave + modelo de um provedor OpenAI-compatible pago
 // (SambaNova, Cerebras) com botões Salvar/Remover chave.
@@ -63,10 +74,8 @@ function SecaoProvedorPago(props: {
   }
   return (
     <>
-      <p className="text-xs text-slate-500 mt-2">
-        {props.dica}
-        {props.temChave && ' Uma chave já está salva.'}
-      </p>
+      <p className="text-xs text-slate-500 mt-2">{props.dica}</p>
+      <StatusChave tem={props.temChave} />
       <div className="mt-2 flex flex-col gap-2">
         <input
           className="border rounded px-2 py-1 text-sm"
@@ -120,7 +129,8 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   const [modeloDI, setModeloDI] = useState('');
   const [contaCF, setContaCF] = useState('');
   const [chaveCF, setChaveCF] = useState('');
-  const [modeloCF, setModeloCF] = useState('');
+  const [modelosCF, setModelosCF] = useState<ModeloCloudflare[]>([]);
+  const [carregandoCF, setCarregandoCF] = useState(false);
   const [cookieTxt, setCookieTxt] = useState('');
   const [paramTexto, setParamTexto] = useState('');
   const [params, setParams] = useState<ParametroNegociacao[]>([]);
@@ -304,7 +314,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   async function salvarCloudflare() {
     setSalvando(true);
     try {
-      await App.SetCloudflareConfig(contaCF.trim(), chaveCF.trim(), modeloCF.trim());
+      await App.SetCloudflareConfig(contaCF.trim(), chaveCF.trim(), '');
       setChaveCF('');
       setContaCF('');
       props.onToast('Configurações da Cloudflare salvas.');
@@ -315,6 +325,39 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
       setSalvando(false);
     }
   }
+
+  async function carregarModelosCF() {
+    setCarregandoCF(true);
+    try {
+      setModelosCF((await App.ListarModelosCloudflare()) ?? []);
+    } catch (e) {
+      props.onToast(String(e));
+    } finally {
+      setCarregandoCF(false);
+    }
+  }
+
+  async function trocarModeloCF(modelo: string) {
+    if (!modelo || modelo === cfg?.cloudflareModelo) return;
+    setSalvando(true);
+    try {
+      await App.SetCloudflareConfig('', '', modelo);
+      props.onToast('Modelo da Cloudflare: ' + modelo.replace(/^@cf\//, ''));
+      recarregar();
+    } catch (e) {
+      props.onToast(String(e));
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  // Abre a seção da Cloudflare já com o catálogo carregado.
+  useEffect(() => {
+    if ((cfg?.provedor === 'cloudflare' || cfg?.provedor === 'auto') && modelosCF.length === 0 && !carregandoCF) {
+      carregarModelosCF();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg?.provedor]);
 
   async function escolherProvedor(p: string) {
     try {
@@ -329,7 +372,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               : p === 'cloudflare'
                 ? 'Provedor: Cloudflare Workers AI.'
                 : p === 'auto'
-                  ? 'Provedor: Automático (Groq → DeepInfra no teto).'
+                  ? 'Provedor: Automático (Groq → Cloudflare em 5 s ou no teto).'
                   : 'Provedor: Groq.',
       );
       recarregar();
@@ -555,9 +598,10 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
           </div>
           {cfg?.provedor === 'auto' && (
             <p className="text-xs text-slate-500 mt-2">
-              <strong>Automático:</strong> a Groq (free) atende normalmente; ao bater o teto, o app
-              espera até 15 s pela janela de limites e, sem liberação, manda pra DeepInfra — onde
-              fica por 30 s antes de voltar pra Groq. Configure as duas chaves abaixo.
+              <strong>Automático:</strong> a Groq (free) atende normalmente; se ela não responder
+              em 5 s ou acabar os tokens do minuto, o pedido vai na hora pra Cloudflare — que fica
+              atendendo por 30 s antes de voltar pra Groq. Sem Cloudflare configurada, a reserva é a
+              DeepInfra.
             </p>
           )}
           {usoGroq && (cfg?.provedor === 'groq' || cfg?.provedor === 'auto') && (
@@ -572,8 +616,8 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               <p className="text-xs text-slate-500 mt-2">
                 Chave em deepinfra.com/dashboard/api-tokens. Modelo sugerido:{' '}
                 <strong>meta-llama/Llama-3.3-70B-Instruct</strong> (pago por token, sem cota free).
-                {cfg?.deepInfraTemChave && ' Uma chave já está salva.'}
               </p>
+              <StatusChave tem={!!cfg?.deepInfraTemChave} />
               <div className="mt-2 flex flex-col gap-2">
                 <input
                   className="border rounded px-2 py-1 text-sm"
@@ -634,58 +678,94 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               limpar={() => App.LimparSambaNovaChave()}
             />
           )}
-          {cfg?.provedor === 'cloudflare' && (
+          {(cfg?.provedor === 'cloudflare' || cfg?.provedor === 'auto') && (
             <>
               <p className="text-xs text-slate-500 mt-2">
-                Token em dash.cloudflare.com → Meu perfil → Tokens de API (permissão{' '}
-                <strong>Workers AI → Edit</strong>) e Account ID no painel inicial da conta
-                (ou em Workers &amp; Pages, barra lateral direita). Modelo sugerido:{' '}
-                <strong>llama-3.3-70b-instruct-fp8-fast</strong> (tem cota free diária).
-                {cfg?.cloudflareTemChave && ' Uma chave já está salva.'}
+                <strong>Cloudflare Workers AI</strong>
+                {cfg?.provedor === 'auto' && ' (reserva do modo Automático)'}: token em
+                dash.cloudflare.com → Meu perfil → Tokens de API (permissão{' '}
+                <strong>Workers AI</strong>) e Account ID no painel inicial da conta. Plano free:
+                10.000 neurons/dia, sem cobrança — ao estourar, os pedidos param até 21h.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <StatusChave
+                  tem={!!cfg?.cloudflareTemChave}
+                  texto={cfg?.cloudflareChavePropria ? 'Chave própria salva' : 'Usando a chave padrão do app'}
+                />
+                <StatusChave tem={!!cfg?.cloudflareTemConta} texto="Account ID salvo" />
+              </div>
+              <p className="text-xs text-slate-600 mt-2">
+                Modelo em uso: <strong>{cfg?.cloudflareModelo}</strong>
               </p>
               <div className="mt-2 flex flex-col gap-2">
-                <input
-                  className="border rounded px-2 py-1 text-sm"
-                  placeholder="Account ID da conta Cloudflare (32 caracteres)"
-                  value={contaCF}
-                  onChange={(e) => setContaCF(e.target.value)}
-                />
-                <input
-                  className="border rounded px-2 py-1 text-sm"
-                  type="password"
-                  placeholder="Token da API Cloudflare"
-                  value={chaveCF}
-                  onChange={(e) => setChaveCF(e.target.value)}
-                />
-                <input
-                  className="border rounded px-2 py-1 text-sm"
-                  placeholder="Modelo (padrão: @cf/meta/llama-3.3-70b-instruct-fp8-fast)"
-                  value={modeloCF}
-                  onChange={(e) => setModeloCF(e.target.value)}
-                  list="modelos-cloudflare"
-                />
-                <datalist id="modelos-cloudflare">
-                  {MODELOS_CLOUDFLARE.map((m) => (
-                    <option key={m} value={m} />
-                  ))}
-                </datalist>
                 <div className="flex gap-2">
-                  <button
-                    className="bg-blue-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
-                    disabled={salvando || (!chaveCF.trim() && !modeloCF.trim() && !contaCF.trim())}
-                    onClick={salvarCloudflare}
+                  <select
+                    className="border rounded px-2 py-1 text-sm flex-1 min-w-0"
+                    value={cfg?.cloudflareModelo ?? ''}
+                    onChange={(e) => trocarModeloCF(e.target.value)}
+                    disabled={salvando}
                   >
-                    Salvar
+                    {!modelosCF.some((m) => m.nome === cfg?.cloudflareModelo) && cfg?.cloudflareModelo && (
+                      <option value={cfg.cloudflareModelo}>{cfg.cloudflareModelo}</option>
+                    )}
+                    {modelosCF.map((m) => (
+                      <option key={m.nome} value={m.nome}>
+                        {m.nome.replace(/^@cf\//, '')}
+                        {m.respostasDiaFree > 0
+                          ? ` — ~${m.respostasDiaFree} respostas/dia grátis`
+                          : ' — sem preço publicado'}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="border rounded px-3 py-1 text-sm"
+                    disabled={carregandoCF}
+                    onClick={carregarModelosCF}
+                  >
+                    {carregandoCF ? 'Buscando…' : modelosCF.length ? '↻' : 'Carregar modelos'}
                   </button>
-                  {cfg?.cloudflareTemChave && (
-                    <button
-                      className="border rounded px-3 py-1 text-sm text-red-600"
-                      onClick={() => App.LimparCloudflareChave().then(recarregar)}
-                    >
-                      Remover chave
-                    </button>
-                  )}
                 </div>
+                <p className="text-xs text-slate-400">
+                  Só modelos que usam as ferramentas do assistente. A estimativa considera uma
+                  resposta típica do chat; os mais baratos rendem mais no plano grátis.
+                </p>
+                <details className="text-sm">
+                  <summary className="cursor-pointer text-xs text-slate-500">
+                    Usar outra conta/token da Cloudflare
+                  </summary>
+                  <div className="mt-2 flex flex-col gap-2">
+                    <input
+                      className="border rounded px-2 py-1 text-sm"
+                      placeholder="Account ID da conta Cloudflare (32 caracteres)"
+                      value={contaCF}
+                      onChange={(e) => setContaCF(e.target.value)}
+                    />
+                    <input
+                      className="border rounded px-2 py-1 text-sm"
+                      type="password"
+                      placeholder="Token da API Cloudflare"
+                      value={chaveCF}
+                      onChange={(e) => setChaveCF(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        className="bg-blue-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
+                        disabled={salvando || (!chaveCF.trim() && !contaCF.trim())}
+                        onClick={salvarCloudflare}
+                      >
+                        Salvar
+                      </button>
+                      {cfg?.cloudflareChavePropria && (
+                        <button
+                          className="border rounded px-3 py-1 text-sm text-red-600"
+                          onClick={() => App.LimparCloudflareChave().then(recarregar)}
+                        >
+                          Remover chave própria
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </details>
               </div>
             </>
           )}
@@ -715,8 +795,15 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
                 Chave gratuita em console.groq.com. Modelo sugerido:{' '}
                 <strong>openai/gpt-oss-120b</strong> (alternativa rápida: openai/gpt-oss-20b — o
                 antigo llama-3.3-70b-versatile foi descontinuado pela Groq).
-                {cfg?.groqTemChave && ' Uma chave já está salva.'}
               </p>
+              <StatusChave
+                tem={!!cfg?.groqTemChave}
+                texto={
+                  (cfg?.groqChaves?.length ?? 0) > 1
+                    ? `${cfg?.groqChaves?.length} chaves salvas`
+                    : 'Chave salva'
+                }
+              />
               <div className="mt-2 flex flex-col gap-2">
                 <input
                   className="border rounded px-2 py-1 text-sm"

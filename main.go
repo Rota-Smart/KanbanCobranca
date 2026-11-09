@@ -139,6 +139,20 @@ func main() {
 		}
 		return cloudflareContaPadrao()
 	}
+	// Fallback do modo auto pela Cloudflare (Groq lenta ou sem tokens no minuto).
+	groq.CloudflareChaveInjetavel = func() string {
+		if v, _ := config.Get(context.Background(), "cloudflare_chave"); v != "" {
+			return v
+		}
+		if v := os.Getenv("CLOUDFLARE_API_TOKEN"); v != "" {
+			return v
+		}
+		return cloudflareTokenPadrao()
+	}
+	groq.CloudflareModeloInjetavel = func() string {
+		v, _ := config.Get(context.Background(), "cloudflare_modelo")
+		return v
+	}
 	// Rotação de chaves da Groq: principal + extras (groq_chaves_extras,
 	// JSON) — no 429 a próxima chave entra antes do fallback DeepInfra.
 	groq.ChavesInjetavel = func() []string {
