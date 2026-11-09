@@ -31,6 +31,9 @@ const (
 	cfgSambaNovaModelo = "sambanova_modelo"
 	cfgCerebrasChave   = "cerebras_chave"
 	cfgCerebrasModelo  = "cerebras_modelo"
+	cfgCloudflareChave = "cloudflare_chave"
+	cfgCloudflareConta = "cloudflare_conta" // Account ID (parte do endpoint do Workers AI)
+	cfgCloudflareModelo= "cloudflare_modelo"
 	cfgIaProvedor      = "ia_provedor"
 	cfgRotaCookie   = "rota360_cookie"
 	cfgAutor360     = "autor_360" // nome do usuário logado no 360 (filtra o resumo do ticket)
@@ -737,10 +740,11 @@ type ConfigApp struct {
 	GroqModelo        string   `json:"groqModelo"`
 	GroqTemChave      bool     `json:"groqTemChave"`
 	GroqChaves        []string `json:"groqChaves"` // todas as chaves, mascaradas (principal primeiro)
-	Provedor string `json:"provedor"` // "groq" (padrão), "deepinfra", "sambanova", "cerebras" ou "auto"
+	Provedor string `json:"provedor"` // "groq" (padrão), "deepinfra", "sambanova", "cerebras", "cloudflare" ou "auto"
 	DeepInfraTemChave bool `json:"deepInfraTemChave"`
 	SambaNovaTemChave bool `json:"sambaNovaTemChave"`
 	CerebrasTemChave  bool `json:"cerebrasTemChave"`
+	CloudflareTemChave bool `json:"cloudflareTemChave"`
 	Autor360      string `json:"autor360"`
 	RotaConectado bool   `json:"rotaConectado"`
 	RotaOrigem    string `json:"rotaOrigem"`
@@ -757,6 +761,7 @@ func (a *App) GetConfig() ConfigApp {
 		DeepInfraTemChave: a.configGet(a.ctx, cfgDeepInfraChave) != "",
 		SambaNovaTemChave: a.configGet(a.ctx, cfgSambaNovaChave) != "",
 		CerebrasTemChave:  a.configGet(a.ctx, cfgCerebrasChave) != "",
+		CloudflareTemChave: a.configGet(a.ctx, cfgCloudflareChave) != "",
 		Autor360:          a.configGet(a.ctx, cfgAutor360),
 		RotaConectado:     a.rotaAtual() != nil,
 	}
@@ -856,7 +861,7 @@ func (a *App) RemoverChaveGroq(indice int) error {
 // e manda pro DeepInfra no teto do free).
 func (a *App) provedorIA() string {
 	switch p := a.configGet(a.ctx, cfgIaProvedor); p {
-	case service.ProvedorDeepInfra, service.ProvedorSambaNova, service.ProvedorCerebras, service.ProvedorAuto:
+	case service.ProvedorDeepInfra, service.ProvedorSambaNova, service.ProvedorCerebras, service.ProvedorCloudflare, service.ProvedorAuto:
 		return p
 	}
 	return service.ProvedorGroq
@@ -869,7 +874,7 @@ func (a *App) SetProvedorIA(provedor string) error {
 		return fmt.Errorf("configuração indisponível")
 	}
 	switch provedor {
-	case service.ProvedorGroq, service.ProvedorDeepInfra, service.ProvedorSambaNova, service.ProvedorCerebras, service.ProvedorAuto:
+	case service.ProvedorGroq, service.ProvedorDeepInfra, service.ProvedorSambaNova, service.ProvedorCerebras, service.ProvedorCloudflare, service.ProvedorAuto:
 	default:
 		return fmt.Errorf("provedor inválido: %s", provedor)
 	}
@@ -946,6 +951,38 @@ func (a *App) LimparCerebrasChave() error {
 		return nil
 	}
 	return a.config.Set(a.ctx, cfgCerebrasChave, "")
+}
+
+// SetCloudflareConfig grava o Account ID, a chave e o modelo do Workers AI.
+// Conta e chave vazias não apagam (para limpar, use LimparCloudflareChave).
+func (a *App) SetCloudflareConfig(conta, chave, modelo string) error {
+	if a.config == nil {
+		return fmt.Errorf("configuração indisponível")
+	}
+	if conta = strings.TrimSpace(conta); conta != "" {
+		if err := a.config.Set(a.ctx, cfgCloudflareConta, conta); err != nil {
+			return friendly("SetCloudflareConfig", err)
+		}
+	}
+	if chave = strings.TrimSpace(chave); chave != "" {
+		if err := a.config.Set(a.ctx, cfgCloudflareChave, chave); err != nil {
+			return friendly("SetCloudflareConfig", err)
+		}
+	}
+	if modelo = strings.TrimSpace(modelo); modelo != "" {
+		if err := a.config.Set(a.ctx, cfgCloudflareModelo, modelo); err != nil {
+			return friendly("SetCloudflareConfig", err)
+		}
+	}
+	return nil
+}
+
+// LimparCloudflareChave apaga a chave guardada (o Account ID fica).
+func (a *App) LimparCloudflareChave() error {
+	if a.config == nil {
+		return nil
+	}
+	return a.config.Set(a.ctx, cfgCloudflareChave, "")
 }
 
 // SetAutor360 grava o nome do usuário logado no 360 — é quem o resumo do

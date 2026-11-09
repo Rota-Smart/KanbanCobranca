@@ -97,6 +97,11 @@ func main() {
 					return v
 				}
 				return os.Getenv("CEREBRAS_API_KEY")
+			case service.ProvedorCloudflare:
+				if v, _ := config.Get(ctx, "cloudflare_chave"); v != "" {
+					return v
+				}
+				return os.Getenv("CLOUDFLARE_API_TOKEN")
 			}
 			if v, _ := config.Get(ctx, "groq_chave"); v != "" {
 				return v
@@ -115,12 +120,20 @@ func main() {
 			case service.ProvedorCerebras:
 				v, _ := config.Get(ctx, "cerebras_modelo")
 				return v
+			case service.ProvedorCloudflare:
+				v, _ := config.Get(ctx, "cloudflare_modelo")
+				return v
 			}
 			v, _ := config.Get(ctx, "groq_modelo")
 			return v
 		},
 	)
 	groq.ProvedorInjetavel = provedorIA
+	// Account ID da Cloudflare: parte do endpoint do Workers AI.
+	groq.CloudflareContaInjetavel = func() string {
+		v, _ := config.Get(context.Background(), "cloudflare_conta")
+		return v
+	}
 	// Rotação de chaves da Groq: principal + extras (groq_chaves_extras,
 	// JSON) — no 429 a próxima chave entra antes do fallback DeepInfra.
 	groq.ChavesInjetavel = func() []string {

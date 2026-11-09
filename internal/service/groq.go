@@ -31,6 +31,11 @@ const (
 	SambaNovaModeloPadrao = "Meta-Llama-3.3-70B-Instruct"
 	CerebrasEndpoint      = "https://api.cerebras.ai/v1/chat/completions"
 	CerebrasModeloPadrao  = "llama-3.3-70b"
+	// Cloudflare Workers AI: OpenAI-compatible em
+	// /accounts/<account_id>/ai/v1/chat/completions — o Account ID faz parte
+	// da URL, então o endpoint é montado a cada chamada (CloudflareConta).
+	CloudflareEndpointBase = "https://api.cloudflare.com/client/v4/accounts/%s/ai/v1/chat/completions"
+	CloudflareModeloPadrao = "llama-3.3-70b-instruct-fp8-fast"
 	// Timeout por requisição: a Groq responde em ~2s; o fallback DeepInfra
 	// (Llama 70B, 400-800 tokens) pode levar ~15s — o ctx do chamador é quem
 	// limita de verdade (15-90s nos fluxos do app).
@@ -50,8 +55,9 @@ const (
 	ProvedorGroq      = "groq"
 	ProvedorDeepInfra = "deepinfra"
 	ProvedorSambaNova = "sambanova"
-	ProvedorCerebras  = "cerebras"
-	ProvedorAuto      = "auto"
+	ProvedorCerebras   = "cerebras"
+	ProvedorCloudflare = "cloudflare"
+	ProvedorAuto       = "auto"
 
 	esperaCurtaAuto  = 15 * time.Second
 	cooldownFallback = 30 * time.Second
@@ -92,6 +98,9 @@ type GroqCliente struct {
 	// PromptPolirInjetavel devolve o prompt de polimento salvo pelo
 	// usuário ("" = usa o padrão); consultado a cada Polir.
 	PromptPolirInjetavel func() string
+	// CloudflareContaInjetavel devolve o Account ID da Cloudflare — parte do
+	// endpoint do Workers AI; consultado a cada chamada.
+	CloudflareContaInjetavel func() string
 
 	// muFallback protege fallbackAte, o cooldown pós-429 do modo auto.
 	muFallback  sync.Mutex
@@ -147,6 +156,8 @@ func (g *GroqCliente) endpoint() string {
 		return SambaNovaEndpoint
 	case ProvedorCerebras:
 		return CerebrasEndpoint
+	case ProvedorCloudflare:
+		return fmt.Sprintf(CloudflareEndpointBase, g.contaCloudflare())
 	}
 	return GroqEndpoint
 }
@@ -194,8 +205,19 @@ func (g *GroqCliente) modelo() string {
 		return SambaNovaModeloPadrao
 	case ProvedorCerebras:
 		return CerebrasModeloPadrao
+	case ProvedorCloudflare:
+		return CloudflareModeloPadrao
 	}
 	return GroqModeloPadrao
+}
+
+// contaCloudflare devolve o Account ID da Cloudflare (parte do endpoint).
+// CloudflareContaInjetavel é consultado a cada chamada.
+func (g *GroqCliente) contaCloudflare() string {
+	if g != nil && g.CloudflareContaInjetavel != nil {
+		return strings.TrimSpace(g.CloudflareContaInjetavel())
+	}
+	return ""
 }
 
 // Chave expõe se há chave configurada (para HasAI sem vazar o segredo).
@@ -388,6 +410,11 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 	alvo := g.alvoAtual()
 	if alvo.chave == "" {
 		return respostaRodada{}, ErrGroqSemChave
+	}
+	// O endpoint do Workers AI precisa do Account ID na URL; sem ele a
+	// requisição falharia com 404 genérico — erro claro já aqui.
+	if alvo.provedor == ProvedorCloudflare && g.contaCloudflare() == "" {
+		return respostaRodada{}, fmt.Errorf("cloudflare: informe o Account ID nas ⚙ Configurações")
 	}
 	// Chaves da Groq desta chamada: principal + extras (rotação no 429/401).
 	chaves := []string{alvo.chave}
