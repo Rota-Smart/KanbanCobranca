@@ -247,6 +247,7 @@ export default function App() {
   const [chatKey, setChatKey] = useState(0); // cada Shift+F2 remonta o drawer p/ reenviar
   const [tema, setTema] = useState<'claro' | 'escuro'>(temaInicial);
   const [sincronizando, setSincronizando] = useState(false);
+  const [contaEstado, setContaEstado] = useState('');
   const [modos, setModos] = useState<ModosCards>(modosDoStorage);
   const [ordenacoes, setOrdenacoes] = useState<Record<string, Ordenacao>>(ordenacoesDoStorage);
   const [filtroTexto, setFiltroTexto] = useState('');
@@ -611,6 +612,21 @@ export default function App() {
       .then((m) => setAcordosPorTicket(m as Record<number, number>))
       .catch(() => {});
   }
+
+  useEffect(() => {
+    bindings.ContaStatus().then((st) => setContaEstado(st?.estado || '')).catch(() => {});
+    const offSync = EventsOn('conta:sync', (st: { estado?: string }) => {
+      setContaEstado(st?.estado || '');
+    });
+    const offQuadro = EventsOn('conta:quadro', () => {
+      void recarregarBoard();
+      void carregarComissoes();
+    });
+    return () => {
+      offSync();
+      offQuadro();
+    };
+  }, []);
 
   async function persistMove(id: number, coluna: string, posicao: number, snapshot: Board) {
     try {
@@ -1141,6 +1157,15 @@ ${txt.trim()}` : txt.trim());
           >
             {sincronizando ? '⟳ Sincronizando…' : '⟳ Sincronizar'}
           </button>
+          {contaEstado === 'sincronizando' && (
+            <span className="text-xs text-slate-500 dark:text-slate-400 self-center">sincronizando</span>
+          )}
+          {contaEstado === 'aguardando' && (
+            <span className="text-xs text-slate-500 dark:text-slate-400 self-center">aguardando internet</span>
+          )}
+          {contaEstado === 'reconectar' && (
+            <span className="text-xs text-amber-800/80 dark:text-amber-200/80 self-center">reconectar a conta</span>
+          )}
           <button
             className="text-sm rounded-lg px-3 py-1.5 bg-white/40 hover:bg-white/70 border border-white/50 transition font-medium"
             onClick={() => setConfigAberta(true)}

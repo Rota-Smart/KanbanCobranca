@@ -74,6 +74,12 @@ type App struct {
 
 	muTicketTela sync.Mutex
 	ticketTela   TicketTelaCapturado // último ticket identificado pelo Shift+F2 (vínculo automático ao criar card)
+
+	// Sync com a conta (Etapa 4). O token não fica nestes campos.
+	acordarSync chan struct{}
+	muSync      sync.Mutex
+	muConta     sync.Mutex
+	estadoConta ContaStatus
 }
 
 // WireIntegracao injeta as dependências da integração (chamado pelo main).
@@ -164,6 +170,7 @@ func (a *App) startup(ctx context.Context) {
 	a.garantirColunaOrcamento()
 	a.MonitorAtualizacao()
 	a.garantirUpgradeUltimo(a.ctx)
+	a.iniciarContaSync()
 }
 
 // friendly devolve erros de validação como estão; todo o resto vai para o

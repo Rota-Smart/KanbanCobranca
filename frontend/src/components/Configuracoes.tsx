@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as App from '../../wailsjs/go/main/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
-import type { ConfigApp, NuvemInfo, ParametroNegociacao, SyncInfo } from '../wails-types';
+import type { ConfigApp, ContaStatus, NuvemInfo, ParametroNegociacao, SyncInfo } from '../wails-types';
 
 const MODELOS_SUGERIDOS = [
   'openai/gpt-oss-120b',
@@ -39,6 +39,9 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   const [nuvemDSN, setNuvemDSN] = useState('');
   const [nuvemInfo, setNuvemInfo] = useState<NuvemInfo | null>(null);
   const [nuvemOcupado, setNuvemOcupado] = useState(false);
+  const [conta, setConta] = useState<ContaStatus | null>(null);
+  const [codigoConta, setCodigoConta] = useState('');
+  const [contaOcupada, setContaOcupada] = useState(false);
   const [usoGroq, setUsoGroq] = useState<import('../wails-types').UsoGroq | null>(null);
   const [exportandoAuditoria, setExportandoAuditoria] = useState(false);
   // Versão já baixada e trocada no disco esperando reinício ("Depois" no
@@ -53,6 +56,33 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   function recarregarSync() {
     App.SyncStatus().then(setSyncInfo).catch(() => setSyncInfo(null));
     App.NuvemStatus().then(setNuvemInfo).catch(() => setNuvemInfo(null));
+    App.ContaStatus().then(setConta).catch(() => setConta(null));
+  }
+
+  async function conectarConta() {
+    setContaOcupada(true);
+    try {
+      const st = await App.ConectarConta(codigoConta.trim());
+      setConta(st);
+      setCodigoConta('');
+      props.onToast(st.nome ? `Conectado como ${st.nome}.` : 'Conta conectada. O quadro passa a sincronizar sozinho.');
+    } catch (e) {
+      props.onToast(String(e));
+    } finally {
+      setContaOcupada(false);
+    }
+  }
+
+  async function desconectarConta() {
+    setContaOcupada(true);
+    try {
+      setConta(await App.DesconectarConta());
+      props.onToast('Conta desconectada neste computador. O quadro daqui continua.');
+    } catch (e) {
+      props.onToast(String(e));
+    } finally {
+      setContaOcupada(false);
+    }
   }
 
   async function salvarNuvem() {
@@ -654,12 +684,54 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
             </ul>
           )}
         </section>
+        {/* Conta do RotaSuite — Etapa 4 */}
+        <section className="mt-3 border rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-slate-700">Conectar à conta</h3>
+          <p className="text-xs text-slate-500 mt-1">
+            No site do RotaSuite, peça o código de pareamento e digite aqui.
+            O app guarda essa conexão neste computador e passa a enviar e receber o quadro sozinho.
+            Sem internet, o quadro continua funcionando neste PC.
+          </p>
+          {conta?.conectado ? (
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <p className="text-xs text-slate-600">
+                Conectado{conta.nome ? ` como ${conta.nome}` : ''}.
+                {conta.ultima ? ` Última sincronização: ${conta.ultima}.` : ''}
+              </p>
+              <button
+                className="border rounded px-3 py-1 text-sm disabled:opacity-50"
+                disabled={contaOcupada}
+                onClick={desconectarConta}
+              >
+                Desconectar
+              </button>
+            </div>
+          ) : (
+            <div className="mt-2 flex gap-2">
+              <input
+                className="border rounded px-2 py-1 text-sm"
+                placeholder="Código do site"
+                value={codigoConta}
+                onChange={(e) => setCodigoConta(e.target.value)}
+              />
+              <button
+                className="bg-blue-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
+                disabled={contaOcupada || !codigoConta.trim()}
+                onClick={conectarConta}
+              >
+                {contaOcupada ? 'Conectando…' : 'Conectar'}
+              </button>
+            </div>
+          )}
+        </section>
+
         {/* Sincronização */}
         <section className="mt-3 border rounded-lg p-3">
           <h3 className="text-sm font-semibold text-slate-700">Sincronização (GitHub)</h3>
           <p className="text-xs text-slate-500 mt-1">
             Envia o banco do Kanban para o repositório privado <code>banco-de-dados</code> e baixa
-            dele — assim outro PC vê os mesmos dados. Crie um token em{' '}
+            dele — assim outro PC vê os mesmos dados. Este envio pelo GitHub continua até a
+            conexão com a conta estar validada; depois será desligado. Crie um token em{' '}
             github.com/settings/tokens (clássico, escopo <strong>repo</strong>) e cole abaixo.
             {syncInfo?.temRemoto && (
               <> Última versão no repo: <strong>{syncInfo.remotoQuando}</strong>.</>

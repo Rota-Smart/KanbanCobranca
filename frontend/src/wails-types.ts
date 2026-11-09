@@ -39,6 +39,14 @@ export interface SyncInfo {
   pendenteBaixar: boolean;
   localAlterado: boolean;
 }
+export interface ContaStatus {
+  conectado: boolean;
+  nome: string;
+  email: string;
+  estado: string;
+  pendentes: number;
+  ultima: string;
+}
 export interface NuvemInfo {
   configurado: boolean;
   ultimoEnvio: string;
