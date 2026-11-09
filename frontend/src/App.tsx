@@ -417,6 +417,17 @@ export default function App() {
         showToast(d.mensagem || 'Não reconheci um ticket na tela em foco.');
       }
     });
+    // Pedido vindo do site ("Abrir no app" na fila de tickets do 360): mesmo caminho do Shift+F2.
+    const offPedidos = EventsOn('pedidos:site', (d: TicketDaTela) => {
+      const msg = mensagemChatDaTela(d);
+      if (msg) {
+        setChatKey((k) => k + 1);
+        setChatAberto(true);
+        setChatMsgInicial(msg);
+      } else {
+        showToast(d.mensagem || 'Chegou um pedido do site, mas não deu para identificar o ticket.');
+      }
+    });
     const offBusca = EventsOn('atalho:busca', () => {
       setBuscar360Coluna(colunas[0] ?? fallbackColunas[0]);
     });
@@ -439,6 +450,7 @@ export default function App() {
     });
     return () => {
       offTela();
+      offPedidos();
       offBusca();
       offBuscaTickets();
       offMovimenta();

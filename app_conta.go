@@ -165,6 +165,9 @@ func (a *App) cicloConta() {
 	if rel.Aplicou > 0 && a.uiPronta {
 		runtime.EventsEmit(a.ctx, "conta:quadro", nil)
 	}
+	// Fila de pedidos do site: o app atende depois do sync (o mesmo aviso do
+	// /eventos que acorda o ciclo traz também os pedidos novos na hora).
+	a.atenderPedidos(token)
 }
 
 func (a *App) motorConta() *contasync.Motor {
