@@ -868,9 +868,20 @@ func (a *App) RemoverChaveGroq(indice int) error {
 // provedorIA devolve o provedor ativo ("groq" é o default; "auto" usa a Groq
 // e manda pro DeepInfra no teto do free).
 func (a *App) provedorIA() string {
-	switch p := a.configGet(a.ctx, cfgIaProvedor); p {
+	return provedorEfetivo(a.configGet(a.ctx, cfgIaProvedor),
+		a.configGet(a.ctx, cfgGroqChave) != "",
+		a.cloudflareToken() != "" && a.cloudflareConta() != "")
+}
+
+// provedorEfetivo: Groq (ou nada escolhido) com chave da Groq e da Cloudflare
+// vira Auto — a Cloudflare entra de reserva sem o usuário precisar escolher.
+func provedorEfetivo(salvo string, temGroq, temCloudflare bool) string {
+	switch salvo {
 	case service.ProvedorDeepInfra, service.ProvedorSambaNova, service.ProvedorCerebras, service.ProvedorCloudflare, service.ProvedorAuto:
-		return p
+		return salvo
+	}
+	if temGroq && temCloudflare {
+		return service.ProvedorAuto
 	}
 	return service.ProvedorGroq
 }

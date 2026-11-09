@@ -75,8 +75,18 @@ func main() {
 	// O provedor ativo (ia_provedor) decide qual chave/modelo/endpoint usar.
 	config := db.NewConfigRepo(database)
 	provedorIA := func() string {
-		v, _ := config.Get(context.Background(), "ia_provedor")
-		return v
+		ctx := context.Background()
+		v, _ := config.Get(ctx, "ia_provedor")
+		groqChave, _ := config.Get(ctx, "groq_chave")
+		cfChave, _ := config.Get(ctx, "cloudflare_chave")
+		if cfChave == "" {
+			cfChave = cloudflareTokenPadrao()
+		}
+		cfConta, _ := config.Get(ctx, "cloudflare_conta")
+		if cfConta == "" {
+			cfConta = cloudflareContaPadrao()
+		}
+		return provedorEfetivo(v, groqChave != "", cfChave != "" && cfConta != "")
 	}
 	groq := service.NovoGroqCliente(
 		func() string {

@@ -23,3 +23,23 @@ func TestModelosComFerramentasFiltraEOrdena(t *testing.T) {
 		t.Fatalf("estimativa barato fora do esperado: %d", got[0].RespostasDiaFree)
 	}
 }
+
+func TestProvedorEfetivoViraAuto(t *testing.T) {
+	casos := []struct {
+		salvo    string
+		groq, cf bool
+		esperado string
+	}{
+		{"", true, true, "auto"},
+		{"groq", true, true, "auto"},
+		{"groq", true, false, "groq"},
+		{"groq", false, true, "groq"},
+		{"cerebras", true, true, "cerebras"},
+		{"cloudflare", true, true, "cloudflare"},
+	}
+	for _, c := range casos {
+		if got := provedorEfetivo(c.salvo, c.groq, c.cf); got != c.esperado {
+			t.Errorf("%+v: %s", c, got)
+		}
+	}
+}

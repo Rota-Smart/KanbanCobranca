@@ -601,7 +601,8 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               <strong>Automático:</strong> a Groq (free) atende normalmente; se ela não responder
               em 5 s ou acabar os tokens do minuto, o pedido vai na hora pra Cloudflare — que fica
               atendendo por 30 s antes de voltar pra Groq. Sem Cloudflare configurada, a reserva é a
-              DeepInfra.
+              DeepInfra. Com chave da Groq e da Cloudflare salvas, o app usa o Automático
+              sempre que o escolhido for Groq.
             </p>
           )}
           {usoGroq && (cfg?.provedor === 'groq' || cfg?.provedor === 'auto') && (
