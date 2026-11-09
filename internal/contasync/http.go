@@ -49,6 +49,8 @@ func EhNaoAutorizado(err error) bool {
 type HTTP struct {
 	Base   string
 	Client *http.Client
+	// Diag vai junto da busca para o servidor registrar o estado da fila.
+	Diag string
 }
 
 func (h *HTTP) cliente() *http.Client {
@@ -138,6 +140,9 @@ func (h *HTTP) Enviar(ctx context.Context, token string, alts []Alteracao) ([]Re
 
 func (h *HTTP) Buscar(ctx context.Context, token, desde string) (Pacote, error) {
 	caminho := "/sync?desde=" + url.QueryEscape(desde)
+	if h.Diag != "" {
+		caminho += "&diag=" + url.QueryEscape(h.Diag)
+	}
 	var pacote Pacote
 	var bruto struct {
 		Agora      string      `json:"agora"`

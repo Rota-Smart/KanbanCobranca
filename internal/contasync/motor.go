@@ -3,6 +3,7 @@ package contasync
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -20,6 +21,41 @@ type Motor struct {
 	API   API
 	Token func() (string, error)
 	Agora func() time.Time
+	// Reparar recria os gatilhos da fila quando faltam. Opcional.
+	Reparar func(ctx context.Context, db *sql.DB) error
+}
+
+// gatilhosEsperados: 3 por tabela sincronizada (7) + o de renomear coluna.
+const gatilhosEsperados = 22
+
+// autocorrigir solta a trava de "aplicando da nuvem" que ficou presa e
+// recria gatilhos que faltam. Sem isso, nada do que muda no PC entra na fila.
+func (m *Motor) autocorrigir(ctx context.Context) {
+	if res, err := m.DB.ExecContext(ctx, `UPDATE sync_suprimir SET ativo = 0 WHERE id = 1 AND ativo <> 0`); err == nil {
+		if n, _ := res.RowsAffected(); n > 0 {
+			slog.Warn("sync: trava de supressão estava presa; solta")
+		}
+	}
+	var n int
+	if err := m.DB.QueryRowContext(ctx,
+		`SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name GLOB '*_sync_*'`).Scan(&n); err == nil &&
+		n < gatilhosEsperados && m.Reparar != nil {
+		slog.Warn("sync: gatilhos faltando; recriando", "achados", n)
+		if err := m.Reparar(ctx, m.DB); err != nil {
+			slog.Error("sync: recriar gatilhos", "err", err)
+		}
+	}
+}
+
+// Diagnostico descreve o estado da fila para o servidor registrar.
+func Diagnostico(ctx context.Context, db *sql.DB) string {
+	var fila, ativo, gatilhos, hist int
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM sync_fila`).Scan(&fila)
+	_ = db.QueryRowContext(ctx, `SELECT ativo FROM sync_suprimir WHERE id = 1`).Scan(&ativo)
+	_ = db.QueryRowContext(ctx,
+		`SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name GLOB '*_sync_*'`).Scan(&gatilhos)
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM sync_historico WHERE motivo = 'falha'`).Scan(&hist)
+	return fmt.Sprintf("fila=%d ativo=%d gatilhos=%d falhas=%d", fila, ativo, gatilhos, hist)
 }
 
 func (m *Motor) agora() time.Time {
@@ -38,6 +74,7 @@ func (m *Motor) Ciclo(ctx context.Context) (Relatorio, error) {
 	if strings.TrimSpace(token) == "" {
 		return Relatorio{}, nil
 	}
+	m.autocorrigir(ctx)
 	if err := enfileirarBase(ctx, m.DB); err != nil {
 		return Relatorio{}, err
 	}
@@ -106,6 +143,14 @@ func (m *Motor) Ciclo(ctx context.Context) (Relatorio, error) {
 	}
 	if err := reservarFaixa(ctx, m.DB); err != nil {
 		return Relatorio{}, err
+	}
+	if ultima, _ := MetaGet(ctx, m.DB, "conferido_em"); m.agora().Sub(parseCarimbo(ultima)) >= intervaloConferencia {
+		desdeAgora, _ := cursor(ctx, m.DB)
+		if _, err := conferir(ctx, m, token, desdeAgora); err != nil {
+			slog.Warn("sync: conferência com a nuvem", "err", err)
+		} else {
+			_ = MetaSet(ctx, m.DB, "conferido_em", carimboAgora(m.agora()))
+		}
 	}
 	n, _ := ContarPendentes(ctx, m.DB)
 	return Relatorio{Estado: EstadoOk, Aplicou: aplicou, Pendentes: n}, nil

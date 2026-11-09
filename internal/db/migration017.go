@@ -1,6 +1,11 @@
 package db
 
-import "fmt"
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+)
 
 // A Etapa 4 acrescenta a fila de sincronização e os gatilhos que a alimentam.
 // O token da conta não entra aqui: ele fica no Credential Manager.
@@ -56,18 +61,31 @@ CREATE TABLE sync_cursor (
 );
 INSERT INTO sync_cursor (id, desde) VALUES (1, '1970-01-01T00:00:00Z');
 `
-	for _, t := range []struct{ nome, pk string }{
-		{"kanban_columns", "nome"},
-		{"tickets", "id"},
-		{"cobrancas", "id"},
-		{"movimentacoes", "id"},
-		{"tentativas_contato", "id"},
-		{"tickets_vinculos", "id"},
-		{"comissoes", "id"},
-	} {
+	for _, t := range tabelasSync {
 		b += gatilhosSync(t.nome, t.pk)
 	}
 	return b
+}
+
+var tabelasSync = []struct{ nome, pk string }{
+	{"kanban_columns", "nome"},
+	{"tickets", "id"},
+	{"cobrancas", "id"},
+	{"movimentacoes", "id"},
+	{"tentativas_contato", "id"},
+	{"tickets_vinculos", "id"},
+	{"comissoes", "id"},
+}
+
+// RepararGatilhosSync recria os gatilhos da fila que estiverem faltando.
+func RepararGatilhosSync(ctx context.Context, d *sql.DB) error {
+	for _, t := range tabelasSync {
+		sqlGatilhos := strings.ReplaceAll(gatilhosSync(t.nome, t.pk), "CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ")
+		if _, err := d.ExecContext(ctx, sqlGatilhos); err != nil {
+			return fmt.Errorf("gatilhos %s: %w", t.nome, err)
+		}
+	}
+	return nil
 }
 
 func exprRegistro(pk, linha string) string {

@@ -9,7 +9,9 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/zalando/go-keyring"
 
+	"rota-smart/internal/atualizacao"
 	"rota-smart/internal/contasync"
+	"rota-smart/internal/db"
 )
 
 // O token de pareamento fica no Credential Manager do Windows.
@@ -113,9 +115,11 @@ func (a *App) motorConta() *contasync.Motor {
 		API: &contasync.HTTP{
 			Base:   contasync.URLPadrao,
 			Client: nil,
+			Diag:   "v" + atualizacao.VersaoApp + " " + contasync.Diagnostico(context.Background(), a.db),
 		},
-		Token: lerTokenConta,
-		Agora: time.Now,
+		Token:   lerTokenConta,
+		Agora:   time.Now,
+		Reparar: db.RepararGatilhosSync,
 	}
 }
 
