@@ -581,12 +581,12 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30 backdrop-blur-sm" onClick={tentarFechar}>
       <aside
-        className="glass w-[30rem] max-w-full h-full overflow-y-auto p-4 shadow-xl"
+        className="painel-modal rounded-3xl m-3 w-[34rem] max-w-full h-[calc(100%-1.5rem)] overflow-y-auto p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold dark:text-slate-100 break-words">{ticket.nomeCliente}</h2>
+            <h2 className="text-xl font-bold tracking-tight dark:text-white break-words">{ticket.nomeCliente}</h2>
             <p className="text-xs text-slate-500">
               {ticket.tipoTicket}
               {ticket.numeroTicket ? ` · Ticket ${ticket.numeroTicket}` : ''}
@@ -609,16 +609,12 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
         </div>
 
         {/* Nav de seções, estilo coluna do Kanban */}
-        <nav className="mt-3 flex gap-1 overflow-x-auto -mx-1 px-1 pb-1" aria-label="Seções do cliente">
+        <nav className="mt-4 flex gap-1.5 overflow-x-auto scroll-hide rounded-2xl p-1.5 bg-white/5 border border-white/10" aria-label="Seções do cliente">
           {abas.map((a) => (
             <button
               key={a.id}
               aria-current={aba === a.id}
-              className={`shrink-0 px-2.5 py-1.5 rounded-lg text-[13px] font-medium transition ${
-                aba === a.id
-                  ? 'bg-sky-500/20 text-sky-700 dark:text-sky-200'
-                  : 'text-slate-500 hover:bg-slate-500/10 hover:text-slate-700 dark:hover:text-white'
-              }`}
+              className={`aba-painel shrink-0 ${aba === a.id ? 'ativa' : ''}`}
               onClick={() => setAba(a.id)}
             >
               <span aria-hidden className="mr-1">{a.icone}</span>

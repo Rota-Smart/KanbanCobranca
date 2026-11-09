@@ -156,13 +156,6 @@ function mensagemChatDaTela(d: TicketDaTela): string | null {
   return null;
 }
 
-// Tema claro/escuro persistido; aplicado na <html> via classe 'dark'.
-function temaInicial(): 'claro' | 'escuro' {
-  const salvo = localStorage.getItem('tema');
-  if (salvo === 'claro' || salvo === 'escuro') return salvo;
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro';
-}
-
 // colunaDisparaCobranca: mover para cá puxa o financeiro do 360 e gera a proposta.
 const colunaDisparaCobranca = 'Cobrança';
 
@@ -209,7 +202,7 @@ function ColunaOrdenavel(props: React.ComponentProps<typeof KanbanColumn>) {
             {...listeners}
             aria-label={`Arrastar coluna ${props.coluna}`}
             title="Arraste para reordenar as colunas"
-            className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:hover:text-white leading-none select-none touch-none px-0.5 text-xs"
+            className="cursor-grab active:cursor-grabbing text-white/50 hover:text-white leading-none select-none touch-none px-0.5 text-xs"
           >
             ⋮⋮
           </button>
@@ -245,7 +238,6 @@ export default function App() {
   const [chatAberto, setChatAberto] = useState(false);
   const [chatMsgInicial, setChatMsgInicial] = useState<string | null>(null);
   const [chatKey, setChatKey] = useState(0); // cada Shift+F2 remonta o drawer p/ reenviar
-  const [tema, setTema] = useState<'claro' | 'escuro'>(temaInicial);
   const [sincronizando, setSincronizando] = useState(false);
   const [contaEstado, setContaEstado] = useState('');
   const [modos, setModos] = useState<ModosCards>(modosDoStorage);
@@ -392,9 +384,9 @@ export default function App() {
   );
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', tema === 'escuro');
-    localStorage.setItem('tema', tema);
-  }, [tema]);
+    // Visual único em azul escuro: o tema escuro fica sempre ligado.
+    document.documentElement.classList.add('dark');
+  }, []);
 
   useEffect(() => {
     Promise.all([bindings.GetColunas(), bindings.GetTickets()])
@@ -985,177 +977,235 @@ ${txt.trim()}` : txt.trim());
     onDragOver(event);
   }
 
-  if (carregando) return <div className="p-8 text-slate-500">Carregando…</div>;
+  if (carregando) return <div className="p-8 text-white/80">Carregando…</div>;
   if (erro) return <div className="p-8 text-red-600">Erro ao carregar: {erro}</div>;
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-sky-100 via-indigo-50 to-rose-100 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950">
-      <header className="px-4 py-3 flex items-center justify-between glass-soft rounded-b-2xl">
-        <h1 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 inline-block" aria-hidden />
-          Kanban de Cobrança
-        </h1>
-        <div className="flex gap-2">
-          <div className="flex items-center gap-0.5 rounded-lg px-1.5 bg-white/40 dark:bg-white/10 border border-white/50 dark:border-white/10" title="Tamanho dos cards: individual pode ser mudado no menu ⋯ do card">
-            <button
-              aria-label="Minimizar todos os cards"
-              title="Minimizar todos os cards"
-              className={`px-1.5 py-1 rounded text-[13px] leading-none ${modos.global === 'min' ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300' : 'text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}
-              onClick={() => setModoGlobal('min')}
-            >
-              ▁
-            </button>
-            <button
-              aria-label="Deixar todos os cards resumidos"
-              title="Deixar todos os cards resumidos"
-              className={`px-1.5 py-1 rounded text-[13px] leading-none ${modos.global === 'resumo' ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300' : 'text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}
-              onClick={() => setModoGlobal('resumo')}
-            >
-              ▤
-            </button>
-          </div>
-          <button
-            aria-label={tema === 'escuro' ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
-            title={tema === 'escuro' ? 'Tema claro' : 'Tema escuro'}
-            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
-            onClick={() => setTema(tema === 'escuro' ? 'claro' : 'escuro')}
+    <div className="h-screen flex gap-3 p-3 text-slate-800 dark:text-slate-100">
+      {/* Barra lateral de ícones (rail), como na referência: atalhos das
+          ferramentas que antes ficavam enfileiradas no header. */}
+      <aside className="w-16 shrink-0 rounded-3xl flex flex-col items-center py-4 gap-2 bg-white/10 dark:bg-white/5 border border-white/20 dark:border-white/10 backdrop-blur-xl shadow-[0_12px_40px_rgba(10,16,60,0.3)]">
+        <div
+          className="w-9 h-9 rounded-2xl bg-gradient-to-br from-white/90 to-indigo-200/80 shadow-inner mb-3 flex items-center justify-center text-[11px] font-black text-indigo-700 select-none"
+          title="RotaSuite"
+          aria-hidden
+        >
+          RS
+        </div>
+        <button className="rail-btn ativo" title="Quadro" aria-label="Quadro">
+          ▦
+        </button>
+        <button className="rail-btn" title="Assistente (chat)" aria-label="Assistente" onClick={() => setChatAberto(true)}>
+          💬
+        </button>
+        <button
+          className="rail-btn"
+          title="Buscar cliente no 360 (Shift+F3)"
+          aria-label="Buscar cliente no 360"
+          onClick={() => setBuscar360Coluna(colunas[0] ?? fallbackColunas[0])}
+        >
+          🔎
+        </button>
+        <button
+          className="rail-btn"
+          title="Pesquisar tickets abertos do 360 (Shift+F4)"
+          aria-label="Pesquisar tickets do 360"
+          onClick={() => setBuscaTicketsAberta(true)}
+        >
+          🎟
+        </button>
+        <button
+          className="rail-btn"
+          title={`Visitas agendadas (qualquer data — atrasadas incluídas)${visitasProximas.length > 0 ? ` — ${visitasProximas.length}` : ''}`}
+          aria-label="Visitas agendadas"
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setMenuVisitas((m) => (m ? null : { x: r.right + 8, y: r.top }));
+          }}
+        >
+          📅
+          {visitasProximas.length > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center shadow">
+              {visitasProximas.length}
+            </span>
+          )}
+        </button>
+        <button
+          className="rail-btn disabled:opacity-60"
+          title={verificandoFechados ? 'Conferindo tickets…' : 'Ações de ticket: mover para coluna ou fechar os finalizados'}
+          aria-label="Ações de ticket"
+          disabled={verificandoFechados}
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setMenuAcao((m) => (m ? null : { x: r.right + 8, y: r.top }));
+          }}
+        >
+          {verificandoFechados ? '🔍' : '🎫'}
+        </button>
+        <div className="flex-1" />
+        <button
+          className="rail-btn disabled:opacity-50"
+          title={sincronizando ? 'Sincronizando…' : 'Sincronizar dados com o repositório (outro PC acessa os mesmos dados)'}
+          aria-label="Sincronizar"
+          disabled={sincronizando}
+          onClick={sincronizar}
+        >
+          <span className={sincronizando ? 'animate-spin inline-block' : ''}>⟳</span>
+        </button>
+        <button className="rail-btn" title="Configurações" aria-label="Configurações" onClick={() => setConfigAberta(true)}>
+          ⚙
+        </button>
+      </aside>
+
+      {/* Menus abertos pelos botões do rail: abrem à direita do botão. */}
+      {menuVisitas && (
+        <>
+          <div className="fixed inset-0 z-[100]" onClick={() => setMenuVisitas(null)} />
+          <div
+            className="fixed z-[101] rounded-2xl text-xs bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-white/60 dark:border-slate-600/60 shadow-2xl overflow-y-auto max-h-[60vh] min-w-[16rem] py-1"
+            style={{ left: menuVisitas.x, top: Math.min(menuVisitas.y, window.innerHeight - 200) }}
           >
-            {tema === 'escuro' ? '☀️' : '🌙'}
-          </button>
-          <button
-            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
-            title="Buscar cliente no 360 (Shift+F3)"
-            onClick={() => setBuscar360Coluna(colunas[0] ?? fallbackColunas[0])}
-          >
-            🔎 Buscar
-          </button>
-          <button
-            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
-            title="Pesquisar tickets abertos do 360 (Shift+F4)"
-            onClick={() => setBuscaTicketsAberta(true)}
-          >
-            🎟 Tickets
-          </button>
-          <div className="relative">
-            <button
-              className={`text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium ${visitasProximas.length > 0 ? 'text-sky-700 dark:text-sky-300' : ''}`}
-              title="Visitas agendadas (qualquer data — atrasadas incluídas)"
-              onClick={(e) => {
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                setMenuVisitas((m) => (m ? null : { x: r.right, y: r.bottom + 4 }));
-              }}
-            >
-              📅 Visitas{visitasProximas.length > 0 ? ` (${visitasProximas.length})` : ''}
-            </button>
-            {menuVisitas && (
-              <>
-                <div
-                  className="fixed inset-0 z-[100]"
-                  onClick={() => setMenuVisitas(null)}
-                />
-                <div
-                  className="fixed z-[101] rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-600/60 shadow-xl overflow-y-auto max-h-[60vh] min-w-[16rem]"
-                  style={{ right: window.innerWidth - menuVisitas.x, top: menuVisitas.y }}
-                >
-                  {visitasProximas.length === 0 ? (
-                    <div className="px-3 py-2 text-slate-500 dark:text-slate-400">
-                      Nenhuma visita agendada.
-                    </div>
-                  ) : (
-                    visitasProximas.map((t) => (
-                      <div key={t.id} className="flex items-stretch">
-                        <button
-                          className={`flex-1 text-left px-3 py-2 hover:bg-slate-500/10 ${visitaAtrasada(t) && !t.visitaRealizada ? 'text-red-600 dark:text-red-400' : t.visitaRealizada ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-200'}`}
-                          title={t.visitaEndereco || t.endereco || ''}
-                          onClick={() => {
-                            setMenuVisitas(null);
-                            setPreCobranca(null);
-                            setAberto(t);
-                          }}
-                        >
-                          {t.visitaRealizada ? '✅' : '📍'} {resumoVisita(t)}
-                          {visitaAtrasada(t) && !t.visitaRealizada ? ' · atrasada' : ''}
-                        </button>
-                        {!t.visitaRealizada && (
-                          <button
-                            className="px-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
-                            title="Marcar visita como realizada"
-                            onClick={async () => {
-                              try {
-                                const u = await bindings.MarcarVisitaRealizada(t.id);
-                                const atual = u as Ticket;
-                                setBoard((b) => {
-                                  const n: Board = {};
-                                  for (const [c, ts] of Object.entries(b)) n[c] = ts.map((x) => (x.id === atual.id ? atual : x));
-                                  return n;
-                                });
-                                showToast(`Visita de ${t.nomeCliente} marcada como realizada.`);
-                              } catch (e) {
-                                showToast(String(e));
-                              }
-                            }}
-                          >
-                            ✅
-                          </button>
-                        )}
-                      </div>
-                    ))
+            <p className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Visitas agendadas</p>
+            {visitasProximas.length === 0 ? (
+              <div className="px-3 py-2 text-slate-500 dark:text-slate-400">Nenhuma visita agendada.</div>
+            ) : (
+              visitasProximas.map((t) => (
+                <div key={t.id} className="flex items-stretch">
+                  <button
+                    className={`flex-1 text-left px-3 py-2 hover:bg-slate-500/10 ${visitaAtrasada(t) && !t.visitaRealizada ? 'text-red-600 dark:text-red-400' : t.visitaRealizada ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-200'}`}
+                    title={t.visitaEndereco || t.endereco || ''}
+                    onClick={() => {
+                      setMenuVisitas(null);
+                      setPreCobranca(null);
+                      setAberto(t);
+                    }}
+                  >
+                    {t.visitaRealizada ? '✅' : '📍'} {resumoVisita(t)}
+                    {visitaAtrasada(t) && !t.visitaRealizada ? ' · atrasada' : ''}
+                  </button>
+                  {!t.visitaRealizada && (
+                    <button
+                      className="px-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                      title="Marcar visita como realizada"
+                      onClick={async () => {
+                        try {
+                          const u = await bindings.MarcarVisitaRealizada(t.id);
+                          const atual = u as Ticket;
+                          setBoard((b) => {
+                            const n: Board = {};
+                            for (const [c, ts] of Object.entries(b)) n[c] = ts.map((x) => (x.id === atual.id ? atual : x));
+                            return n;
+                          });
+                          showToast(`Visita de ${t.nomeCliente} marcada como realizada.`);
+                        } catch (e) {
+                          showToast(String(e));
+                        }
+                      }}
+                    >
+                      ✅
+                    </button>
                   )}
                 </div>
-              </>
+              ))
             )}
           </div>
-          <div className="relative">
+        </>
+      )}
+      {menuAcao && (
+        <>
+          <div className="fixed inset-0 z-[100]" onClick={() => setMenuAcao(null)} />
+          <div
+            className="fixed z-[101] rounded-2xl text-xs bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-white/60 dark:border-slate-600/60 shadow-2xl overflow-y-auto max-h-[60vh] min-w-[14rem] py-1"
+            style={{ left: menuAcao.x, top: menuAcao.y }}
+          >
+            <p className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Ações de ticket</p>
             <button
-              className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium disabled:opacity-60"
-              title="Ações de ticket: mover para coluna ou fechar os finalizados"
-              disabled={verificandoFechados}
-              onClick={(e) => {
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                setMenuAcao((m) => (m ? null : { x: r.right, y: r.bottom + 4 }));
-              }}
+              className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+              onClick={() => { setMenuAcao(null); setMovimentaAberta(true); }}
             >
-              {verificandoFechados ? '🔍 Conferindo…' : '🎫 Ação'}
+              📥 Mover ticket para coluna…
             </button>
-            {menuAcao && (
-              <>
-                <div
-                  className="fixed inset-0 z-[100]"
-                  onClick={() => setMenuAcao(null)}
-                />
-                <div
-                  className="fixed z-[101] rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-600/60 shadow-xl overflow-y-auto max-h-[60vh] min-w-[12rem]"
-                  style={{ right: window.innerWidth - menuAcao.x, top: menuAcao.y }}
-                >
-                  <button
-                    className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
-                    onClick={() => { setMenuAcao(null); setMovimentaAberta(true); }}
-                  >
-                    📥 Mover ticket para coluna…
-                  </button>
-                  <button
-                    className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
-                    onClick={() => { setMenuAcao(null); void verificarFechados(); }}
-                  >
-                    ✅ Fechar finalizados (Ticket Fechado)
-                  </button>
-                </div>
-              </>
-            )}
+            <button
+              className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200"
+              onClick={() => { setMenuAcao(null); void verificarFechados(); }}
+            >
+              ✅ Fechar finalizados (Ticket Fechado)
+            </button>
+          </div>
+        </>
+      )}
+
+      <main className="flex-1 min-w-0 flex flex-col gap-3">
+      <header className="glass rounded-2xl px-5 py-3 flex items-center gap-4 flex-wrap">
+        <h1 className="text-xl font-bold tracking-tight text-slate-800 dark:text-white whitespace-nowrap">
+          Kanban de Cobrança
+        </h1>
+        <div className="flex items-center gap-0.5 rounded-xl p-1 bg-slate-500/10 dark:bg-white/10" title="Tamanho dos cards: individual pode ser mudado no menu ⋯ do card">
+          <button
+            aria-label="Minimizar todos os cards"
+            title="Minimizar todos os cards"
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${modos.global === 'min' ? 'bg-white text-slate-800 shadow dark:bg-white/20 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}
+            onClick={() => setModoGlobal('min')}
+          >
+            Compacto
+          </button>
+          <button
+            aria-label="Deixar todos os cards resumidos"
+            title="Deixar todos os cards resumidos"
+            className={`px-3 py-1 rounded-lg text-sm font-medium transition ${modos.global === 'resumo' ? 'bg-white text-slate-800 shadow dark:bg-white/20 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}
+            onClick={() => setModoGlobal('resumo')}
+          >
+            Resumo
+          </button>
+        </div>
+
+        <div className="flex-1" />
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {filtroAtivo && (
+            <>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {visiveis} de {totalCards} cards
+              </span>
+              <button
+                className="text-xs rounded-lg px-2 py-1 bg-slate-500/10 hover:bg-slate-500/20"
+                onClick={() => {
+                  setFiltroTexto('');
+                  setFiltroAssunto('');
+                }}
+              >
+                ✕ Limpar
+              </button>
+            </>
+          )}
+          <select
+            value={filtroAssunto}
+            onChange={(e) => setFiltroAssunto(e.target.value)}
+            className="text-sm rounded-xl px-3 py-1.5 max-w-[12rem] bg-white/60 dark:bg-white/10 border border-white/70 dark:border-white/10 outline-none focus:ring-2 focus:ring-indigo-400/60"
+            title="Filtrar pelo assunto dos tickets vinculados aos cards"
+          >
+            <option value="">Assunto: todos</option>
+            {assuntosTodos.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none" aria-hidden>
+              ⌕
+            </span>
+            <input
+              type="search"
+              value={filtroTexto}
+              onChange={(e) => setFiltroTexto(e.target.value)}
+              placeholder="Buscar: cliente, nº ou assunto…"
+              className="text-sm rounded-xl pl-8 pr-3 py-1.5 w-64 bg-white/60 dark:bg-white/10 border border-white/70 dark:border-white/10 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-indigo-400/60"
+            />
           </div>
           <button
-            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/50 dark:border-white/10 transition font-medium"
+            className="text-sm rounded-xl px-4 py-1.5 font-semibold bg-white/80 hover:bg-white text-indigo-700 border border-white shadow-sm dark:bg-indigo-500/80 dark:hover:bg-indigo-500 dark:text-white dark:border-indigo-400/40 transition"
             onClick={() => setChatAberto(true)}
           >
             💬 Assistente
-          </button>
-          <button
-            className="text-sm border rounded px-3 py-1 hover:bg-slate-50 dark:hover:bg-slate-700 dark:border-slate-600 disabled:opacity-50"
-            title="Sincronizar dados com o repositório (outro PC acessa os mesmos dados)"
-            disabled={sincronizando}
-            onClick={sincronizar}
-          >
-            {sincronizando ? '⟳ Sincronizando…' : '⟳ Sincronizar'}
           </button>
           {contaEstado === 'sincronizando' && (
             <span className="text-xs text-slate-500 dark:text-slate-400 self-center">sincronizando</span>
@@ -1166,51 +1216,8 @@ ${txt.trim()}` : txt.trim());
           {contaEstado === 'reconectar' && (
             <span className="text-xs text-amber-800/80 dark:text-amber-200/80 self-center">reconectar a conta</span>
           )}
-          <button
-            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 hover:bg-white/70 border border-white/50 transition font-medium"
-            onClick={() => setConfigAberta(true)}
-          >
-            ⚙ Configurações
-          </button>
         </div>
       </header>
-
-      <div className="px-4 pt-2 flex items-center gap-2 flex-wrap">
-        <input
-          type="search"
-          value={filtroTexto}
-          onChange={(e) => setFiltroTexto(e.target.value)}
-          placeholder="Filtrar cards: cliente, nº ou assunto do ticket…"
-          className="text-sm rounded-lg px-3 py-1.5 w-72 bg-white/40 dark:bg-white/10 border border-white/50 dark:border-white/10 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-sky-400/60"
-        />
-        <select
-          value={filtroAssunto}
-          onChange={(e) => setFiltroAssunto(e.target.value)}
-          className="text-sm rounded-lg px-2 py-1.5 max-w-xs bg-white/40 dark:bg-white/10 border border-white/50 dark:border-white/10 outline-none focus:ring-2 focus:ring-sky-400/60"
-          title="Filtrar pelo assunto dos tickets vinculados aos cards"
-        >
-          <option value="">Assunto: todos</option>
-          {assuntosTodos.map((a) => (
-            <option key={a} value={a}>{a}</option>
-          ))}
-        </select>
-        {filtroAtivo && (
-          <>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              {visiveis} de {totalCards} cards
-            </span>
-            <button
-              className="text-xs rounded-lg px-2 py-1 bg-white/40 dark:bg-white/10 border border-white/50 dark:border-white/10 hover:bg-white/70 dark:hover:bg-white/20"
-              onClick={() => {
-                setFiltroTexto('');
-                setFiltroAssunto('');
-              }}
-            >
-              ✕ Limpar filtro
-            </button>
-          </>
-        )}
-      </div>
 
       <DndContext
         sensors={sensors}
@@ -1220,7 +1227,7 @@ ${txt.trim()}` : txt.trim());
         onDragOver={onDragOverUnificado}
         onDragEnd={onDragEndUnificado}
       >
-        <div className="flex gap-3 p-3 overflow-x-auto overscroll-x-contain flex-1">
+        <div className="flex gap-4 pb-1 overflow-x-auto overscroll-x-contain flex-1 min-h-0">
           <SortableContext items={colunas} strategy={horizontalListSortingStrategy}>
               {colunas.map((c) => {
                 const todosDaColuna = (board[c] ?? []).filter(cardVisivel);
@@ -1269,14 +1276,14 @@ ${txt.trim()}` : txt.trim());
                     rodape={
                       ehFechada && historicoFechados.length > 0 ? (
                         <button
-                          className="mt-1 w-full text-xs text-sky-600 dark:text-sky-300 hover:text-sky-700 dark:hover:text-sky-200 py-1 rounded font-medium"
+                          className="mt-2 w-full text-xs text-white/85 hover:text-white bg-white/10 hover:bg-white/20 py-1.5 rounded-xl font-medium"
                           onClick={() => setHistoricoAberto(true)}
                         >
                           🗂 Histórico de fechados ({historicoFechados.length})
                         </button>
                       ) : c === colunaUpgrade && comissoes.some((x) => x.recebido) ? (
                         <button
-                          className="mt-1 w-full text-xs text-teal-600 dark:text-teal-300 hover:text-teal-700 dark:hover:text-teal-200 py-1 rounded font-medium"
+                          className="mt-2 w-full text-xs text-white/85 hover:text-white bg-white/10 hover:bg-white/20 py-1.5 rounded-xl font-medium"
                           onClick={() => setComissoesAberto(true)}
                         >
                           🧾 Comissões recebidas ({comissoes.filter((x) => x.recebido).length})
@@ -1288,13 +1295,14 @@ ${txt.trim()}` : txt.trim());
               })}
             </SortableContext>
           <button
-            className="glass-soft rounded-2xl w-56 shrink-0 self-start p-3 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-white font-medium text-left"
+            className="rounded-3xl w-60 shrink-0 self-start p-4 text-sm font-semibold text-white/80 hover:text-white border-2 border-dashed border-white/30 hover:border-white/60 hover:bg-white/10 transition text-left"
             onClick={criarColuna}
           >
             + Nova coluna
           </button>
         </div>
       </DndContext>
+      </main>
 
       {selecao.size > 0 && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[95] glass rounded-2xl shadow-xl px-3 py-2 flex flex-wrap items-center gap-2 text-sm max-w-[95vw]">
@@ -1379,7 +1387,7 @@ ${txt.trim()}` : txt.trim());
           onClick={() => setHistoricoAberto(false)}
         >
           <div
-            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[26rem] max-w-full max-h-[70vh] flex flex-col"
+            className="painel-modal rounded-3xl w-[26rem] max-w-full max-h-[70vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0">
@@ -1490,7 +1498,7 @@ ${txt.trim()}` : txt.trim());
           onClick={() => setComissoesAberto(false)}
         >
           <div
-            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[26rem] max-w-full max-h-[70vh] flex flex-col"
+            className="painel-modal rounded-3xl w-[26rem] max-w-full max-h-[70vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0">

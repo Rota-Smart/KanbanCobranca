@@ -79,7 +79,7 @@ export default function OrcamentoModal({ ticket, onFechar }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onFechar}>
       <div
-        className="glass rounded-2xl w-[40rem] max-w-full max-h-[90vh] overflow-y-auto p-5 shadow-xl"
+        className="painel-modal rounded-3xl w-[40rem] max-w-full max-h-[90vh] overflow-y-auto p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">

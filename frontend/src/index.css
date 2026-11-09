@@ -14,30 +14,56 @@
 .dark .text-slate-500 { color: #b8c0cc !important; }
 .dark .text-slate-400 { color: #a8b1bf !important; }
 
-/* ===== Glassmorphism ===== */
+/* ===== Fundo do app =====
+   Gradiente azul profundo (estilo quadro da referência) com manchas radiais;
+   o painel de vidro por cima dá o efeito fosco. Fixo no body para o
+   overscroll do WebView2 nunca revelar canvas branco. */
+html,
+body {
+  overscroll-behavior: none;
+  min-height: 100%;
+}
+body {
+  background-color: #2e3d8f;
+  background-image:
+    radial-gradient(120% 90% at 85% -10%, rgba(96, 125, 255, 0.55) 0%, rgba(96, 125, 255, 0) 55%),
+    radial-gradient(90% 80% at -10% 100%, rgba(56, 80, 190, 0.6) 0%, rgba(56, 80, 190, 0) 60%),
+    radial-gradient(60% 55% at 55% 60%, rgba(140, 110, 255, 0.18) 0%, rgba(140, 110, 255, 0) 70%),
+    linear-gradient(160deg, #3b4ba8 0%, #2c3a8c 45%, #1d2a6e 100%);
+  background-attachment: fixed;
+}
+html.dark body {
+  background-color: #0b1232;
+  background-image:
+    radial-gradient(120% 90% at 85% -10%, rgba(64, 90, 200, 0.35) 0%, rgba(64, 90, 200, 0) 55%),
+    radial-gradient(90% 80% at -10% 100%, rgba(30, 45, 120, 0.5) 0%, rgba(30, 45, 120, 0) 60%),
+    linear-gradient(160deg, #141d4d 0%, #0e1638 50%, #080d24 100%);
+}
+
+/* ===== Glassmorphism (painéis foscos sobre o fundo azul) ===== */
 .glass {
   background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(18px) saturate(1.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(22px) saturate(1.6);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
   border: 1px solid rgba(255, 255, 255, 0.55);
-  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.12);
+  box-shadow: 0 12px 40px rgba(10, 16, 60, 0.28);
 }
 .glass-soft {
-  background: rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(12px) saturate(1.3);
-  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  background: rgba(255, 255, 255, 0.32);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
   border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 0 4px 20px rgba(31, 38, 135, 0.08);
+  box-shadow: 0 6px 24px rgba(10, 16, 60, 0.18);
 }
 .dark .glass {
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  background: rgba(20, 28, 62, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 .dark .glass-soft {
-  background: rgba(30, 41, 59, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  background: rgba(30, 41, 80, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
 }
 
 /* Card estilo delivery: elevação e lift no hover */
@@ -46,17 +72,46 @@
 }
 .card-delivery:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 28px rgba(31, 38, 135, 0.18);
+  box-shadow: 0 16px 36px rgba(10, 16, 60, 0.35);
 }
 .dark .card-delivery:hover {
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+}
+
+/* ===== Barra lateral de ícones (rail) ===== */
+.rail-btn {
+  position: relative;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.9rem;
+  font-size: 1rem;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.75);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.rail-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+.rail-btn.ativo {
+  background: rgba(255, 255, 255, 0.85);
+  color: #2c3a8c;
+  box-shadow: 0 4px 14px rgba(10, 16, 60, 0.3);
+}
+.dark .rail-btn.ativo {
+  background: rgba(99, 122, 235, 0.35);
+  color: #ffffff;
 }
 
 /* ===== Scrollbars no tema do kanban =====
-   Póleo fino estilo delivery: índigo no claro, slate translúcido no escuro. */
+   Póleo fino estilo delivery: branco translúcido no fundo azul. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #818cf8 transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.45) transparent;
 }
 ::-webkit-scrollbar {
   width: 10px;
@@ -66,13 +121,13 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(129, 140, 248, 0.55);
+  background: rgba(255, 255, 255, 0.4);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.8);
+  background: rgba(255, 255, 255, 0.65);
   background-clip: content-box;
 }
 ::-webkit-scrollbar-corner {
@@ -108,18 +163,110 @@
   cursor: pointer;
 }
 
-/* Fundo do documento acompanha o tema: o gradiente fica no div raiz do app,
-   então arrastar além do fim do conteúdo (overscroll do WebView2) revelaria
-   o canvas branco padrão do navegador. Também cobre a tela "Carregando…". */
-html {
-  overscroll-behavior: none;
-  background-color: #eef2ff;
+/* Cabeçalho de coluna em caixa-alta, como na referência */
+.titulo-coluna {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
-body {
-  overscroll-behavior: none;
-  background-color: #eef2ff;
+
+/* Card dentro da coluna: vidro mais claro que o painel da coluna,
+   com brilho sutil no topo (como na referência). */
+.card-tile {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(235, 240, 255, 0.68) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
 }
-html.dark,
+.dark .card-tile {
+  background:
+    linear-gradient(180deg, rgba(51, 65, 120, 0.7) 0%, rgba(30, 41, 85, 0.62) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* ===== Paleta azul-escuro (visual único) =====
+   Fundo, painéis, cards, menus e modais em tons de azul-marinho. */
 html.dark body {
-  background-color: #020617;
+  background-color: #071233;
+  background-image:
+    radial-gradient(120% 90% at 85% -10%, rgba(45, 80, 190, 0.45) 0%, rgba(45, 80, 190, 0) 55%),
+    radial-gradient(90% 80% at -10% 100%, rgba(25, 50, 140, 0.5) 0%, rgba(25, 50, 140, 0) 60%),
+    linear-gradient(160deg, #10215a 0%, #0a1740 50%, #050d28 100%);
 }
+.dark .glass {
+  background: rgba(14, 30, 78, 0.62);
+  border: 1px solid rgba(120, 150, 255, 0.16);
+}
+.dark .glass-soft {
+  background: rgba(18, 38, 96, 0.42);
+  border: 1px solid rgba(120, 150, 255, 0.14);
+}
+.dark .card-tile {
+  background: linear-gradient(180deg, rgba(32, 58, 140, 0.78) 0%, rgba(20, 40, 104, 0.72) 100%);
+  border: 1px solid rgba(130, 160, 255, 0.2);
+}
+/* Superfícies sólidas dos menus, modais e chat: troca cinza por marinho */
+.dark .bg-slate-900, .dark .dark\:bg-slate-900 { background-color: #081436 !important; }
+.dark .dark\:bg-slate-800, .dark .dark\:bg-slate-800\/95 { background-color: rgba(13, 28, 74, 0.97) !important; }
+.dark .dark\:bg-slate-800\/80, .dark .dark\:bg-slate-800\/70, .dark .dark\:bg-slate-800\/60 { background-color: rgba(20, 40, 100, 0.75) !important; }
+.dark .dark\:bg-slate-700, .dark .dark\:bg-slate-700\/50 { background-color: #1a3480 !important; }
+.dark .dark\:border-slate-700, .dark .dark\:border-slate-600, .dark .dark\:border-slate-600\/60 { border-color: rgba(120, 150, 255, 0.22) !important; }
+
+/* ===== Janelas: card completo, chat, configurações e diálogos ===== */
+.painel-modal {
+  background: linear-gradient(170deg, rgba(20, 42, 112, 0.94) 0%, rgba(9, 22, 66, 0.96) 100%);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid rgba(130, 160, 255, 0.24);
+  box-shadow: 0 24px 70px rgba(0, 4, 30, 0.65);
+}
+.dark .fixed.inset-0.bg-black\/30,
+.dark .fixed.inset-0.bg-black\/40 {
+  background-color: rgba(3, 9, 34, 0.55);
+}
+.aba-painel {
+  padding: 0.4rem 0.8rem;
+  border-radius: 0.8rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: #b8c6ea;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.aba-painel:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.aba-painel.ativa {
+  background: rgba(120, 150, 255, 0.32);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(170, 195, 255, 0.35), 0 4px 12px rgba(0, 4, 30, 0.35);
+}
+/* Blocos internos viram cards de vidro azul */
+.painel-modal .dark\:bg-white\/5,
+.painel-modal .dark\:bg-slate-700,
+.painel-modal .dark\:bg-slate-700\/50 {
+  background-color: rgba(50, 82, 180, 0.26) !important;
+  border-color: rgba(130, 160, 255, 0.18) !important;
+  border-radius: 1rem;
+}
+.dark .painel-modal input:not([type='checkbox']):not([type='radio']),
+.dark .painel-modal select,
+.dark .painel-modal textarea {
+  background-color: rgba(6, 16, 52, 0.62) !important;
+  border: 1px solid rgba(130, 160, 255, 0.26);
+  border-radius: 0.65rem;
+  color: #f1f5f9;
+  outline: none;
+}
+.dark .painel-modal input:focus,
+.dark .painel-modal select:focus,
+.dark .painel-modal textarea:focus {
+  border-color: rgba(150, 180, 255, 0.75);
+  box-shadow: 0 0 0 3px rgba(100, 135, 255, 0.22);
+}
+.dark select option { background: #0d1c4a; color: #f1f5f9; }
+.dark .painel-modal button:not(.aba-painel).border,
+.dark .painel-modal details { border-color: rgba(130, 160, 255, 0.28); }
+.dark .painel-modal .bg-blue-600 {
+  background-image: linear-gradient(135deg, #5b7cff, #3f55d8);
+  border-color: transparent;
+}
+.dark .painel-modal .text-red-600,
+.dark .painel-modal .text-red-500 { color: #fca5a5; }

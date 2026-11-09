@@ -241,6 +241,14 @@ func converter(coluna string, v any) any {
 			return n != 0
 		}
 	}
+	// O Postgres recusa o caractere nulo (0x00) em texto; dados vindos do 360
+	// às vezes o trazem.
+	switch t := v.(type) {
+	case string:
+		return strings.ReplaceAll(t, "\x00", "")
+	case []byte:
+		return strings.ReplaceAll(string(t), "\x00", "")
+	}
 	return v
 }
 
