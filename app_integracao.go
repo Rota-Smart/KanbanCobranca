@@ -761,7 +761,7 @@ func (a *App) GetConfig() ConfigApp {
 		DeepInfraTemChave: a.configGet(a.ctx, cfgDeepInfraChave) != "",
 		SambaNovaTemChave: a.configGet(a.ctx, cfgSambaNovaChave) != "",
 		CerebrasTemChave:  a.configGet(a.ctx, cfgCerebrasChave) != "",
-		CloudflareTemChave: a.configGet(a.ctx, cfgCloudflareChave) != "",
+		CloudflareTemChave: a.configGet(a.ctx, cfgCloudflareChave) != "" || cloudflareTokenPadrao() != "",
 		Autor360:          a.configGet(a.ctx, cfgAutor360),
 		RotaConectado:     a.rotaAtual() != nil,
 	}

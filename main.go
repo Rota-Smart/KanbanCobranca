@@ -101,7 +101,10 @@ func main() {
 				if v, _ := config.Get(ctx, "cloudflare_chave"); v != "" {
 					return v
 				}
-				return os.Getenv("CLOUDFLARE_API_TOKEN")
+				if v := os.Getenv("CLOUDFLARE_API_TOKEN"); v != "" {
+					return v
+				}
+				return cloudflareTokenPadrao()
 			}
 			if v, _ := config.Get(ctx, "groq_chave"); v != "" {
 				return v
@@ -131,8 +134,10 @@ func main() {
 	groq.ProvedorInjetavel = provedorIA
 	// Account ID da Cloudflare: parte do endpoint do Workers AI.
 	groq.CloudflareContaInjetavel = func() string {
-		v, _ := config.Get(context.Background(), "cloudflare_conta")
-		return v
+		if v, _ := config.Get(context.Background(), "cloudflare_conta"); v != "" {
+			return v
+		}
+		return cloudflareContaPadrao()
 	}
 	// Rotação de chaves da Groq: principal + extras (groq_chaves_extras,
 	// JSON) — no 429 a próxima chave entra antes do fallback DeepInfra.

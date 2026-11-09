@@ -28,9 +28,9 @@ const MODELOS_CEREBRAS = [
 ];
 
 const MODELOS_CLOUDFLARE = [
-  'llama-3.3-70b-instruct-fp8-fast',
-  'llama-4-scout-17b-16e',
-  'llama3.1-8b-instruct',
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  '@cf/meta/llama-4-scout-17b-16e-instruct',
+  '@cf/meta/llama-3.1-8b-instruct-fast',
 ];
 
 // SecaoProvedorPago: chave + modelo de um provedor OpenAI-compatible pago
@@ -659,7 +659,7 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
                 />
                 <input
                   className="border rounded px-2 py-1 text-sm"
-                  placeholder="Modelo (padrão: llama-3.3-70b-instruct-fp8-fast)"
+                  placeholder="Modelo (padrão: @cf/meta/llama-3.3-70b-instruct-fp8-fast)"
                   value={modeloCF}
                   onChange={(e) => setModeloCF(e.target.value)}
                   list="modelos-cloudflare"

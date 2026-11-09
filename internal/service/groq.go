@@ -35,7 +35,7 @@ const (
 	// /accounts/<account_id>/ai/v1/chat/completions — o Account ID faz parte
 	// da URL, então o endpoint é montado a cada chamada (CloudflareConta).
 	CloudflareEndpointBase = "https://api.cloudflare.com/client/v4/accounts/%s/ai/v1/chat/completions"
-	CloudflareModeloPadrao = "llama-3.3-70b-instruct-fp8-fast"
+	CloudflareModeloPadrao = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 	// Timeout por requisição: a Groq responde em ~2s; o fallback DeepInfra
 	// (Llama 70B, 400-800 tokens) pode levar ~15s — o ctx do chamador é quem
 	// limita de verdade (15-90s nos fluxos do app).
