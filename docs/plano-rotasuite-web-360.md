@@ -169,14 +169,21 @@ npx wrangler deploy
 ```
 
 ### Etapa 7 — Integração 360 no site (somente leitura + visão pessoal)
-- [ ] Tela **Tickets**: fila aberta da conta, busca por texto, filtros (status, data, solicitante, unidade/cidade). Leitura do `/api/helpdesk/tickets`.
-- [ ] **Visão pessoal**, salva no RotaSuite e compartilhada com o app: colunas visíveis, filtros salvos e ordem da fila. Nenhuma dessas ações chama endpoint de escrita do 360.
-- [ ] Tela **Clientes**: busca por nome/código, filtro por unidade (Ijuí), ficha com dados, equipamentos, OS e faturas.
-- [ ] **Fidelidade de Ijuí:** ler `GET /api/cliente/<cod>/contratos`. Término = `DataAssinatura` (no fuso de Brasília) + `Prazo` meses. Ordenar os clientes da unidade por esse término, os mais próximos primeiro. Nesta amostra `TérminoContrato` veio vazio; a conta usa assinatura + prazo, como a tela mostra.
-- [ ] Botão "Criar card" gera um card no kanban do RotaSuite a partir de um ticket/cliente. Não abre nem altera o ticket no 360.
-- [ ] Botão "Abrir no 360" (link direto) para qualquer mudança oficial.
-- [ ] Cache curto (alguns minutos) para não sobrecarregar o 360.
+- [x] Tela **Tickets**: fila aberta da conta, busca por texto, filtros (status, data, solicitante, unidade/cidade). Leitura do `/api/helpdesk/tickets` (e da pesquisa avançada quando o filtro é data, solicitante ou status do ticket).
+- [x] **Visão pessoal**, salva no RotaSuite: colunas visíveis, filtros salvos e ordem da fila. Tabelas `visao_fila` e `visao_filtros` no Supabase, com `usuario_id` e RLS. Nenhuma dessas ações chama endpoint de escrita do 360. O app desktop ainda não lê essas tabelas.
+- [x] Tela **Clientes**: busca por nome/código, filtro por unidade (Ijuí), ficha com dados, equipamentos, OS e faturas.
+- [x] **Fidelidade de Ijuí:** listar a unidade e ler `GET /api/cliente/<cod>/contratos` de cada um. Término = `DataAssinatura` convertida para Brasília antes de somar `Prazo` meses. Ordenar pelos mais próximos. `TérminoContrato` nulo é ignorado. Cache de 15 minutos.
+- [x] Botão "Criar card" gera um card no kanban do RotaSuite a partir de um ticket/cliente. Não abre nem altera o ticket no 360.
+- [x] Botão "Abrir no 360" (link direto) para qualquer mudança oficial.
+- [x] Cache curto (alguns minutos) para não sobrecarregar o 360.
 - **Entrega:** consultar e organizar a própria visão da fila e do cliente sem gravar no 360.
+
+#### O que ficou pronto (2026-11-09)
+- Rotas novas de leitura na API: `GET /360/tickets` (filtros e 25 por página), `GET /360/ticket/<uuid>`, `GET /360/clientes?busca=`, `GET /360/cliente/<cod>` (dados, faturas, produtos, contratos e OS abertas) e `GET /360/fidelidade`. Visão pessoal: `GET/POST /visao`, `POST /visao/filtros`, `DELETE /visao/filtros/<id>`. Sem cookie, essas rotas respondem 401. POST em `/360/tickets` não existe (404).
+- O site não fala com o 360. "Abrir no 360" é um link: ticket em `/helpdesk/tickets/<uuid>`, cliente em `/clientes?cod=<cod>&aba=cadastro`.
+- Telas no mesmo site (sem página HTML nova; `noindex` continua no `index.html`, `robots.txt` e `_headers`). No celular a fila vira cartões; no PC, tabela.
+- Conferido na prévia `/?previa`: fila, busca vazia, detalhe, criar card (aparece no quadro ao voltar), ficha, fidelidade ordenada (exemplo 22/02/2026 + 24 meses = 22/02/2028, faltam 15 meses em 09/11/2026), erro com `?falha=`, e o quadro da Etapa 6. Sem sessão, `/` mostra o login. Login real não foi exercido: a API publicada responde 503 `login ainda não configurado` enquanto o Secret File `CHAVE_SESSAO` estiver vazio.
+- O site publicado não foi atualizado. `npx wrangler whoami` devolveu token expirado (`Not logged in`). Quando alguém estiver no terminal interativo, na pasta `Site/FrontEnd`: `npx wrangler login`, `npm run build`, `npx wrangler deploy`.
 
 ### Fora de escopo
 - Fila de pedidos do site para o PC executar atalhos do app.
