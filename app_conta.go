@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -34,6 +37,58 @@ type ContaStatus struct {
 func (a *App) iniciarContaSync() {
 	a.acordarSync = make(chan struct{}, 1)
 	go a.loopContaSync()
+	go a.ouvirNuvem()
+}
+
+// ouvirNuvem mantém aberto o fluxo /eventos da API: a cada aviso de que algo
+// mudou na nuvem (site ou outro PC), acorda o ciclo na hora em vez de esperar.
+func (a *App) ouvirNuvem() {
+	espera := 2 * time.Second
+	for a.ctx.Err() == nil {
+		token, _ := lerTokenConta()
+		if token == "" {
+			if !dormir(a.ctx, 30*time.Second) {
+				return
+			}
+			continue
+		}
+		req, err := http.NewRequestWithContext(a.ctx, http.MethodGet, contasync.URLPadrao+"/eventos", nil)
+		if err == nil {
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Accept", "text/event-stream")
+			var resp *http.Response
+			resp, err = (&http.Client{}).Do(req)
+			if err == nil {
+				if resp.StatusCode == http.StatusOK {
+					espera = 2 * time.Second
+					ler := bufio.NewScanner(resp.Body)
+					for ler.Scan() {
+						if strings.HasPrefix(ler.Text(), "data:") {
+							a.acordar()
+						}
+					}
+				}
+				resp.Body.Close()
+			}
+		}
+		if !dormir(a.ctx, espera) {
+			return
+		}
+		if espera < time.Minute {
+			espera *= 2
+		}
+	}
+}
+
+func dormir(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
 }
 
 func (a *App) loopContaSync() {
@@ -42,15 +97,18 @@ func (a *App) loopContaSync() {
 	timer := time.NewTimer(espera)
 	defer timer.Stop()
 	// O que muda neste PC entra na fila por gatilho do SQLite; olhar a fila a
-	// cada 5 s faz a alteração subir quase na hora, sem esperar o ciclo cheio.
-	olhar := time.NewTicker(5 * time.Second)
+	// cada 1 s faz a alteração subir quase na hora, sem esperar o ciclo cheio.
+	olhar := time.NewTicker(1 * time.Second)
 	defer olhar.Stop()
 	for {
 		select {
 		case <-a.ctx.Done():
 			return
 		case <-olhar.C:
-			if n, err := contasync.ContarPendentes(a.ctx, a.db); err == nil && n > 0 && a.esperaConta() != 15*time.Second {
+			// Só o que já pode sair: item adiado por erro espera a vez dele.
+			var n int
+			agora := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+			if err := a.db.QueryRowContext(a.ctx, `SELECT count(*) FROM sync_fila WHERE proxima_em <= ?`, agora).Scan(&n); err == nil && n > 0 && a.esperaConta() != 15*time.Second {
 				a.acordar()
 			}
 		case <-a.acordarSync:
