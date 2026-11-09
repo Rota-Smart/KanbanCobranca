@@ -25,6 +25,12 @@ const (
 	// Groq — o mesmo GroqCliente atende os dois provedores.
 	DeepInfraEndpoint     = "https://api.deepinfra.com/v1/openai/chat/completions"
 	DeepInfraModeloPadrao = "meta-llama/Llama-3.3-70B-Instruct"
+	// SambaNova e Cerebras também são OpenAI-compatible no mesmo formato —
+	// o mesmo GroqCliente atende todos os provedores.
+	SambaNovaEndpoint     = "https://api.sambanova.ai/v1/chat/completions"
+	SambaNovaModeloPadrao = "Meta-Llama-3.3-70B-Instruct"
+	CerebrasEndpoint      = "https://api.cerebras.ai/v1/chat/completions"
+	CerebrasModeloPadrao  = "llama-3.3-70b"
 	// Timeout por requisição: a Groq responde em ~2s; o fallback DeepInfra
 	// (Llama 70B, 400-800 tokens) pode levar ~15s — o ctx do chamador é quem
 	// limita de verdade (15-90s nos fluxos do app).
@@ -43,6 +49,8 @@ const (
 	// Groq reabre nesse tempo) antes de voltar a ser o principal.
 	ProvedorGroq      = "groq"
 	ProvedorDeepInfra = "deepinfra"
+	ProvedorSambaNova = "sambanova"
+	ProvedorCerebras  = "cerebras"
 	ProvedorAuto      = "auto"
 
 	esperaCurtaAuto  = 15 * time.Second
@@ -132,8 +140,13 @@ func (g *GroqCliente) endpoint() string {
 	if g != nil && g.Endpoint != "" {
 		return g.Endpoint
 	}
-	if g.provedor() == ProvedorDeepInfra {
+	switch g.provedor() {
+	case ProvedorDeepInfra:
 		return DeepInfraEndpoint
+	case ProvedorSambaNova:
+		return SambaNovaEndpoint
+	case ProvedorCerebras:
+		return CerebrasEndpoint
 	}
 	return GroqEndpoint
 }
@@ -174,8 +187,13 @@ func (g *GroqCliente) modelo() string {
 			return m
 		}
 	}
-	if g.provedor() == ProvedorDeepInfra {
+	switch g.provedor() {
+	case ProvedorDeepInfra:
 		return DeepInfraModeloPadrao
+	case ProvedorSambaNova:
+		return SambaNovaModeloPadrao
+	case ProvedorCerebras:
+		return CerebrasModeloPadrao
 	}
 	return GroqModeloPadrao
 }

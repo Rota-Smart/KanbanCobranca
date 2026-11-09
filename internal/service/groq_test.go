@@ -397,3 +397,27 @@ func TestRotacaoNo401(t *testing.T) {
 		t.Errorf("chaves usadas: %v", respostas)
 	}
 }
+
+// TestProvedoresNovos garante que SambaNova e Cerebras resolvem endpoint e
+// modelo padrão próprios (o mesmo GroqCliente atende os quatro provedores).
+func TestProvedoresNovos(t *testing.T) {
+	casos := []struct {
+		provedor      string
+		endpointEsperado string
+		modeloEsperado   string
+	}{
+		{ProvedorSambaNova, SambaNovaEndpoint, SambaNovaModeloPadrao},
+		{ProvedorCerebras, CerebrasEndpoint, CerebrasModeloPadrao},
+		{ProvedorDeepInfra, DeepInfraEndpoint, DeepInfraModeloPadrao},
+		{ProvedorGroq, GroqEndpoint, GroqModeloPadrao},
+	}
+	for _, c := range casos {
+		g := &GroqCliente{ProvedorInjetavel: func() string { return c.provedor }}
+		if g.endpoint() != c.endpointEsperado {
+			t.Errorf("%s: endpoint %q, esperava %q", c.provedor, g.endpoint(), c.endpointEsperado)
+		}
+		if g.modelo() != c.modeloEsperado {
+			t.Errorf("%s: modelo %q, esperava %q", c.provedor, g.modelo(), c.modeloEsperado)
+		}
+	}
+}

@@ -81,11 +81,22 @@ func main() {
 	groq := service.NovoGroqCliente(
 		func() string {
 			ctx := context.Background()
-			if provedorIA() == service.ProvedorDeepInfra {
+			switch provedorIA() {
+			case service.ProvedorDeepInfra:
 				if v, _ := config.Get(ctx, "deepinfra_chave"); v != "" {
 					return v
 				}
 				return os.Getenv("DEEPINFRA_API_KEY")
+			case service.ProvedorSambaNova:
+				if v, _ := config.Get(ctx, "sambanova_chave"); v != "" {
+					return v
+				}
+				return os.Getenv("SAMBANOVA_API_KEY")
+			case service.ProvedorCerebras:
+				if v, _ := config.Get(ctx, "cerebras_chave"); v != "" {
+					return v
+				}
+				return os.Getenv("CEREBRAS_API_KEY")
 			}
 			if v, _ := config.Get(ctx, "groq_chave"); v != "" {
 				return v
@@ -94,8 +105,15 @@ func main() {
 		},
 		func() string {
 			ctx := context.Background()
-			if provedorIA() == service.ProvedorDeepInfra {
+			switch provedorIA() {
+			case service.ProvedorDeepInfra:
 				v, _ := config.Get(ctx, "deepinfra_modelo")
+				return v
+			case service.ProvedorSambaNova:
+				v, _ := config.Get(ctx, "sambanova_modelo")
+				return v
+			case service.ProvedorCerebras:
+				v, _ := config.Get(ctx, "cerebras_modelo")
 				return v
 			}
 			v, _ := config.Get(ctx, "groq_modelo")

@@ -27,6 +27,10 @@ const (
 	cfgGroqModelo      = "groq_modelo"
 	cfgDeepInfraChave  = "deepinfra_chave"
 	cfgDeepInfraModelo = "deepinfra_modelo"
+	cfgSambaNovaChave  = "sambanova_chave"
+	cfgSambaNovaModelo = "sambanova_modelo"
+	cfgCerebrasChave   = "cerebras_chave"
+	cfgCerebrasModelo  = "cerebras_modelo"
 	cfgIaProvedor      = "ia_provedor"
 	cfgRotaCookie   = "rota360_cookie"
 	cfgAutor360     = "autor_360" // nome do usuário logado no 360 (filtra o resumo do ticket)
@@ -733,8 +737,10 @@ type ConfigApp struct {
 	GroqModelo        string   `json:"groqModelo"`
 	GroqTemChave      bool     `json:"groqTemChave"`
 	GroqChaves        []string `json:"groqChaves"` // todas as chaves, mascaradas (principal primeiro)
-	Provedor          string   `json:"provedor"`   // "groq" (padrão), "deepinfra" ou "auto"
-	DeepInfraTemChave bool     `json:"deepInfraTemChave"`
+	Provedor string `json:"provedor"` // "groq" (padrão), "deepinfra", "sambanova", "cerebras" ou "auto"
+	DeepInfraTemChave bool `json:"deepInfraTemChave"`
+	SambaNovaTemChave bool `json:"sambaNovaTemChave"`
+	CerebrasTemChave  bool `json:"cerebrasTemChave"`
 	Autor360      string `json:"autor360"`
 	RotaConectado bool   `json:"rotaConectado"`
 	RotaOrigem    string `json:"rotaOrigem"`
@@ -749,6 +755,8 @@ func (a *App) GetConfig() ConfigApp {
 		GroqChaves:        a.groqChavesMascaradas(),
 		Provedor:          a.provedorIA(),
 		DeepInfraTemChave: a.configGet(a.ctx, cfgDeepInfraChave) != "",
+		SambaNovaTemChave: a.configGet(a.ctx, cfgSambaNovaChave) != "",
+		CerebrasTemChave:  a.configGet(a.ctx, cfgCerebrasChave) != "",
 		Autor360:          a.configGet(a.ctx, cfgAutor360),
 		RotaConectado:     a.rotaAtual() != nil,
 	}
@@ -848,19 +856,20 @@ func (a *App) RemoverChaveGroq(indice int) error {
 // e manda pro DeepInfra no teto do free).
 func (a *App) provedorIA() string {
 	switch p := a.configGet(a.ctx, cfgIaProvedor); p {
-	case service.ProvedorDeepInfra, service.ProvedorAuto:
+	case service.ProvedorDeepInfra, service.ProvedorSambaNova, service.ProvedorCerebras, service.ProvedorAuto:
 		return p
 	}
 	return service.ProvedorGroq
 }
 
-// SetProvedorIA escolhe entre Groq, DeepInfra e auto (Groq → DeepInfra).
+// SetProvedorIA escolhe entre Groq, DeepInfra, SambaNova, Cerebras e auto
+// (Groq → DeepInfra).
 func (a *App) SetProvedorIA(provedor string) error {
 	if a.config == nil {
 		return fmt.Errorf("configuração indisponível")
 	}
 	switch provedor {
-	case service.ProvedorGroq, service.ProvedorDeepInfra, service.ProvedorAuto:
+	case service.ProvedorGroq, service.ProvedorDeepInfra, service.ProvedorSambaNova, service.ProvedorCerebras, service.ProvedorAuto:
 	default:
 		return fmt.Errorf("provedor inválido: %s", provedor)
 	}
@@ -892,6 +901,51 @@ func (a *App) LimparDeepInfraChave() error {
 		return nil
 	}
 	return a.config.Set(a.ctx, cfgDeepInfraChave, "")
+}
+
+// provedorPago agrupa o padrão Set/Limpar dos provedores pagos (DeepInfra,
+// SambaNova, Cerebras): chave vazia não apaga — para limpar, use o Limpar*.
+func (a *App) provedorPago(cfgChave, cfgModelo, chave, modelo, nome string) error {
+	if a.config == nil {
+		return fmt.Errorf("configuração indisponível")
+	}
+	if chave = strings.TrimSpace(chave); chave != "" {
+		if err := a.config.Set(a.ctx, cfgChave, chave); err != nil {
+			return friendly("Set"+nome+"Config", err)
+		}
+	}
+	if modelo = strings.TrimSpace(modelo); modelo != "" {
+		if err := a.config.Set(a.ctx, cfgModelo, modelo); err != nil {
+			return friendly("Set"+nome+"Config", err)
+		}
+	}
+	return nil
+}
+
+// SetSambaNovaConfig grava a chave e o modelo da SambaNova.
+func (a *App) SetSambaNovaConfig(chave, modelo string) error {
+	return a.provedorPago(cfgSambaNovaChave, cfgSambaNovaModelo, chave, modelo, "SambaNova")
+}
+
+// LimparSambaNovaChave apaga a chave guardada.
+func (a *App) LimparSambaNovaChave() error {
+	if a.config == nil {
+		return nil
+	}
+	return a.config.Set(a.ctx, cfgSambaNovaChave, "")
+}
+
+// SetCerebrasConfig grava a chave e o modelo da Cerebras.
+func (a *App) SetCerebrasConfig(chave, modelo string) error {
+	return a.provedorPago(cfgCerebrasChave, cfgCerebrasModelo, chave, modelo, "Cerebras")
+}
+
+// LimparCerebrasChave apaga a chave guardada.
+func (a *App) LimparCerebrasChave() error {
+	if a.config == nil {
+		return nil
+	}
+	return a.config.Set(a.ctx, cfgCerebrasChave, "")
 }
 
 // SetAutor360 grava o nome do usuário logado no 360 — é quem o resumo do

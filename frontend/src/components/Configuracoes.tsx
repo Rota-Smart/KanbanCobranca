@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import * as App from '../../wailsjs/go/main/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import type { ConfigApp, ContaStatus, NuvemInfo, ParametroNegociacao, SyncInfo } from '../wails-types';
@@ -14,6 +14,94 @@ const MODELOS_DEEPINFRA = [
   'meta-llama/Meta-Llama-3.1-8B-Instruct',
   'Qwen/Qwen2.5-72B-Instruct',
 ];
+
+const MODELOS_SAMBANOVA = [
+  'Meta-Llama-3.3-70B-Instruct',
+  'Meta-Llama-3.1-8B-Instruct',
+  'Qwen3-32B',
+];
+
+const MODELOS_CEREBRAS = [
+  'llama-3.3-70b',
+  'llama3.1-8b',
+  'qwen-3-32b',
+];
+
+// SecaoProvedorPago: chave + modelo de um provedor OpenAI-compatible pago
+// (SambaNova, Cerebras) com botões Salvar/Remover chave.
+function SecaoProvedorPago(props: {
+  dica: ReactNode;
+  placeholderChave: string;
+  placeholderModelo: string;
+  modelos: string[];
+  datalistId: string;
+  temChave: boolean;
+  salvando: boolean;
+  onToast: (msg: string) => void;
+  recarregar: () => void;
+  salvar: (chave: string, modelo: string) => Promise<void>;
+  limpar: () => Promise<void>;
+}) {
+  const [chave, setChave] = useState('');
+  const [modelo, setModelo] = useState('');
+  async function salvar() {
+    if (!chave.trim() && !modelo.trim()) return;
+    try {
+      await props.salvar(chave.trim(), modelo.trim());
+      setChave('');
+      props.onToast('Configurações salvas.');
+      props.recarregar();
+    } catch (e) {
+      props.onToast(String(e));
+    }
+  }
+  return (
+    <>
+      <p className="text-xs text-slate-500 mt-2">
+        {props.dica}
+        {props.temChave && ' Uma chave já está salva.'}
+      </p>
+      <div className="mt-2 flex flex-col gap-2">
+        <input
+          className="border rounded px-2 py-1 text-sm"
+          type="password"
+          placeholder={props.placeholderChave}
+          value={chave}
+          onChange={(e) => setChave(e.target.value)}
+        />
+        <input
+          className="border rounded px-2 py-1 text-sm"
+          placeholder={props.placeholderModelo}
+          value={modelo}
+          onChange={(e) => setModelo(e.target.value)}
+          list={props.datalistId}
+        />
+        <datalist id={props.datalistId}>
+          {props.modelos.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
+        <div className="flex gap-2">
+          <button
+            className="bg-blue-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
+            disabled={props.salvando || (!chave.trim() && !modelo.trim())}
+            onClick={salvar}
+          >
+            Salvar
+          </button>
+          {props.temChave && (
+            <button
+              className="border rounded px-3 py-1 text-sm text-red-600"
+              onClick={() => props.limpar().then(props.recarregar)}
+            >
+              Remover chave
+            </button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
 
 // Configuracoes reúne: sessão do 360, chave/modelo Groq e parâmetros
 // de negociação (texto ou arquivo).
@@ -210,9 +298,13 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
       props.onToast(
         p === 'deepinfra'
           ? 'Provedor: DeepInfra.'
-          : p === 'auto'
-            ? 'Provedor: Automático (Groq → DeepInfra no teto).'
-            : 'Provedor: Groq.',
+          : p === 'sambanova'
+            ? 'Provedor: SambaNova.'
+            : p === 'cerebras'
+              ? 'Provedor: Cerebras.'
+              : p === 'auto'
+                ? 'Provedor: Automático (Groq → DeepInfra no teto).'
+                : 'Provedor: Groq.',
       );
       recarregar();
     } catch (e) {
@@ -416,6 +508,8 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
             {[
               ['groq', 'Groq'],
               ['deepinfra', 'DeepInfra'],
+              ['sambanova', 'SambaNova'],
+              ['cerebras', 'Cerebras'],
               ['auto', 'Auto'],
             ].map(([valor, rotulo]) => (
               <button
@@ -439,14 +533,14 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               fica por 30 s antes de voltar pra Groq. Configure as duas chaves abaixo.
             </p>
           )}
-          {usoGroq && cfg?.provedor !== 'deepinfra' && (
+          {usoGroq && (cfg?.provedor === 'groq' || cfg?.provedor === 'auto') && (
             <p className="text-xs text-slate-500 mt-1">
               Uso hoje: <strong>{usoGroq.requisicoes}</strong> requisições ·{' '}
               <strong>{Math.round((usoGroq.promptTokens + usoGroq.completionTokens) / 100) / 10}k</strong> tokens{' '}
               <span className="text-slate-400">(limites do plano free: 1.000 req/dia, 200k tokens/dia)</span>
             </p>
           )}
-          {cfg?.provedor !== 'groq' && (
+          {(cfg?.provedor === 'deepinfra' || cfg?.provedor === 'auto') && (
             <>
               <p className="text-xs text-slate-500 mt-2">
                 Chave em deepinfra.com/dashboard/api-tokens. Modelo sugerido:{' '}
@@ -493,7 +587,47 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               </div>
             </>
           )}
-          {cfg?.provedor !== 'deepinfra' && (
+          {cfg?.provedor === 'sambanova' && (
+            <SecaoProvedorPago
+              dica={
+                <>
+                  Chave em cloud.sambanova.ai/apitokens. Modelo sugerido:{' '}
+                  <strong>Meta-Llama-3.3-70B-Instruct</strong> (tem cota free limitada).
+                </>
+              }
+              placeholderChave="Chave da API SambaNova"
+              placeholderModelo="Modelo (padrão: Meta-Llama-3.3-70B-Instruct)"
+              modelos={MODELOS_SAMBANOVA}
+              datalistId="modelos-sambanova"
+              temChave={!!cfg?.sambaNovaTemChave}
+              salvando={salvando}
+              onToast={props.onToast}
+              recarregar={recarregar}
+              salvar={App.SetSambaNovaConfig}
+              limpar={() => App.LimparSambaNovaChave()}
+            />
+          )}
+          {cfg?.provedor === 'cerebras' && (
+            <SecaoProvedorPago
+              dica={
+                <>
+                  Chave em cloud.cerebras.ai. Modelo sugerido: <strong>llama-3.3-70b</strong> (tem
+                  cota free limitada).
+                </>
+              }
+              placeholderChave="Chave da API Cerebras"
+              placeholderModelo="Modelo (padrão: llama-3.3-70b)"
+              modelos={MODELOS_CEREBRAS}
+              datalistId="modelos-cerebras"
+              temChave={!!cfg?.cerebrasTemChave}
+              salvando={salvando}
+              onToast={props.onToast}
+              recarregar={recarregar}
+              salvar={App.SetCerebrasConfig}
+              limpar={() => App.LimparCerebrasChave()}
+            />
+          )}
+          {(cfg?.provedor === 'groq' || cfg?.provedor === 'auto') && (
             <>
               <p className="text-xs text-slate-500 mt-2">
                 Chave gratuita em console.groq.com. Modelo sugerido:{' '}
