@@ -83,7 +83,9 @@ print('zip ok', dentro)
         Copy-Item $exe (Join-Path $ReleaseDir 'rotasuite.exe') -Force
         Copy-Item $exe (Join-Path $ReleaseDir ("rotasuite-" + $Versao + ".exe")) -Force
         Copy-Item $zip (Join-Path $ReleaseDir 'rota-suite.zip') -Force
-        Set-Content -Encoding ascii -NoNewline (Join-Path $ReleaseDir 'versao.txt') $Versao
+        # Set-Content com -NoNewline falha em silencio no PS 5.1 (nao grava nada);
+        # WriteAllText grava sem BOM e sem quebra de linha.
+        [IO.File]::WriteAllText((Join-Path $ReleaseDir 'versao.txt'), $Versao)
         git -C $ReleaseDir add -f rotasuite.exe ("rotasuite-" + $Versao + ".exe") rota-suite.zip versao.txt
         git -C $ReleaseDir commit -m ("v" + $Versao + ": publicacao automatica (main " + $Commit.Substring(0,7) + ")")
         Log "commit release feito"
