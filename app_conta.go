@@ -36,13 +36,21 @@ func (a *App) iniciarContaSync() {
 
 func (a *App) loopContaSync() {
 	a.cicloConta()
-	espera := 90 * time.Second
+	espera := 20 * time.Second
 	timer := time.NewTimer(espera)
 	defer timer.Stop()
+	// O que muda neste PC entra na fila por gatilho do SQLite; olhar a fila a
+	// cada 5 s faz a alteração subir quase na hora, sem esperar o ciclo cheio.
+	olhar := time.NewTicker(5 * time.Second)
+	defer olhar.Stop()
 	for {
 		select {
 		case <-a.ctx.Done():
 			return
+		case <-olhar.C:
+			if n, err := contasync.ContarPendentes(a.ctx, a.db); err == nil && n > 0 && a.esperaConta() != 15*time.Second {
+				a.acordar()
+			}
 		case <-a.acordarSync:
 			if !timer.Stop() {
 				select {
@@ -65,7 +73,7 @@ func (a *App) esperaConta() time.Duration {
 	if a.estadoConta.Estado == contasync.EstadoAguardando {
 		return 15 * time.Second
 	}
-	return 90 * time.Second
+	return 20 * time.Second
 }
 
 func (a *App) cicloConta() {
