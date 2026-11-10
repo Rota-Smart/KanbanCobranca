@@ -225,6 +225,18 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
     App.UsoGroqHoje().then(setUsoGroq).catch(() => setUsoGroq(null));
   }
 
+  const [logOcupado, setLogOcupado] = useState(false);
+  async function enviarLog() {
+    setLogOcupado(true);
+    try {
+      props.onToast('Log enviado para a nuvem (' + (await App.EnviarLogNuvem()) + ')');
+    } catch (e) {
+      props.onToast(String(e));
+    } finally {
+      setLogOcupado(false);
+    }
+  }
+
   useEffect(() => {
     recarregar();
     App.GetFonteAtualizacao().then(setFonte).catch(() => {});
@@ -1135,6 +1147,24 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
                 </button>
               )}
             </div>
+          </div>
+        </section>
+
+        {/* Diagnóstico remoto: sobe o app.log para o repositório de sync */}
+        <section className="mt-3 border rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-slate-700">Diagnóstico (log)</h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Envia o fim do registro de atividades (app.log) para a nuvem, para análise quando algo
+            só falha neste PC. Usa o mesmo token da sincronização.
+          </p>
+          <div className="mt-2">
+            <button
+              className="bg-slate-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
+              disabled={logOcupado}
+              onClick={enviarLog}
+            >
+              {logOcupado ? 'Enviando…' : '📋 Enviar log para a nuvem'}
+            </button>
           </div>
         </section>
 
