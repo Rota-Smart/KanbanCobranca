@@ -47,7 +47,8 @@ type msg struct {
 	pt      struct{ x, y int32 }
 }
 
-// Registrar registra Shift+F2 (ticket da tela), Shift+F3 (busca de clientes),
+// Registrar registra Shift+F2 (ticket do 360 na tela), Shift+F3 (reconhecer
+// o cliente no Service com o Access em foco; fora dele, busca de clientes),
 // Shift+F4 (busca de tickets), Shift+F5 (leitura da tela do Access) e
 // Shift+F6 (movimentar ticket para coluna) globalmente e entra no loop de
 // mensagens até o processo sair. Cada disparo roda o callback correspondente

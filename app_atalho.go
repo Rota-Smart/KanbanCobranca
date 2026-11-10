@@ -1,10 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,6 +18,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"rota-smart/internal/contasync"
 	"rota-smart/internal/hotkey"
 	"rota-smart/internal/rota360"
 	"rota-smart/internal/tela"
@@ -85,10 +92,73 @@ func (a *App) mostrarJanela() {
 	runtime.WindowMaximise(a.ctx)
 }
 
-// onAtalhoBusca (Shift+F3): abre o app na busca de clientes.
+// onAtalhoBusca (Shift+F3): com o Service (Access) em foco, reconhece o
+// cliente — lê o texto da tela e abre o chat com o briefing (igual ao
+// Shift+F5). Em qualquer outra janela, abre a busca de clientes como antes.
 func (a *App) onAtalhoBusca() {
+	cap := tela.CapturaTextoDaTela()
+	if strings.EqualFold(cap.Processo, "msaccess.exe") {
+		a.reconhecerNoService(cap)
+		return
+	}
 	a.mostrarJanela()
 	runtime.EventsEmit(a.ctx, evAtalhoBusca)
+}
+
+// reconhecerNoService é o fluxo do Shift+F3 com o Access em foco. TEMPORÁRIO:
+// sobe um print da tela para a nuvem (tabela logs_app, pelo /log do site)
+// para mapear os campos do Service — depois de mapeado, este envio sai.
+func (a *App) reconhecerNoService(cap tela.CapturaTexto) {
+	print := tela.CapturaPrint()
+	if len(print) > 0 {
+		if err := a.enviarPrintNuvem(print, cap.Titulo); err != nil {
+			slog.Warn("print do service não subiu", "err", err)
+		}
+	} else {
+		slog.Warn("não consegui capturar o print da janela do Access")
+	}
+	res := a.lerAcesso(cap)
+	res.Titulo = "Service: " + cap.Titulo
+	slog.Info("atalho shift+f3 service", "processo", cap.Processo, "achou", res.Achou,
+		"runas", len([]rune(cap.Texto)), "print", len(print) > 0)
+	a.mostrarJanela()
+	runtime.EventsEmit(a.ctx, evAtalhoAcesso, res)
+}
+
+// enviarPrintNuvem sobe o print da tela como um envio de log (conteúdo em
+// base64 JPEG) pelo mesmo POST /log dos logs de diagnóstico.
+func (a *App) enviarPrintNuvem(jpeg []byte, titulo string) error {
+	token, err := lerTokenConta()
+	if err != nil || token == "" {
+		return fmt.Errorf("conta não pareada — sem para onde mandar o print")
+	}
+	host, _ := os.Hostname()
+	base64 := base64.StdEncoding.EncodeToString(jpeg)
+	corpo, err := json.Marshal(map[string]string{
+		"host":     fmt.Sprintf("print:%s:%s", host, titulo),
+		"conteudo": base64,
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(a.ctx, http.MethodPost, contasync.URLPadrao+"/log", bytes.NewReader(corpo))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	cli := &http.Client{Timeout: 60 * time.Second}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+		return fmt.Errorf("site recusou o print (HTTP %d): %s", resp.StatusCode, string(b))
+	}
+	slog.Info("print do service enviado", "host", host, "bytes", len(jpeg))
+	return nil
 }
 
 // onAtalhoBuscaTickets (Shift+F4): abre o app na pesquisa de tickets do 360.
@@ -247,6 +317,10 @@ func (a *App) identificarDaTela(cap tela.Captura) TicketDaTela {
 	}
 
 	if res.CodService == "" {
+		if strings.EqualFold(cap.Processo, "msaccess.exe") {
+			res.Mensagem = "O foco está no Service (Access). Para reconhecer o cliente a partir da tela dele, aperte Shift+F3."
+			return res
+		}
 		res.Mensagem = "Não reconheci um ticket ou cliente na tela em foco. Cole o código ou peça no chat."
 		return res
 	}
