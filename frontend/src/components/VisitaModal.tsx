@@ -1,9 +1,156 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as bindings from '../../wailsjs/go/main/App';
 import type { Ticket } from '../wails-types';
 
 // Turnos do agendamento — espelha service.TurnosVisitaValidos (Go).
 const turnos = ['Manhã', 'Tarde', 'Noite'] as const;
+
+const MESES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+const DIAS_SEMANA = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+
+// Data local como ISO (yyyy-mm-dd) sem depender de fuso do toISOString.
+function paraISO(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${dia}`;
+}
+function deISO(s: string): Date {
+  const [a, m, d] = s.split('-').map(Number);
+  return new Date(a, m - 1, d);
+}
+function hojeISO(): string {
+  return paraISO(new Date());
+}
+function diasAteISO(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return paraISO(d);
+}
+
+interface CalendarioProps {
+  selecionada: string; // ISO ou ''
+  aoEscolher: (iso: string) => void;
+  onFechar: () => void;
+}
+
+// Calendário no tema do app (azul/índigo + vidro), abre ao clicar no campo Dia.
+function Calendario({ selecionada, aoEscolher, onFechar }: CalendarioProps) {
+  const base = selecionada ? deISO(selecionada) : new Date();
+  const [ano, setAno] = useState(base.getFullYear());
+  const [mes, setMes] = useState(base.getMonth());
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function fora(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onFechar();
+    }
+    document.addEventListener('mousedown', fora);
+    return () => document.removeEventListener('mousedown', fora);
+  }, [onFechar]);
+
+  const primeiroDia = new Date(ano, mes, 1).getDay();
+  const totalDias = new Date(ano, mes + 1, 0).getDate();
+  const celulas: (number | null)[] = [
+    ...Array(primeiroDia).fill(null),
+    ...Array.from({ length: totalDias }, (_, i) => i + 1),
+  ];
+  while (celulas.length % 7 !== 0) celulas.push(null);
+
+  const hoje = hojeISO();
+  const anterior = () => (mes === 0 ? (setAno(ano - 1), setMes(11)) : setMes(mes - 1));
+  const proximo = () => (mes === 11 ? (setAno(ano + 1), setMes(0)) : setMes(mes + 1));
+
+  return (
+    <div
+      ref={ref}
+      className="absolute z-50 mt-2 left-0 w-72 p-3 painel-modal rounded-2xl shadow-xl"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <button
+          aria-label="Mês anterior"
+          className="w-8 h-8 rounded-lg text-slate-300 hover:bg-white/10 hover:text-white transition"
+          onClick={anterior}
+        >
+          ‹
+        </button>
+        <span className="text-sm font-semibold text-slate-100">
+          {MESES[mes]} <span className="text-slate-400 font-normal">{ano}</span>
+        </span>
+        <button
+          aria-label="Próximo mês"
+          className="w-8 h-8 rounded-lg text-slate-300 hover:bg-white/10 hover:text-white transition"
+          onClick={proximo}
+        >
+          ›
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-sky-300/80 mb-1">
+        {DIAS_SEMANA.map((d, i) => (
+          <span key={i}>{d}</span>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-1">
+        {celulas.map((dia, i) => {
+          if (dia === null) return <span key={i} />;
+          const iso = paraISO(new Date(ano, mes, dia));
+          const isSelecionado = iso === selecionada;
+          const isHoje = iso === hoje;
+          return (
+            <button
+              key={i}
+              onClick={() => aoEscolher(iso)}
+              className={[
+                'h-8 rounded-lg text-sm transition',
+                isSelecionado
+                  ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white font-semibold shadow'
+                  : 'text-slate-200 hover:bg-white/10',
+                !isSelecionado && isHoje ? 'ring-1 ring-sky-400/70 font-semibold' : '',
+              ].join(' ')}
+            >
+              {dia}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-1.5 mt-2.5">
+        <button
+          className="flex-1 text-xs py-1.5 rounded-lg bg-white/10 text-slate-200 hover:bg-white/20 transition"
+          onClick={() => {
+            aoEscolher(hoje);
+            onFechar();
+          }}
+        >
+          Hoje
+        </button>
+        <button
+          className="flex-1 text-xs py-1.5 rounded-lg bg-white/10 text-slate-200 hover:bg-white/20 transition"
+          onClick={() => {
+            aoEscolher(diasAteISO(1));
+            onFechar();
+          }}
+        >
+          Amanhã
+        </button>
+        <button
+          className="flex-1 text-xs py-1.5 rounded-lg bg-white/10 text-slate-300 hover:bg-white/20 transition"
+          onClick={() => {
+            aoEscolher('');
+            onFechar();
+          }}
+        >
+          Limpar
+        </button>
+      </div>
+    </div>
+  );
+}
 
 interface Props {
   ticket: Ticket;
@@ -23,6 +170,7 @@ export default function VisitaModal({ ticket, onSalvo, onFechar }: Props) {
   const [carregando, setCarregando] = useState(!ticket.visitaEndereco);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [calendarioAberto, setCalendarioAberto] = useState(false);
 
   // Endereço sugerido: cadastro do cliente no 360 (cache local) ou o do card.
   useEffect(() => {
@@ -84,8 +232,8 @@ export default function VisitaModal({ ticket, onSalvo, onFechar }: Props) {
     }
   }
 
-  const dataCurta = data
-    ? new Date(`${data}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })
+  const dataExtenso = data
+    ? deISO(data).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
     : '';
 
   return (
@@ -111,15 +259,25 @@ export default function VisitaModal({ ticket, onSalvo, onFechar }: Props) {
 
         <div className="mt-3 flex flex-col gap-2.5">
           <div className="flex gap-2">
-            <label className="flex flex-col gap-0.5 text-sm flex-1">
+            <label className="flex flex-col gap-0.5 text-sm flex-1 relative">
               <span className="text-slate-600 dark:text-slate-300">Dia</span>
-              <input
-                type="date"
-                className="border rounded px-2 py-1.5 bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100"
-                value={data}
-                onChange={(e) => setData(e.target.value)}
-              />
-              {dataCurta && <span className="text-[11px] text-slate-500">{dataCurta}</span>}
+              <button
+                type="button"
+                className={`text-left border rounded px-2 py-1.5 bg-white/70 dark:bg-slate-800/70 text-slate-800 dark:text-slate-100 hover:border-sky-400 transition ${data ? '' : 'text-slate-400 dark:text-slate-500'}`}
+                onClick={() => setCalendarioAberto((v) => !v)}
+              >
+                {dataExtenso || 'Escolher data…'}
+              </button>
+              {dataExtenso && (
+                <span className="text-[11px] text-slate-500 mt-0.5">📅 {dataExtenso}</span>
+              )}
+              {calendarioAberto && (
+                <Calendario
+                  selecionada={data}
+                  aoEscolher={setData}
+                  onFechar={() => setCalendarioAberto(false)}
+                />
+              )}
             </label>
             <label className="flex flex-col gap-0.5 text-sm w-28">
               <span className="text-slate-600 dark:text-slate-300">Turno</span>
@@ -145,6 +303,23 @@ export default function VisitaModal({ ticket, onSalvo, onFechar }: Props) {
             </label>
           </div>
 
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              className="flex-1 text-xs py-1.5 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 text-white font-medium shadow hover:brightness-110 transition"
+              onClick={() => setData(hojeISO())}
+            >
+              Hoje
+            </button>
+            <button
+              type="button"
+              className="flex-1 text-xs py-1.5 rounded-lg bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-200 font-medium border border-sky-200 dark:border-sky-400/30 hover:bg-sky-200 dark:hover:bg-sky-500/25 transition"
+              onClick={() => setData(diasAteISO(1))}
+            >
+              Amanhã
+            </button>
+          </div>
+
           <label className="flex flex-col gap-0.5 text-sm">
             <span className="text-slate-600 dark:text-slate-300">
               Endereço da visita
@@ -163,7 +338,7 @@ export default function VisitaModal({ ticket, onSalvo, onFechar }: Props) {
           </label>
 
           {mapsHref && (
-            <p className="text-xs text-slate-500 break-words">
+            <p className="text-xs text-slate-400 break-words">
               🗺️ <button className="text-sky-600 dark:text-sky-300 hover:underline" onClick={abrirMaps}>
                 Abrir no Google Maps
               </button>
