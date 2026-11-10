@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // TurnoVisitaValido informa se o turno existe.
@@ -63,6 +64,52 @@ func atoiVisita(s string) int {
 		n = n*10 + int(r-'0')
 	}
 	return n
+}
+
+// reDiaVisita reconhece o dia relativo do "quando" do agendamento local
+// ("hoje a tarde", "amanhã 8:45"); casa no texto normalizado (sem acento)
+// porque \b do RE2 é só ASCII — "amanhã\b" nunca casaria. O mais longo
+// vence ("depois de amanha").
+var reDiaVisita = regexp.MustCompile(`\b(depois de amanha|amanha|hoje)\b`)
+
+// ParseQuandoVisita converte o "quando" livre ("hoje a tarde", "amanhã
+// 8:45") em (data AAAA-MM-DD, hora HH:MM, turno). Dia não citado = hoje;
+// hora/turno seguem NormalizarQuando — texto sem hora nem turno conhecido
+// vira só a data de hoje.
+func ParseQuandoVisita(quando string) (data, hora, turno string) {
+	s := strings.TrimSpace(quando)
+	if s == "" {
+		return "", "", ""
+	}
+	dias := 0
+	if m := reDiaVisita.FindString(normalizar(s)); m != "" {
+		switch {
+		case strings.HasPrefix(m, "depois"):
+			dias = 2
+		case strings.HasPrefix(m, "amanh"):
+			dias = 1
+		}
+	}
+	data = time.Now().AddDate(0, 0, dias).Format("2006-01-02")
+	hora, turno = NormalizarQuando(s)
+	// NormalizarQuando devolve o texto cru quando não casa hora nem turno:
+	// aqui isso não é turno — vira vazio (data sozinha já agenda).
+	if hora == "" && !TurnoVisitaValido(turno) {
+		turno = ""
+	}
+	return data, hora, turno
+}
+
+// DescreverQuandoVisita monta o texto amigável do agendamento p/ resposta do
+// chat ("2026-11-10 à tarde", "2026-11-11 às 08:45").
+func DescreverQuandoVisita(data, hora, turno string) string {
+	s := data
+	if hora != "" {
+		s += " às " + hora
+	} else if turno != "" {
+		s += " (" + strings.ToLower(turno) + ")"
+	}
+	return s
 }
 
 // EhColunaVisitaRealizada reconhece a coluna de destino que marca a visita

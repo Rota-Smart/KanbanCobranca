@@ -17,6 +17,10 @@ type IntencaoLocal struct {
 	Apagar bool   // true = apagar card; false = mover
 	Alvo   string // nome, código service ou id do card
 	Coluna string // mover: destino; apagar: onde o usuário disse que o card está
+
+	// AgendarQuando, quando não vazio, é o "… e agende pra hoje a tarde"
+	// pendurado no mover — quem executa move pra Visita Agendada e agenda.
+	AgendarQuando string
 }
 
 var (
@@ -45,7 +49,13 @@ func ParseIntencaoCard(msg string) (IntencaoLocal, bool) {
 		return in, true
 	}
 	if m := reMoverCard.FindStringSubmatch(msg); m != nil {
-		return IntencaoLocal{Apagar: false, Alvo: strings.TrimSpace(m[1]), Coluna: strings.TrimSpace(m[2])}, true
+		in := IntencaoLocal{Apagar: false, Alvo: strings.TrimSpace(m[1])}
+		col, quando, okAg := SepararAgendamentoNoFim(m[2])
+		if okAg {
+			in.AgendarQuando = quando
+		}
+		in.Coluna = strings.TrimSpace(col)
+		return in, true
 	}
 	return IntencaoLocal{}, false
 }
@@ -647,15 +657,56 @@ func EhAlvoDeContexto(alvo string) bool {
 	return false
 }
 
+// IntencaoMoverContexto é o "coloque em X" pelo contexto do chat: Coluna é o
+// destino; AgendarQuando, quando não vazio, é o "… e agende pra hoje a tarde"
+// pendurado no comando — quem executa move pra Visita Agendada e agenda.
+type IntencaoMoverContexto struct {
+	Coluna        string
+	AgendarQuando string
+}
+
+// reAgendarNoFim acha o "… e agende (pra X)" / "…, agende (pra X)" no fim do
+// comando de mover. Exige separador (vírgula/ponto-e-vírgula ou " e ") para
+// não engolir coluna chamada "agenda".
+var reAgendarNoFim = regexp.MustCompile(
+	`(?i)(?:[,;]\s*(?:e\s+)?|\s+e\s+)agend\w*\s*(?:(?:pra|para|pro|p/|em|na|no)\s+)?(.*)$`)
+
+// SepararAgendamentoNoFim tira do texto um sufixo de agendamento ("… e agende
+// pra hoje a tarde") e devolve o que sobra (a coluna) e o quando. ok=false
+// quando não há sufixo.
+func SepararAgendamentoNoFim(corpo string) (coluna, quando string, ok bool) {
+	loc := reAgendarNoFim.FindStringSubmatchIndex(corpo)
+	if loc == nil {
+		return corpo, "", false
+	}
+	quando = limparBordas(corpo[loc[2]:loc[3]])
+	coluna = strings.TrimRight(corpo[:loc[0]], " ,;")
+	return coluna, quando, true
+}
+
 // ParseIntencaoMoverContexto devolve a coluna pedida quando a mensagem move
 // o cliente do contexto sem citar nome. ok=false quando citar nome (ou não
-// for mover) — aí quem resolve é ParseIntencaoCard.
-func ParseIntencaoMoverContexto(msg string) (string, bool) {
+// for mover) — aí quem resolve é ParseIntencaoCard. Um "…, e agende pra hoje
+// a tarde" sai da coluna (v1.69.0: tudo depois da vírgula era engolido como
+// nome de coluna) e volta em AgendarQuando.
+func ParseIntencaoMoverContexto(msg string) (IntencaoMoverContexto, bool) {
 	m := reMoverContexto.FindStringSubmatch(msg)
 	if m == nil {
-		return "", false
+		return IntencaoMoverContexto{}, false
 	}
-	return limparBordas(m[1]), true
+	corpo := m[1]
+	in := IntencaoMoverContexto{}
+	if col, quando, ok := SepararAgendamentoNoFim(corpo); ok {
+		in.AgendarQuando = quando
+		corpo = col
+	}
+	// Vírgula sem agendamento depois: também separa — o resto da frase não é
+	// nome de coluna.
+	if i := strings.IndexAny(corpo, ",;"); i >= 0 {
+		corpo = corpo[:i]
+	}
+	in.Coluna = limparBordas(corpo)
+	return in, true
 }
 
 // ---- Sufixo "… e abra o card" ----

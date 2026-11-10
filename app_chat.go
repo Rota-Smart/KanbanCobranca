@@ -1921,7 +1921,7 @@ func respostaContextoSemCard(cod, oQueFalta string) *service.ChatResultado {
 // o mesmo fluxo do "adicione o cliente X em Y", sem perguntar nada. Precisa
 // de sessão no 360. Depois de criar, vincula o ticket citado na conversa
 // (fluxo Shift+F2), para o card nascer já ligado ao ticket que o originou.
-func (a *App) importarCardDoContexto(chatID int64, cod, colunaDita string, abrirNoFim bool) *service.ChatResultado {
+func (a *App) importarCardDoContexto(chatID int64, cod, colunaDita string, abrirNoFim bool, agendarQuando string) *service.ChatResultado {
 	colunas, err := a.colunas.List(a.ctx)
 	if err != nil {
 		return &service.ChatResultado{Resposta: "Não consegui listar as colunas: " + err.Error(), Acoes: []service.AcaoDoAgente{}}
@@ -1958,7 +1958,34 @@ func (a *App) importarCardDoContexto(chatID int64, cod, colunaDita string, abrir
 	case errV != nil:
 		resposta += "\n⚠ Não consegui vincular o ticket da conversa ao card: " + errV.Error()
 	}
-	return &service.ChatResultado{Resposta: resposta, Acoes: acoes}
+	res := &service.ChatResultado{Resposta: resposta, Acoes: acoes}
+	return a.agendarVisitaDoChat(res, t.ID, agendarQuando)
+}
+
+// agendarVisitaDoChat grava o agendamento pedido no sufixo "… e agende pra
+// hoje a tarde" do comando local de mover (quando vazio = não há sufixo, não
+// faz nada). Preserva o endereço já salvo no card.
+func (a *App) agendarVisitaDoChat(res *service.ChatResultado, cardID int64, quando string) *service.ChatResultado {
+	if quando == "" || res == nil {
+		return res
+	}
+	data, hora, turno := service.ParseQuandoVisita(quando)
+	if data == "" {
+		res.Resposta += "\n⚠ Não entendi quando é a visita (" + quando + ") — agende pelo menu ⋯ do card."
+		return res
+	}
+	endereco := ""
+	if t, err := a.tickets.Get(a.ctx, cardID); err == nil && t != nil {
+		endereco = t.Endereco
+	}
+	if _, err := a.SalvarVisita(cardID, data, turno, hora, endereco); err != nil {
+		res.Resposta += "\n⚠ O agendamento da visita falhou: " + err.Error()
+		return res
+	}
+	res.Resposta += "\n📅 Visita agendada para " + service.DescreverQuandoVisita(data, hora, turno) + "."
+	res.Acoes = append(res.Acoes, service.AcaoDoAgente{Ferramenta: "agendar_visita",
+		Resumo: fmt.Sprintf("agendou a visita do card %d para %s %s %s via comando local", cardID, data, turno, hora)})
+	return res
 }
 
 // reTicketNoChat acha o nº do ticket 360 citado na conversa ("ticket #123")
@@ -2128,19 +2155,26 @@ func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.Cha
 
 	// "coloque em cobrança" sem nome: o cliente é o da conversa. Se ele não
 	// tem card mas o código service está na conversa (fluxo Shift+F2), cria
-	// o card direto na coluna pedida — sem perguntar nada.
-	if colunaDita, ok := service.ParseIntencaoMoverContexto(mensagem); ok {
+	// o card direto na coluna pedida — sem perguntar nada. Com sufixo de
+	// agendamento ("… e agende pra hoje a tarde"), o destino vira Visita
+	// Agendada e a visita é gravada na sequência (v1.69.0).
+	if mov, ok := service.ParseIntencaoMoverContexto(mensagem); ok {
+		colunaDita := mov.Coluna
+		if mov.AgendarQuando != "" {
+			colunaDita = ColunaVisitaAgendada
+		}
 		card, cod, achou := a.cardDoContextoChat(chatID)
 		if !achou {
 			if cod != "" {
-				return a.importarCardDoContexto(chatID, cod, colunaDita, abrirNoFim), true
+				return a.importarCardDoContexto(chatID, cod, colunaDita, abrirNoFim, mov.AgendarQuando), true
 			}
 			return &service.ChatResultado{
 				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"coloque o cliente João em Cobrança\".",
 				Acoes:    []service.AcaoDoAgente{},
 			}, true
 		}
-		return a.moverEvincularDoChat(chatID, card, colunaDita, abrirNoFim), true
+		res := a.moverEvincularDoChat(chatID, card, colunaDita, abrirNoFim)
+		return a.agendarVisitaDoChat(res, card.ID, mov.AgendarQuando), true
 	}
 
 	in, ok := service.ParseIntencaoCard(mensagem)
@@ -2165,7 +2199,11 @@ func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.Cha
 				if in.Apagar {
 					return respostaContextoSemCard(cod, "card para apagar"), true
 				}
-				return a.importarCardDoContexto(chatID, cod, in.Coluna, abrirNoFim), true
+				colunaDita := in.Coluna
+				if in.AgendarQuando != "" {
+					colunaDita = ColunaVisitaAgendada
+				}
+				return a.importarCardDoContexto(chatID, cod, colunaDita, abrirNoFim, in.AgendarQuando), true
 			}
 			return &service.ChatResultado{
 				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga o nome: por exemplo, \"coloque o cliente João em Cobrança\".",
@@ -2175,7 +2213,12 @@ func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.Cha
 		if in.Apagar {
 			return a.apagarCardResolvido(card, in.Coluna), true
 		}
-		return a.moverEvincularDoChat(chatID, card, in.Coluna, abrirNoFim), true
+		colunaDita := in.Coluna
+		if in.AgendarQuando != "" {
+			colunaDita = ColunaVisitaAgendada
+		}
+		res := a.moverEvincularDoChat(chatID, card, colunaDita, abrirNoFim)
+		return a.agendarVisitaDoChat(res, card.ID, in.AgendarQuando), true
 	}
 	card, err := service.ResolverCard(in.Alvo, cards)
 	switch {
@@ -2187,7 +2230,12 @@ func (a *App) executarIntencaoLocal(mensagem string, chatID int64) (*service.Cha
 			// coluna e responde onde o card realmente está.
 			return a.apagarCardResolvido(card, in.Coluna), true
 		default:
-			return a.moverCardResolvido(card, in.Coluna, abrirNoFim), true
+			colunaDita := in.Coluna
+			if in.AgendarQuando != "" {
+				colunaDita = ColunaVisitaAgendada
+			}
+			res := a.moverCardResolvido(card, colunaDita, abrirNoFim)
+			return a.agendarVisitaDoChat(res, card.ID, in.AgendarQuando), true
 		}
 	case in.Apagar || !strings.Contains(err.Error(), "nenhum card"):
 		// apagar sem card (ou ambiguidade) nunca cria nada; erro sobe.

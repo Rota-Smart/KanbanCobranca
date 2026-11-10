@@ -1,6 +1,9 @@
 package service
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestParseIntencaoCard(t *testing.T) {
 	cases := []struct {
@@ -365,12 +368,61 @@ func TestParseIntencaoAdicionar(t *testing.T) {
 		{"move pro Negociando", "Negociando"},
 	}
 	for _, c := range casos {
-		if col, ok := ParseIntencaoMoverContexto(c.msg); !ok || col != c.coluna {
-			t.Errorf("ParseIntencaoMoverContexto(%q) = %q, %v; queria %q", c.msg, col, ok, c.coluna)
+		if in, ok := ParseIntencaoMoverContexto(c.msg); !ok || in.Coluna != c.coluna || in.AgendarQuando != "" {
+			t.Errorf("ParseIntencaoMoverContexto(%q) = %+v, %v; queria coluna %q sem agendamento", c.msg, in, ok, c.coluna)
 		}
 	}
 	if in, ok := ParseIntencaoCard("adicione o cliente João em Cobrança"); !ok || in.Apagar || in.Alvo != "João" || in.Coluna != "Cobrança" {
 		t.Errorf("ParseIntencaoCard(adicionar João) = %+v, %v", in, ok)
+	}
+}
+
+// TestParseAgendarNoFim: o "…, e agende pra hoje a tarde" pendurado no mover
+// sai da coluna e vira AgendarQuando (v1.69.0 — antes tudo depois da vírgula
+// era engolido como nome de coluna).
+func TestParseAgendarNoFim(t *testing.T) {
+	casos := []struct {
+		msg, coluna, quando string
+	}{
+		{"coloque em fazer visita, e agende pra hoje a tarde", "fazer visita", "hoje a tarde"},
+		{"coloque em Fazer Visita e agende pra hoje a tarde", "Fazer Visita", "hoje a tarde"},
+		{"mova pra Visita Agendada, agende pra amanhã 8:45", "Visita Agendada", "amanhã 8:45"},
+		{"coloque em cobrança", "cobrança", ""},
+		{"coloque em cobrança, depois eu vejo", "cobrança", ""},
+	}
+	for _, c := range casos {
+		in, ok := ParseIntencaoMoverContexto(c.msg)
+		if !ok || in.Coluna != c.coluna || in.AgendarQuando != c.quando {
+			t.Errorf("ParseIntencaoMoverContexto(%q) = %+v, %v; queria coluna %q quando %q", c.msg, in, ok, c.coluna, c.quando)
+		}
+	}
+	// Com nome citado o caminho é ParseIntencaoCard.
+	if in, ok := ParseIntencaoCard("coloque o cliente João em fazer visita e agende pra hoje a tarde"); !ok ||
+		in.Alvo != "João" || in.Coluna != "fazer visita" || in.AgendarQuando != "hoje a tarde" {
+		t.Errorf("ParseIntencaoCard(João + agende) = %+v, %v", in, ok)
+	}
+	// Coluna chamada "agenda" não vira agendamento.
+	if in, ok := ParseIntencaoMoverContexto("coloque em agenda"); !ok || in.Coluna != "agenda" || in.AgendarQuando != "" {
+		t.Errorf("MoverContexto(agenda) = %+v, %v", in, ok)
+	}
+}
+
+// TestParseQuandoVisita: "hoje a tarde" vira data de hoje + Tarde; "amanhã
+// 8:45" vira amanhã + 08:45; sem dia citado = hoje.
+func TestParseQuandoVisita(t *testing.T) {
+	hoje := time.Now().Format("2006-01-02")
+	amanha := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	if data, hora, turno := ParseQuandoVisita("hoje a tarde"); data != hoje || hora != "" || turno != "Tarde" {
+		t.Errorf("ParseQuandoVisita(hoje a tarde) = %s, %s, %s", data, hora, turno)
+	}
+	if data, hora, turno := ParseQuandoVisita("amanhã 8:45"); data != amanha || hora != "08:45" || turno != "" {
+		t.Errorf("ParseQuandoVisita(amanhã 8:45) = %s, %s, %s", data, hora, turno)
+	}
+	if data, hora, turno := ParseQuandoVisita("pra hoje"); data != hoje || hora != "" || turno != "" {
+		t.Errorf("ParseQuandoVisita(pra hoje) = %s, %s, %s", data, hora, turno)
+	}
+	if data, _, _ := ParseQuandoVisita(""); data != "" {
+		t.Errorf("ParseQuandoVisita(vazio) = %s; queria vazio", data)
 	}
 }
 
@@ -389,11 +441,11 @@ func TestAlvoDeContexto(t *testing.T) {
 		}
 	}
 	// "adicione o cliente do chat em X" agora é mover-pelo-contexto.
-	if col, ok := ParseIntencaoMoverContexto("adicione o cliente do chat em aguardando assinatura"); !ok || col != "aguardando assinatura" {
-		t.Errorf("MoverContexto(cliente do chat) = %q, %v", col, ok)
+	if in, ok := ParseIntencaoMoverContexto("adicione o cliente do chat em aguardando assinatura"); !ok || in.Coluna != "aguardando assinatura" {
+		t.Errorf("MoverContexto(cliente do chat) = %+v, %v", in, ok)
 	}
-	if col, ok := ParseIntencaoMoverContexto("coloque o cliente da conversa em Cobrança"); !ok || col != "Cobrança" {
-		t.Errorf("MoverContexto(cliente da conversa) = %q, %v", col, ok)
+	if in, ok := ParseIntencaoMoverContexto("coloque o cliente da conversa em Cobrança"); !ok || in.Coluna != "Cobrança" {
+		t.Errorf("MoverContexto(cliente da conversa) = %+v, %v", in, ok)
 	}
 	// Nome próprio continua indo pelo caminho com alvo.
 	if in, ok := ParseIntencaoCard("adicione o cliente João em Cobrança"); !ok || in.Alvo != "João" {
