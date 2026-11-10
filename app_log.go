@@ -36,6 +36,11 @@ func (a *App) EnviarLogNuvem() (string, error) {
 	host, _ := os.Hostname()
 	caminho := "logs/" + host + "-app.log"
 	cli := a.syncCliente()
+	// Sem token do usuário, usa o embutido (só leitura/escrita do repo de
+	// sync) — o log de diagnóstico tem que sair de qualquer instalação.
+	if cli.Token == "" {
+		cli.Token = githubTokenPadrao()
+	}
 	cli.Caminho = caminho
 	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
 	defer cancel()
