@@ -76,7 +76,8 @@ func (a *App) definirRota(c *rota360.Cliente, origem, cookieBruto string) {
 
 // Rota360Status informa ao frontend o estado da sessão do 360.
 // Passivo: não abre janela nem reinicia nada — só a sessão salva e a
-// leitura direta do banco do Chrome.
+// leitura direta do banco do Chrome. Sem as duas, tenta a sessão da conta
+// do site (o login feito lá serve para o app pareado).
 func (a *App) Rota360Status() Rota360Status {
 	if c := a.rotaAtual(); c != nil && c.Autenticado() {
 		return Rota360Status{Conectado: true, Origem: "sessão salva"}
@@ -87,6 +88,14 @@ func (a *App) Rota360Status() Rota360Status {
 		a.rota = c
 		a.muRota.Unlock()
 		return Rota360Status{Conectado: true, Origem: "chrome"}
+	}
+	if podeBuscarSessao(intervaloBuscaSessao) {
+		ctx, cancel := context.WithTimeout(a.ctx, 12*time.Second)
+		cookie, err := buscarSessaoConta(ctx)
+		cancel()
+		if err == nil && a.adotarSessaoRemota(cookie) == nil {
+			return Rota360Status{Conectado: true, Origem: "conta do site"}
+		}
 	}
 	return Rota360Status{Conectado: false}
 }
@@ -116,6 +125,13 @@ func (a *App) ConectarRota360() (Rota360Status, error) {
 		}()
 		c, origem, err := rota360.SessaoDetectada()
 		if err != nil {
+			// Última chance: a sessão da conta do site (login feito lá).
+			ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
+			cookie, errConta := buscarSessaoConta(ctx)
+			cancel()
+			if errConta == nil && a.adotarSessaoRemota(cookie) == nil {
+				return
+			}
 			runtime.EventsEmit(a.ctx, evRotaConectado,
 				Rota360Status{Conectado: false, Mensagem: err.Error()})
 			return
@@ -126,13 +142,21 @@ func (a *App) ConectarRota360() (Rota360Status, error) {
 		// Persiste para a sessão sobreviver a reinícios do app (a leitura
 		// passiva do banco do Chrome não é mais possível no Chrome recente).
 		if ck := c.CookieSalva(); ck != nil {
-			a.definirRota(c, origem, ck.Nome+"="+ck.Valor)
+			cookieTxt := ck.Nome + "=" + ck.Valor
+			a.definirRota(c, origem, cookieTxt)
 			// O nome vindo do cabeçalho do portal é quem está logado — é o
 			// "autor da sessão" que o resumo de ticket usa. Detecção vence
 			// valor manual: se trocar o login, o filtro acompanha.
 			if ck.Usuario != "" && a.config != nil {
 				_ = a.config.Set(a.ctx, cfgAutor360, ck.Usuario)
 			}
+			// Compartilha a sessão nova com a conta do site (site e outros
+			// PCs passam a usá-la). Melhor esforço, em background.
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				defer cancel()
+				enviarSessaoConta(ctx, cookieTxt)
+			}()
 		}
 		runtime.EventsEmit(a.ctx, evRotaConectado,
 			Rota360Status{Conectado: true, Origem: origem})
@@ -147,7 +171,14 @@ func (a *App) DefinirCookieRota360(cookieTxt string) (Rota360Status, error) {
 	if err != nil {
 		return Rota360Status{}, err
 	}
-	a.definirRota(rota360.NovoCliente(c), "manual", strings.TrimSpace(cookieTxt))
+	cookieTxt = strings.TrimSpace(cookieTxt)
+	a.definirRota(rota360.NovoCliente(c), "manual", cookieTxt)
+	// Compartilha com a conta do site. Melhor esforço, em background.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		enviarSessaoConta(ctx, cookieTxt)
+	}()
 	return Rota360Status{Conectado: true, Origem: "manual"}, nil
 }
 

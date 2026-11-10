@@ -413,13 +413,13 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   }
 
   useEffect(() => {
-    if (!conectando360) return;
-    const off = EventsOn('rota360:conectado', (st: { conectado: boolean; mensagem?: string }) => {
+    const off = EventsOn('rota360:conectado', (st: { conectado: boolean; mensagem?: string; origem?: string }) => {
       setConectando360(false);
       if (st.conectado) {
-        props.onToast('360 conectado.');
+        // Sessão vinda da conta do site chega aqui sem o botão ter sido apertado.
+        props.onToast(st.origem === 'conta do site' ? '360 conectado pela conta do site.' : '360 conectado.');
         recarregar();
-      } else {
+      } else if (conectando360) {
         props.onToast(st.mensagem || 'Não foi possível conectar ao 360.');
       }
     });

@@ -38,6 +38,7 @@ func (a *App) iniciarContaSync() {
 	a.acordarSync = make(chan struct{}, 1)
 	go a.loopContaSync()
 	go a.ouvirNuvem()
+	go a.manterSessao360()
 }
 
 // ouvirNuvem mantém aberto o fluxo /eventos da API: a cada aviso de que algo
