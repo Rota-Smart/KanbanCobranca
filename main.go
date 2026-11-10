@@ -159,6 +159,9 @@ func main() {
 		}
 		return cloudflareTokenPadrao()
 	}
+	groq.CloudflareChavePadraoInjetavel = func() string {
+		return cloudflareTokenPadrao()
+	}
 	groq.CloudflareModeloInjetavel = func() string {
 		v, _ := config.Get(context.Background(), "cloudflare_modelo")
 		return v

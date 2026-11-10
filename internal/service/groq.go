@@ -109,6 +109,9 @@ type GroqCliente struct {
 	// Cloudflare é o fallback preferido (cota free); sem elas, DeepInfra.
 	CloudflareChaveInjetavel  func() string
 	CloudflareModeloInjetavel func() string
+	// CloudflareChavePadraoInjetavel devolve o token embutido do exe — usado
+	// para retentar quando a chave configurada pelo usuário é recusada (401/403).
+	CloudflareChavePadraoInjetavel func() string
 	// EndpointCloudflare sobrescreve o endpoint do fallback (testes).
 	EndpointCloudflare string
 
@@ -574,6 +577,7 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 			continue
 		case resp.StatusCode != http.StatusOK:
 			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusBadRequest {
+				det := detalheErroProvedor(raw)
 				// Chave rejeitada (401/403): tenta a próxima chave da lista
 				// antes de reportar o erro ao usuário.
 				if resp.StatusCode != http.StatusBadRequest && alvo.provedor == ProvedorGroq && idxChave < len(chaves)-1 {
@@ -582,7 +586,30 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 					espera = 2 * time.Second
 					continue
 				}
-				return respostaRodada{}, fmt.Errorf("%s: HTTP %d — verifique a chave e o modelo nas configurações", alvo.provedor, resp.StatusCode)
+				// Cloudflare recusou a chave configurada e existe padrão
+				// embutido: retenta com ele — a config pode ter uma chave
+				// antiga/revogada que só precisa ser ignorada.
+				if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && alvo.provedor == ProvedorCloudflare && g.CloudflareChavePadraoInjetavel != nil {
+					if pad := strings.TrimSpace(g.CloudflareChavePadraoInjetavel()); pad != "" && pad != chaveEnvio {
+						alvo.chave = pad
+						ultimoErr = fmt.Errorf("%s: HTTP %d%s", alvo.provedor, resp.StatusCode, det)
+						tentativa--
+						espera = 2 * time.Second
+						continue
+					}
+				}
+				// Modo auto, fallback recusou a chave: passa ao DeepInfra em
+				// vez de desistir — o objetivo é responder.
+				if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && g.emAuto() && alvo.provedor != ProvedorGroq {
+					if di := g.alvoDeepInfra(); di.chave != "" && di.provedor != alvo.provedor {
+						alvo = di
+						g.armarCooldown()
+						ultimoErr = fmt.Errorf("%s: HTTP %d%s", alvo.provedor, resp.StatusCode, det)
+						espera = 0
+						continue
+					}
+				}
+				return respostaRodada{}, fmt.Errorf("%s: HTTP %d%s — verifique a chave e o modelo nas configurações", alvo.provedor, resp.StatusCode, det)
 			}
 			if resp.StatusCode == http.StatusNotFound {
 				return respostaRodada{}, fmt.Errorf("%s: HTTP 404 — o modelo %q não existe mais no provedor; escolha outro em ⚙ Configurações", alvo.provedor, alvo.modelo)
@@ -771,4 +798,41 @@ func (g *GroqCliente) Polir(ctx context.Context, base, parametros, avaliacao str
 		return "", fmt.Errorf("IA alterou valores — texto descartado")
 	}
 	return out, nil
+}
+
+// detalheErroProvedor extrai uma mensagem curta do corpo da resposta de erro
+// da API (formato Cloudflare {"errors":[{"message":…}]} ou OpenAI {"error":
+// {"message":…}}; cai no texto bruto). O corpo diz o motivo real — "a conta
+// ficou sem cota" e "chave inválida" pedem consertos diferentes.
+func detalheErroProvedor(raw []byte) string {
+	var cf struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	var oa struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	msg := ""
+	if err := json.Unmarshal(raw, &cf); err == nil && len(cf.Errors) > 0 {
+		msg = cf.Errors[0].Message
+	}
+	if msg == "" {
+		if err := json.Unmarshal(raw, &oa); err == nil {
+			msg = oa.Error.Message
+		}
+	}
+	if msg == "" {
+		msg = strings.TrimSpace(string(raw))
+	}
+	msg = strings.Join(strings.Fields(msg), " ")
+	if r := []rune(msg); len(r) > 200 {
+		msg = string(r[:200]) + "…"
+	}
+	if msg == "" {
+		return ""
+	}
+	return " (" + msg + ")"
 }
