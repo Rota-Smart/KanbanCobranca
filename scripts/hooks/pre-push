@@ -8,7 +8,7 @@ while read local_ref local_sha remote_ref remote_sha; do
     pub=$(git show release:versao.txt 2>/dev/null)
     if [ -n "$ver" ] && [ "$ver" != "$pub" ]; then
       echo "publicar: v$ver pendente (release tem $pub) — publicando em background, log em ~/publicar-rotasuite.log"
-      nohup powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Rota Dev\scripts\publicar.ps1" -Versao "$ver" -Commit "$local_sha" >/dev/null 2>&1 &
+      nohup powershell -NoProfile -ExecutionPolicy Bypass -File "$PWD/scripts/publicar.ps1" -Versao "$ver" -Commit "$local_sha" >/dev/null 2>&1 &
     fi
   fi
 done
