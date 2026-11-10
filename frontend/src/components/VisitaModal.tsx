@@ -62,6 +62,19 @@ export default function VisitaModal({ ticket, onSalvo, onFechar }: Props) {
     }
   }
 
+  async function cancelar() {
+    setErro('');
+    setSalvando(true);
+    try {
+      const t = await bindings.CancelarVisita(ticket.id);
+      onSalvo(t);
+    } catch (e) {
+      setErro(String(e));
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   async function abrirMaps() {
     if (!mapsHref) return;
     try {
@@ -160,12 +173,22 @@ export default function VisitaModal({ ticket, onSalvo, onFechar }: Props) {
 
           {erro && <p className="text-xs text-red-600 break-words">{erro}</p>}
 
-          <div className="flex gap-2 justify-end">
+          <div className="flex gap-2 justify-end items-center">
+            {ticket.visitaData && (
+              <button
+                className="text-sm text-red-600 dark:text-red-400 hover:underline px-3 py-1.5 mr-auto disabled:opacity-60"
+                disabled={salvando}
+                title="Apaga o agendamento deste card (some do site e do app)"
+                onClick={cancelar}
+              >
+                Cancelar visita agendada
+              </button>
+            )}
             <button
               className="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-white px-3 py-1.5"
               onClick={onFechar}
             >
-              Cancelar
+              Fechar
             </button>
             <button
               className="bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-lg px-4 py-1.5 text-sm font-medium shadow hover:brightness-110 transition disabled:opacity-60"

@@ -247,6 +247,24 @@ func (r *TicketRepo) SetVisita(ctx context.Context, id int64, data, turno, hora,
 	return nil
 }
 
+// CancelarVisita apaga o agendamento de visita do card (todos os campos,
+// inclusive a marca de realizada) — igual ao cancelar pelo site.
+func (r *TicketRepo) CancelarVisita(ctx context.Context, id int64) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE tickets SET visita_data = '', visita_turno = '', visita_hora = '',
+		   visita_endereco = '', visita_realizada_em = '',
+		   updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+		 WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("cancelar visita: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrTicketNaoEncontrado
+	}
+	return nil
+}
+
 // MarcarVisitaRealizada grava a data-hora da marcação; data-hora vazia limpa.
 func (r *TicketRepo) MarcarVisitaRealizada(ctx context.Context, id int64, quando string) error {
 	res, err := r.db.ExecContext(ctx,
