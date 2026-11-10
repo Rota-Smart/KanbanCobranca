@@ -11,7 +11,7 @@ param(
 # progresso. 'Continue' + checagens explicitas abaixo.
 $ErrorActionPreference = 'Continue'
 $Log = "$env:USERPROFILE\publicar-rotasuite.log"
-$MainDir = 'C:\Rota Dev'
+$MainDir = 'C:\Rota Smart'
 $ReleaseDir = 'C:\Rota Smart'
 function Log($m) { ("{0} [v{1}] {2}" -f (Get-Date -Format s), $Versao, $m) | Out-File -Append -Encoding utf8 $Log }
 

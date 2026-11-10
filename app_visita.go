@@ -37,6 +37,20 @@ func (a *App) SalvarVisita(ticketID int64, data, turno, hora, endereco string) (
 	return *t, nil
 }
 
+// CancelarVisita apaga o agendamento de visita do card e devolve o card
+// atualizado. A lista de visitas é a mesma no site e no app (mesmo banco da
+// nuvem) — cancelar num lado some nos dois.
+func (a *App) CancelarVisita(ticketID int64) (db.Ticket, error) {
+	if err := a.tickets.CancelarVisita(a.ctx, ticketID); err != nil {
+		return db.Ticket{}, friendly("CancelarVisita", err)
+	}
+	t, err := a.tickets.Get(a.ctx, ticketID)
+	if err != nil {
+		return db.Ticket{}, friendly("CancelarVisita", err)
+	}
+	return *t, nil
+}
+
 // MarcarVisitaRealizada grava a data-hora da realização da visita do card
 // (menu ⋯ do card e comando /realizada do chat, sem IA).
 func (a *App) MarcarVisitaRealizada(ticketID int64) (db.Ticket, error) {
