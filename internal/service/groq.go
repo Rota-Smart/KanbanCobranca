@@ -52,17 +52,17 @@ const (
 	// espera até esperaCurtaAuto pela janela de TPM e, sem liberação, manda a
 	// chamada pro DeepInfra — onde fica por cooldownFallback (a janela da
 	// Groq reabre nesse tempo) antes de voltar a ser o principal.
-	ProvedorGroq      = "groq"
-	ProvedorDeepInfra = "deepinfra"
-	ProvedorSambaNova = "sambanova"
+	ProvedorGroq       = "groq"
+	ProvedorDeepInfra  = "deepinfra"
+	ProvedorSambaNova  = "sambanova"
 	ProvedorCerebras   = "cerebras"
 	ProvedorCloudflare = "cloudflare"
 	ProvedorAuto       = "auto"
 
-	esperaCurtaAuto  = 5 * time.Second
+	esperaCurtaAuto = 5 * time.Second
 	// groqTimeoutAuto: no modo auto, a Groq que não responde em 5s (janela de
 	// TPM esgotada costuma segurar a resposta) perde a vez pro fallback.
-	groqTimeoutAuto = 5 * time.Second
+	groqTimeoutAuto  = 5 * time.Second
 	cooldownFallback = 30 * time.Second
 )
 
@@ -469,9 +469,10 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 		}
 	}
 	idxChave := 0
-	esgotou := false // a última chave da Groq também recebeu 429
-	lenta := false   // a Groq não respondeu em groqTimeoutAuto (modo auto)
+	esgotou := false             // a última chave da Groq também recebeu 429
+	lenta := false               // a Groq não respondeu em groqTimeoutAuto (modo auto)
 	esperado := time.Duration(0) // soma das esperas por 429 nesta chamada
+	toolsCompletas := false      // 400 "tool not in request.tools" já ocorreu: reenvia com todas
 	var ultimoErr error
 	espera := 2 * time.Second
 	for tentativa := 0; tentativa < maxTentativasGroq; tentativa++ {
@@ -505,7 +506,13 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 				esperado += espera
 			}
 		}
-		body, err := json.Marshal(montar(alvo.modelo))
+		reqGroq := montar(alvo.modelo)
+		if toolsCompletas {
+			// Todas as tools de volta no request: o modelo pode chamar
+			// qualquer nome que apareça no prompt ou no histórico.
+			reqGroq.Tools = AgentTools()
+		}
+		body, err := json.Marshal(reqGroq)
 		if err != nil {
 			return respostaRodada{}, err
 		}
@@ -578,6 +585,15 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 		case resp.StatusCode != http.StatusOK:
 			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusBadRequest {
 				det := detalheErroProvedor(raw)
+				// A Groq valida a lista de tools e recusa o request inteiro
+				// quando o modelo tenta chamar uma que a pré-busca removeu
+				// (ou que só aparece no histórico antigo). Uma retentativa com
+				// a lista completa resolve — o custo extra é pontual.
+				if resp.StatusCode == http.StatusBadRequest && strings.Contains(det, "not in request.tools") && !toolsCompletas && len(montar(alvo.modelo).Tools) > 0 {
+					toolsCompletas = true
+					ultimoErr = fmt.Errorf("%s: HTTP 400%s", alvo.provedor, det)
+					continue
+				}
 				// Chave rejeitada (401/403): tenta a próxima chave da lista
 				// antes de reportar o erro ao usuário.
 				if resp.StatusCode != http.StatusBadRequest && alvo.provedor == ProvedorGroq && idxChave < len(chaves)-1 {

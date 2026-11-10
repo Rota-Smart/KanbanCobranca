@@ -27,19 +27,23 @@ var frontendFS embed.FS
 // setupLogger instala o slog em arquivo rotacionado ao lado do banco.
 // Apenas IDs e códigos de erro são registrados — nenhum nome, telefone,
 // endereço ou valor financeiro (Etapa 8).
+// logAtual é o logger de arquivo em uso — o LimparLogLocal precisa dele para
+// rotacionar o app.log antes de apagar os arquivos antigos.
+var logAtual *lumberjack.Logger
+
 func setupLogger(dbPath string) {
 	logDir := filepath.Join(filepath.Dir(dbPath), "logs")
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		return // sem arquivo de log, o slog cai no stderr padrão
 	}
-	logger := slog.New(slog.NewJSONHandler(&lumberjack.Logger{
+	logAtual = &lumberjack.Logger{
 		Filename:   filepath.Join(logDir, "app.log"),
 		MaxSize:    10, // MB
 		MaxBackups: 3,
 		MaxAge:     28, // dias
 		Compress:   true,
-	}, nil))
-	slog.SetDefault(logger)
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logAtual, nil)))
 }
 
 func main() {

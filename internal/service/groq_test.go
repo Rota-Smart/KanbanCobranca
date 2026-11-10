@@ -402,7 +402,7 @@ func TestRotacaoNo401(t *testing.T) {
 // modelo padrão próprios (o mesmo GroqCliente atende os quatro provedores).
 func TestProvedoresNovos(t *testing.T) {
 	casos := []struct {
-		provedor      string
+		provedor         string
 		endpointEsperado string
 		modeloEsperado   string
 	}{
@@ -420,4 +420,72 @@ func TestProvedoresNovos(t *testing.T) {
 			t.Errorf("%s: modelo %q, esperava %q", c.provedor, g.modelo(), c.modeloEsperado)
 		}
 	}
+}
+
+// 400 "tool not in request.tools": a primeira tentativa vai com as tools
+// reduzidas da pré-busca; a retentativa tem de sair com a lista completa.
+func TestQuatroCentosToolForaRetentaCompletas(t *testing.T) {
+	var tamanhos []int
+	chamadas := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chamadas++
+		var corpo struct {
+			Tools []map[string]any `json:"tools"`
+		}
+		json.NewDecoder(r.Body).Decode(&corpo)
+		tamanhos = append(tamanhos, len(corpo.Tools))
+		if chamadas == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error":{"message":"Tool call validation failed: attempted to call tool 'equipment_cliente' which was not in request.tools"}}`))
+			return
+		}
+		jsonResposta(w, "resolvido com todas as tools")
+	}))
+	t.Cleanup(srv.Close)
+	g := groqParaTeste(t, srv)
+
+	res, err := g.ConversarCom(context.Background(), nil, "consulte o financeiro do cliente", "",
+		executorFake{},
+		func(AcaoDoAgente) {},
+		&OpcoesConversa{FerramentasRemovidas: []string{"financeiro_cliente"}})
+	if err != nil {
+		t.Fatalf("deveria ter resolvido na retentativa: %v", err)
+	}
+	if res.Resposta != "resolvido com todas as tools" {
+		t.Errorf("resposta: %q", res.Resposta)
+	}
+	if chamadas != 2 {
+		t.Errorf("esperava 2 chamadas, houve %d", chamadas)
+	}
+	if len(tamanhos) != 2 || tamanhos[1] <= tamanhos[0] {
+		t.Errorf("tamanhos de tools por chamada: %v", tamanhos)
+	}
+}
+
+// 400 sem relação com tools continua falhando sem mudar a lista.
+func TestQuatroCentosOutroMotivoNaoRetenta(t *testing.T) {
+	chamadas := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chamadas++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":{"message":"bad request"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	g := groqParaTeste(t, srv)
+
+	if _, err := g.Completar(context.Background(), "s", "u"); err == nil {
+		t.Error("deveria falhar")
+	}
+	if chamadas != 1 {
+		t.Errorf("esperava 1 chamada, houve %d", chamadas)
+	}
+}
+
+// executorFake satisfaz o ToolExecutor sem executar nada.
+type executorFake struct{}
+
+func (executorFake) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (string, string, error) {
+	return "ok", "", nil
 }

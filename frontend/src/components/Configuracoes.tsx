@@ -1157,15 +1157,32 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
           <h3 className="text-sm font-semibold text-slate-700">Diagnóstico (log)</h3>
           <p className="text-xs text-slate-500 mt-1">
             Envia o fim do registro de atividades (app.log) para a nuvem, para análise quando algo
-            só falha neste PC. Usa o mesmo token da sincronização.
+            só falha neste PC. Usa o mesmo token da sincronização. O log rotaciona sozinho (10 MB,
+            até 3 backups) — o botão de limpar apaga tudo agora.
           </p>
-          <div className="mt-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             <button
               className="bg-slate-600 text-white rounded px-3 py-1 text-sm disabled:opacity-50"
               disabled={logOcupado}
               onClick={enviarLog}
             >
               {logOcupado ? 'Enviando…' : '📋 Enviar log para a nuvem'}
+            </button>
+            <button
+              className="border rounded px-3 py-1 text-sm text-red-600 disabled:opacity-50"
+              disabled={logOcupado}
+              onClick={async () => {
+                setLogOcupado(true);
+                try {
+                  props.onToast('Log local limpo (' + (await App.LimparLogLocal()) + ')');
+                } catch (e) {
+                  props.onToast(String(e));
+                } finally {
+                  setLogOcupado(false);
+                }
+              }}
+            >
+              🗑 Limpar log local
             </button>
           </div>
         </section>
