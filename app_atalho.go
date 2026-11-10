@@ -20,6 +20,7 @@ import (
 
 	"rota-smart/internal/contasync"
 	"rota-smart/internal/hotkey"
+	"rota-smart/internal/service"
 	"rota-smart/internal/rota360"
 	"rota-smart/internal/tela"
 )
@@ -105,24 +106,90 @@ func (a *App) onAtalhoBusca() {
 	runtime.EventsEmit(a.ctx, evAtalhoBusca)
 }
 
-// reconhecerNoService é o fluxo do Shift+F3 com o Access em foco. TEMPORÁRIO:
-// sobe um print da tela para a nuvem (tabela logs_app, pelo /log do site)
-// para mapear os campos do Service — depois de mapeado, este envio sai.
+// reconhecerNoService é o fluxo do Shift+F3 com o Access em foco. A janela
+// do Access não expõe texto via UIA, então: print da tela → modelo de visão
+// da Cloudflare lê os campos → briefing no chat com nome/CNPJ/código. Se a
+// visão falhar, cai para a leitura de texto UIA e, sem texto, sobe o print
+// para a nuvem (logs_app) para diagnóstico.
 func (a *App) reconhecerNoService(cap tela.CapturaTexto) {
 	print := tela.CapturaPrint()
+	briefing := ""
 	if len(print) > 0 {
-		if err := a.enviarPrintNuvem(print, cap.Titulo); err != nil {
-			slog.Warn("print do service não subiu", "err", err)
+		if cli, err := a.clienteDaVisao(print); err != nil {
+			slog.Warn("visão falhou na tela do service", "err", err)
+		} else {
+			briefing = briefingClienteService(cli)
 		}
 	} else {
 		slog.Warn("não consegui capturar o print da janela do Access")
 	}
-	res := a.lerAcesso(cap)
-	res.Titulo = "Service: " + cap.Titulo
-	slog.Info("atalho shift+f3 service", "processo", cap.Processo, "achou", res.Achou,
-		"runas", len([]rune(cap.Texto)), "print", len(print) > 0)
+
+	if briefing == "" {
+		// Sem visão: volta para a leitura de texto (alguns formulários do
+		// Access expõem algo) e, com a tela vazia, sobe o print para a
+		// nuvem para mapear a causa.
+		res := a.lerAcesso(cap)
+		if !res.Achou && len(print) > 0 {
+			if err := a.enviarPrintNuvem(print, cap.Titulo); err != nil {
+				slog.Warn("print do service não subiu", "err", err)
+			}
+		}
+		slog.Info("atalho shift+f3 service (sem visão)", "processo", cap.Processo, "achou", res.Achou,
+			"runas", len([]rune(cap.Texto)), "print", len(print) > 0)
+		a.mostrarJanela()
+		runtime.EventsEmit(a.ctx, evAtalhoAcesso, res)
+		return
+	}
+
+	slog.Info("atalho shift+f3 service", "processo", cap.Processo, "print", len(print) > 0)
 	a.mostrarJanela()
-	runtime.EventsEmit(a.ctx, evAtalhoAcesso, res)
+	runtime.EventsEmit(a.ctx, evAtalhoAcesso, LeituraAcesso{
+		Achou:    true,
+		Processo: cap.Processo,
+		Titulo:   "Service: " + cap.Titulo,
+		Mensagem: briefing,
+	})
+}
+
+// clienteDaVisao lê o cliente do print com o modelo de visão da Cloudflare,
+// usando as mesmas credenciais configuradas/embutidas do cliente de chat.
+func (a *App) clienteDaVisao(jpeg []byte) (service.ClienteTela, error) {
+	if a.groq == nil {
+		return service.ClienteTela{}, fmt.Errorf("IA não inicializada")
+	}
+	conta := ""
+	if a.groq.CloudflareContaInjetavel != nil {
+		conta = a.groq.CloudflareContaInjetavel()
+	}
+	chave := ""
+	if a.groq.CloudflareChaveInjetavel != nil {
+		chave = a.groq.CloudflareChaveInjetavel()
+	}
+	return service.ClienteDaTela(jpeg, conta, chave)
+}
+
+// briefingClienteService monta a mensagem inicial do chat com o que a visão
+// leu da tela do Service. O código vem de OCR e pode ter um dígito errado,
+// então o agente confirma no 360 pelo nome/CNPJ antes de consultar dados.
+func briefingClienteService(cli service.ClienteTela) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "O usuário está com a tela do cliente aberta no Service (Access): %s", cli.Nome)
+	if cli.Codigo != "" {
+		fmt.Fprintf(&sb, ", código %s", cli.Codigo)
+	}
+	if cli.CNPJ != "" {
+		fmt.Fprintf(&sb, ", CNPJ %s", cli.CNPJ)
+	}
+	if cli.Mensalidade != "" {
+		fmt.Fprintf(&sb, ", mensalidade %s", cli.Mensalidade)
+	}
+	if cli.Modalidade != "" {
+		fmt.Fprintf(&sb, ", modalidade %s", cli.Modalidade)
+	}
+	sb.WriteString(".\n\n")
+	sb.WriteString("O código acima foi lido por OCR e pode ter um dígito errado: localize o cliente no 360 pelo nome ou CNPJ com a ferramenta de busca antes de qualquer consulta, e use o código confirmado lá. ")
+	sb.WriteString("Depois decida quais dados do cliente faltam para um atendimento de cobrança/suporte e consulte SÓ isso com as ferramentas (financeiro, equipamentos, atendimentos), aponte pendências relevantes e sugira os próximos passos.")
+	return sb.String()
 }
 
 // enviarPrintNuvem sobe o print da tela como um envio de log (conteúdo em
