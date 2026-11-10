@@ -113,6 +113,7 @@ func modelosComFerramentas(cat cfCatalogo) []ModeloCloudflare {
 	out := []ModeloCloudflare{}
 	for _, m := range cat.Result {
 		tools := false
+		pago := false
 		var ent, sai float64
 		for _, p := range m.Properties {
 			switch p.ID {
@@ -123,6 +124,14 @@ func modelosComFerramentas(cat cfCatalogo) []ModeloCloudflare {
 					tools = s == "true"
 				} else if json.Unmarshal(p.Value, &b) == nil {
 					tools = b
+				}
+			case "require_workers_paid":
+				var s string
+				var b bool
+				if json.Unmarshal(p.Value, &s) == nil {
+					pago = s == "true"
+				} else if json.Unmarshal(p.Value, &b) == nil {
+					pago = b
 				}
 			case "price":
 				var precos []struct {
@@ -143,7 +152,9 @@ func modelosComFerramentas(cat cfCatalogo) []ModeloCloudflare {
 				}
 			}
 		}
-		if !tools {
+		// Modelos exclusivos do plano pago devolvem 403 no free (causa das
+		// falhas do assistente) — nem aparecem nas opções.
+		if !tools || pago {
 			continue
 		}
 		mc := ModeloCloudflare{Nome: m.Name, Descricao: m.Description, EntradaUSDporM: ent, SaidaUSDporM: sai}

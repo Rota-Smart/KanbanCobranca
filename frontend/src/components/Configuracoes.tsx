@@ -739,8 +739,10 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
                   </button>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Só modelos que usam as ferramentas do assistente. A estimativa considera uma
-                  resposta típica do chat; os mais baratos rendem mais no plano grátis.
+                  Só modelos grátis do plano free que usam as ferramentas do assistente — os que
+                  exigem plano pago (devolvem 403) ficam de fora. A estimativa usa os preços
+                  oficiais de cada modelo sobre a cota diária de 10.000 neurons; os mais baratos
+                  rendem mais respostas por dia.
                 </p>
                 <details className="text-sm">
                   <summary className="cursor-pointer text-xs text-slate-500">
