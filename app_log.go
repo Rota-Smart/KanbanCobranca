@@ -1,22 +1,24 @@
 package main
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+
+	"rota-smart/internal/contasync"
 )
 
-// EnviarLogNuvem sobe o app.log (e, se houver, as rotações .1) para a pasta
-// logs/ do repositório de sincronização — usado para diagnóstico remoto
-// quando o erro só acontece em outra máquina. Envia no máximo o fim do log
-// (tail de 900 KB) para não estourar a API de conteúdo.
+// EnviarLogNuvem sobe o fim do app.log para a conta do site (tabela logs_app
+// do banco de lá) — diagnóstico remoto quando o erro só acontece em outra
+// máquina. Autentica com o token da conta pareada; sem pareamento não há
+// para onde mandar.
 func (a *App) EnviarLogNuvem() (string, error) {
-	if err := a.syncConfigurado(); err != nil {
-		return "", friendly("EnviarLogNuvem", err)
-	}
 	dir := filepath.Join(filepath.Dir(a.dbPath), "logs")
 	local := filepath.Join(dir, "app.log")
 	bruto, err := os.ReadFile(local)
@@ -27,27 +29,31 @@ func (a *App) EnviarLogNuvem() (string, error) {
 	if len(bruto) > tailMax {
 		bruto = bruto[len(bruto)-tailMax:]
 	}
-	tmp := filepath.Join(dir, "app-log-nuvem.tmp")
-	if err := os.WriteFile(tmp, bruto, 0o600); err != nil {
-		return "", friendly("EnviarLogNuvem", err)
+	token, err := lerTokenConta()
+	if err != nil || token == "" {
+		return "", fmt.Errorf("conta não pareada — conecte o app à conta em ⚙ Configurações para enviar o log")
 	}
-	defer os.Remove(tmp)
-
 	host, _ := os.Hostname()
-	caminho := "logs/" + host + "-app.log"
-	cli := a.syncCliente()
-	// Sem token do usuário, usa o embutido (só leitura/escrita do repo de
-	// sync) — o log de diagnóstico tem que sair de qualquer instalação.
-	if cli.Token == "" {
-		cli.Token = githubTokenPadrao()
-	}
-	cli.Caminho = caminho
-	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
-	defer cancel()
-	msg := fmt.Sprintf("log de %s (tail %d bytes)", host, len(bruto))
-	if err := cli.Enviar(ctx, tmp, msg); err != nil {
+	corpo, err := json.Marshal(map[string]string{"host": host, "conteudo": string(bruto)})
+	if err != nil {
 		return "", friendly("EnviarLogNuvem", err)
 	}
-	slog.Info("log enviado para a nuvem", "repo", cli.Repo, "caminho", caminho, "bytes", len(bruto))
-	return caminho, nil
+	req, err := http.NewRequestWithContext(a.ctx, http.MethodPost, contasync.URLPadrao+"/log", bytes.NewReader(corpo))
+	if err != nil {
+		return "", friendly("EnviarLogNuvem", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	cli := &http.Client{Timeout: 30 * time.Second}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return "", friendly("EnviarLogNuvem", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+		return "", fmt.Errorf("o site recusou o log (HTTP %d): %s", resp.StatusCode, string(b))
+	}
+	slog.Info("log enviado para a conta do site", "host", host, "bytes", len(bruto))
+	return fmt.Sprintf("%d bytes", len(bruto)), nil
 }
