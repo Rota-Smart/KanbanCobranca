@@ -15,3 +15,15 @@ func TestParseClienteTela(t *testing.T) {
 		t.Fatalf("fallback cnpj: %+v", res)
 	}
 }
+
+func TestDocumentoValido(t *testing.T) {
+	if !documentoValido("43.624.968/0001-00") {
+		t.Fatal("cnpj válido reprovado")
+	}
+	if documentoValido("(55) 98432-0247") && documentoValido("55984320247") {
+		t.Fatal("telefone aceito como documento")
+	}
+	if documentoValido("065/0163249") {
+		t.Fatal("inscrição estadual aceita")
+	}
+}

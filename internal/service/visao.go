@@ -35,11 +35,16 @@ type ClienteTela struct {
 // regexCNPJ deixa passar o CNPJ com ou sem pontuação.
 var regexCNPJ = regexp.MustCompile(`\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}`)
 
+// regexDigitos tira a pontuação de números lidos da tela.
+var regexDigitos = regexp.MustCompile(`\D`)
+
 // promptVisao pede o formato mastigado que o parser espera. Pedidos longos
-// custam tokens de resposta, não de imagem.
+// custam tokens de resposta, não de imagem. O CNPJ só entra se estiver
+// ROTULADO na tela (CGC/CPF:) — o modelo costua pegar telefone, inscrição
+// estadual ou qualquer número grande e vestir de CNPJ.
 const promptVisao = `Esta tela é de um sistema de monitoramento. Responda APENAS uma linha no formato ` +
-	`CODIGO=<código do cliente> | NOME=<nome> | CNPJ=<cnpj se visível> | MENSALIDADE=<valor se visível> | MODALIDADE=<se visível>. ` +
-	`Use exatamente o que está escrito na tela, sem inventar.`
+	`CODIGO=<código do cliente> | NOME=<nome> | CNPJ=<somente o número após o rótulo CGC/CPF, se existir; senão vazio> | MENSALIDADE=<valor se visível> | MODALIDADE=<se visível>. ` +
+	`Não transforme telefone, inscrição estadual ou código em CNPJ. Use exatamente o que está escrito na tela, sem inventar.`
 
 // ClienteDaTela manda o print para o modelo de visão da Cloudflare e devolve
 // os campos lidos. conta/chave vazios devolvem erro (sem fallback embutido
@@ -130,5 +135,41 @@ func parseClienteTela(bruto string) ClienteTela {
 			res.CNPJ = c
 		}
 	}
+	// O modelo (e a busca de reserva no texto) erram o rótulo: telefone,
+	// inscrição estadual e código viram "CNPJ". Só aceita número com
+	// dígito verificador válido (CNPJ 14 ou CPF 11).
+	if res.CNPJ != "" && !documentoValido(res.CNPJ) {
+		slog.Info("cnpj lido da tela reprovado no dígito verificador", "lido", res.CNPJ)
+		res.CNPJ = ""
+	}
 	return res
+}
+
+// documentoValido confere o dígito verificador de um CNPJ (14 dígitos) ou
+// CPF (11 dígitos) com ou sem pontuação.
+func documentoValido(s string) bool {
+	d := regexDigitos.ReplaceAllString(s, "")
+	switch len(d) {
+	case 14:
+		return digitoMod(d[:12], []int{5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2}) == d[12] &&
+			digitoMod(d[:13], []int{6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2}) == d[13]
+	case 11:
+		return digitoMod(d[:9], []int{10, 9, 8, 7, 6, 5, 4, 3, 2}) == d[9] &&
+			digitoMod(d[:10], []int{11, 10, 9, 8, 7, 6, 5, 4, 3, 2}) == d[10]
+	}
+	return false
+}
+
+// digitoMod calcula um dígito verificador módulo 11 (padrão Receita) sobre
+// base com pesos e devolve o caractere esperado ('0'..'9').
+func digitoMod(base string, pesos []int) byte {
+	soma := 0
+	for i, c := range []byte(base) {
+		soma += int(c-'0') * pesos[i]
+	}
+	resto := soma % 11
+	if resto < 2 {
+		return '0'
+	}
+	return byte('0' + 11 - resto)
 }
