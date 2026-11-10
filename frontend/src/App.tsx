@@ -558,12 +558,12 @@ export default function App() {
     // abertura do modal completo por evento (o board pode estar desatualizado
     // em relação ao banco, então se não achar aqui, recarrega e tenta de novo).
     const offAbrir = EventsOn('chat:abrir-card', (id: number) => {
+      // Fecha o drawer ANTES de procurar o card: o pedido foi "abra o card",
+      // então a aba do assistente sai da frente em qualquer caso — achou ou
+      // não (o aviso de falha aparece sobre o quadro). A conversa fica salva.
+      setChatAberto(false);
       abrirCardPorId(id).then((t) => {
         if (t) {
-          // O drawer do chat é renderizado depois do modal (mesmo z-40) e
-          // ficaria por cima — fecha para o card aparecer na tela. A conversa
-          // fica salva e volta pelo botão do chat.
-          setChatAberto(false);
           setAberto(t);
         } else {
           showToast(`Card #${id} não encontrado no quadro visível.`);
