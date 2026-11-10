@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -468,6 +469,7 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 			chaves = cs
 		}
 	}
+	t0 := time.Now()
 	idxChave := 0
 	esgotou := false             // a última chave da Groq também recebeu 429
 	lenta := false               // a Groq não respondeu em groqTimeoutAuto (modo auto)
@@ -483,6 +485,9 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 			if g.emAuto() && alvo.provedor == ProvedorGroq && (lenta || idxChave >= len(chaves)-1 &&
 				(esgotou || esperado+espera > esperaCurtaAuto)) {
 				if fb := g.alvoFallback(); fb.chave != "" {
+					slog.Info("ia: failover para o fallback", "de", alvo.provedor, "para", fb.provedor,
+						"motivo", map[bool]string{true: "lenta (sem resposta no prazo)", false: "teto de TPM"}[lenta],
+						"decorrido_ms", time.Since(t0).Milliseconds())
 					alvo = fb
 					g.armarCooldown()
 					// A espera era da janela da Groq: no fallback ela não se
@@ -494,6 +499,7 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 			if !cabeNoCtx(ctx, espera) {
 				return respostaRodada{}, fmt.Errorf("%s: HTTP 429 — %w", alvo.provedor, ErrTetoTPM)
 			}
+			slog.Info("ia: esperando janela de TPM", "provedor", alvo.provedor, "espera_s", espera.Seconds(), "tentativa", tentativa+1)
 			select {
 			case <-ctx.Done():
 				if errors.Is(ultimoErr, ErrTetoTPM) {
@@ -641,6 +647,8 @@ func (g *GroqCliente) chamadaComRetry(ctx context.Context, montar func(modelo st
 			ultimoErr = err
 			continue
 		}
+		slog.Info("ia: chamada concluída", "provedor", alvo.provedor, "modelo", alvo.modelo,
+			"duracao_ms", time.Since(t0).Milliseconds(), "tentativas", tentativa+1, "http", resp.StatusCode)
 		var out groqResponse
 		if err := json.Unmarshal(raw, &out); err != nil {
 			return respostaRodada{}, fmt.Errorf("%s: resposta inválida: %w", alvo.provedor, err)

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -344,7 +345,10 @@ func (g *GroqCliente) ConversarCom(ctx context.Context, historico []MensagemDeCh
 	ferramentas := []FerramentaAuditada{}
 	promptTotal, completionTotal := 0, 0
 	for rodadas := 0; rodadas < MaxIteracoesAgente; rodadas++ {
+		t0 := time.Now()
 		resp, err := g.chatUmaRodada(ctx, msgs, tools)
+		slog.Info("ia: rodada", "n", rodadas+1, "duracao_ms", time.Since(t0).Milliseconds(),
+			"prompt_tokens", resp.PromptTokens, "completion_tokens", resp.CompletionTokens)
 		if err != nil {
 			return nil, err
 		}

@@ -226,7 +226,9 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 	// Pré-busca: mensagem que pede dados do 360 sai com o contexto já
 	// coletado (1 requisição HTTP) e sem as tools de leitura no request.
 	// Sessão expirada/ausente PARA AQUI — a IA não é acionada.
+	t0Pre := time.Now()
 	pre, err := a.prepararPrebusca(ctx, mensagem)
+	slog.Info("chat: pré-busca do 360", "duracao_ms", time.Since(t0Pre).Milliseconds(), "tem_bloco", pre != nil)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return service.ChatResultado{}, errors.New("⏹ pedido cancelado — nada foi enviado à IA; sua mensagem continua no histórico da conversa")
@@ -269,6 +271,8 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 	}
 
 	res, err := a.groq.ConversarCom(ctx, historico, mensagem, a.textoPadroes(a.ctx), a, nil, pre.opcoes())
+	slog.Info("chat: fim do ciclo da IA", "duracao_total_ms", time.Since(inicio).Milliseconds(),
+		"rodadas", res.Rodadas, "saldo_tpm", a.groq.SaldoTPM())
 	if err != nil {
 		if err == service.ErrGroqSemChave {
 			return service.ChatResultado{}, err
