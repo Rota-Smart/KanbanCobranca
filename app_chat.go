@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -1497,6 +1498,20 @@ func (a *App) vincularTicket360(ticketID int64, entrada string) (db.Ticket, stri
 		return db.Ticket{}, "", friendly("VincularTicket360", err)
 	}
 	return *t, aviso, nil
+}
+
+// AbrirCliente360 abre no navegador o cadastro do cliente no portal 360,
+// pelo código service do card (/clientes?cod=<cod>&aba=cadastro).
+func (a *App) AbrirCliente360(codService string) error {
+	cod := strings.TrimSpace(codService)
+	if cod == "" {
+		return fmt.Errorf("card sem código service")
+	}
+	url := rota360.BaseURL + "/clientes?cod=" + url.QueryEscape(cod) + "&aba=cadastro"
+	if err := tela.NavegarAbaAtiva(url); err != nil {
+		return abrirNoNavegador(url)
+	}
+	return nil
 }
 
 // AbrirTicket360DoCard abre no navegador o ticket 360 vinculado ao card (pelo uuid).

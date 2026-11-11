@@ -377,12 +377,21 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
   }
 
   // Botão 🌐 do topo: leva ao 360 — abre o ticket vinculado do card quando
-  // existe; sem vínculo, abre a home do portal.
+  // existe; sem vínculo, abre o cadastro do cliente (pelo código service);
+  // sem código service, abre a home do portal.
   async function abrir360() {
     setVinculoErro('');
     if (ticket.ticket360Id) {
       try {
         await App.AbrirTicket360DoCard(ticket.ticket360Id);
+      } catch (e) {
+        setVinculoErro(String(e));
+      }
+      return;
+    }
+    if (ticket.codService) {
+      try {
+        await App.AbrirCliente360(ticket.codService);
       } catch (e) {
         setVinculoErro(String(e));
       }
@@ -612,7 +621,9 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
           <div className="flex items-center gap-2 shrink-0">
             <button
               className="px-2.5 py-1.5 rounded-lg text-[13px] font-medium border border-slate-300/50 text-slate-600 hover:bg-slate-500/10 dark:text-slate-300"
-              title={ticket.ticket360Id ? 'Abrir o ticket deste cliente no 360' : 'Abrir o portal 360'}
+              title={ticket.ticket360Id
+                ? 'Abrir o ticket deste cliente no 360'
+                : ticket.codService ? 'Abrir o cadastro do cliente no 360' : 'Abrir o portal 360'}
               onClick={abrir360}
             >
               🌐 360
