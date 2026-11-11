@@ -17,7 +17,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as bindings from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 import type { Comissao, ResultadoCobranca, Ticket, Vinculo360 } from './wails-types';
@@ -28,6 +28,7 @@ import Configuracoes from './components/Configuracoes';
 import KanbanColumn from './components/KanbanColumn';
 import MovimentarTicketDialog from './components/MovimentarTicketDialog';
 import NegotiationModal from './components/NegotiationModal';
+import PainelMetricas from './components/PainelMetricas';
 import type { ModoCard } from './components/TicketCard';
 import VisitaModal from './components/VisitaModal';
 import { formatCents } from './money';
@@ -240,6 +241,13 @@ export default function App() {
   const [chatKey, setChatKey] = useState(0); // cada Shift+F2 remonta o drawer p/ reenviar
   const [sincronizando, setSincronizando] = useState(false);
   const [contaEstado, setContaEstado] = useState('');
+  const [painelAberto, setPainelAberto] = useState(false);
+  // Tempo real: o sync emite 'conta:quadro' a cada mudança remota. Enfileirar o
+  // reload (debounce curto) evita recarregar em rajada; durante o arrasto de um
+  // card ele espera o fim, senão a tela volta ao estado de antes do arrasto.
+  const arrastoRef = useRef(false);
+  const reloadPendenteRef = useRef(false);
+  const reloadTimerRef = useRef<number | null>(null);
   const [modos, setModos] = useState<ModosCards>(modosDoStorage);
   const [ordenacoes, setOrdenacoes] = useState<Record<string, Ordenacao>>(ordenacoesDoStorage);
   const [filtroTexto, setFiltroTexto] = useState('');
@@ -601,6 +609,19 @@ export default function App() {
     return () => window.removeEventListener('ticket-atualizado', aoAtualizar);
   }, []);
 
+  function agendarReloadBoard() {
+    if (arrastoRef.current) {
+      reloadPendenteRef.current = true;
+      return;
+    }
+    if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current);
+    reloadTimerRef.current = window.setTimeout(() => {
+      reloadTimerRef.current = null;
+      void recarregarBoard();
+      void carregarComissoes();
+    }, 400);
+  }
+
   async function recarregarBoard() {
     try {
       const [cs, tickets] = await Promise.all([bindings.GetColunas(), bindings.GetTickets()]);
@@ -623,8 +644,7 @@ export default function App() {
       setContaEstado(st?.estado || '');
     });
     const offQuadro = EventsOn('conta:quadro', () => {
-      void recarregarBoard();
-      void carregarComissoes();
+      agendarReloadBoard();
     });
     return () => {
       offSync();
@@ -957,7 +977,16 @@ ${txt.trim()}` : txt.trim());
   const [boardPreArrasto, setBoardPreArrasto] = useState<Board | null>(null);
 
   function onDragStartUnificado(event: DragStartEvent) {
+    arrastoRef.current = true;
     if (!ehColuna(event.active.id)) setBoardPreArrasto(board);
+  }
+
+  function fimDoArrasto() {
+    arrastoRef.current = false;
+    if (reloadPendenteRef.current) {
+      reloadPendenteRef.current = false;
+      agendarReloadBoard();
+    }
   }
 
   function descartarArrasto() {
@@ -967,6 +996,7 @@ ${txt.trim()}` : txt.trim());
 
   function onDragCancelUnificado() {
     descartarArrasto();
+    fimDoArrasto();
   }
 
   function onDragEndUnificado(event: DragEndEvent) {
@@ -981,6 +1011,7 @@ ${txt.trim()}` : txt.trim());
       return;
     }
     setBoardPreArrasto(null);
+    fimDoArrasto();
     onDragEnd(event);
   }
 
@@ -1213,6 +1244,13 @@ ${txt.trim()}` : txt.trim());
               className="text-sm rounded-xl pl-8 pr-3 py-1.5 w-64 bg-white/60 dark:bg-white/10 border border-white/70 dark:border-white/10 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-indigo-400/60"
             />
           </div>
+          <button
+            className="text-sm rounded-xl px-3 py-1.5 font-semibold bg-white/60 hover:bg-white/80 text-slate-700 border border-white/70 dark:bg-white/10 dark:hover:bg-white/20 dark:text-slate-100 dark:border-white/10 transition"
+            title="Resumo do quadro em números"
+            onClick={() => setPainelAberto(true)}
+          >
+            📊 Painel
+          </button>
           <button
             className="text-sm rounded-xl px-4 py-1.5 font-semibold bg-white/80 hover:bg-white text-indigo-700 border border-white shadow-sm dark:bg-indigo-500/80 dark:hover:bg-indigo-500 dark:text-white dark:border-indigo-400/40 transition"
             onClick={() => setChatAberto(true)}
@@ -1577,6 +1615,7 @@ ${txt.trim()}` : txt.trim());
       )}
 
       {configAberta && <Configuracoes onFechar={() => setConfigAberta(false)} onToast={showToast} />}
+      {painelAberto && <PainelMetricas onFechar={() => setPainelAberto(false)} />}
 
       {chatAberto && (
         <ChatDrawer
