@@ -51,10 +51,13 @@ type App struct {
 	muPrebusca    sync.Mutex
 	cachePrebusca map[string]string
 
-	// Cancelamento do pedido ao assistente: enquanto a IA responde, o
-	// CancelFunc da conversa fica aqui — o ⏹ do chat chama CancelarChat.
+	// Cancelamento dos pedidos ao assistente: enquanto a IA responde, os
+	// CancelFunc da conversa ficam aqui (pode haver mais de um pedido
+	// simultâneo: a IA longa + um comando local rápido). O ⏹ do chat chama
+	// CancelarChat, que aborta todos da conversa. O item é um ponteiro para
+	// poder tirar só o pedido que terminou (func não é comparável em Go).
 	muCancela   sync.Mutex
-	cancelaChat map[int64]context.CancelFunc
+	cancelaChat map[int64][]*cancelaItem
 
 	muRota        sync.Mutex
 	rota          *rota360.Cliente // sessão ativa do 360; nil se desconectado

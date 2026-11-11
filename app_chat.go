@@ -211,15 +211,26 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 
 	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
 	defer cancel()
+	item := &cancelaItem{fn: cancel}
 	a.muCancela.Lock()
 	if a.cancelaChat == nil {
-		a.cancelaChat = map[int64]context.CancelFunc{}
+		a.cancelaChat = map[int64][]*cancelaItem{}
 	}
-	a.cancelaChat[chatID] = cancel
+	a.cancelaChat[chatID] = append(a.cancelaChat[chatID], item)
 	a.muCancela.Unlock()
 	defer func() {
 		a.muCancela.Lock()
-		delete(a.cancelaChat, chatID)
+		resto := a.cancelaChat[chatID][:0]
+		for _, c := range a.cancelaChat[chatID] {
+			if c != item {
+				resto = append(resto, c)
+			}
+		}
+		if len(resto) == 0 {
+			delete(a.cancelaChat, chatID)
+		} else {
+			a.cancelaChat[chatID] = resto
+		}
 		a.muCancela.Unlock()
 	}()
 
@@ -302,16 +313,63 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 	return *res, nil
 }
 
-// CancelarChat aborta o pedido que o assistente está processando na conversa
-// chatID (botão ⏹ do chat). Se não há pedido em andamento, é um no-op — não
-// cancela nada que já terminou.
+// cancelaItem embrulha o CancelFunc de um pedido em andamento — o ponteiro
+// permite remover só o pedido que terminou sem afetar os outros da conversa.
+type cancelaItem struct {
+	fn context.CancelFunc
+}
+
+// CancelarChat aborta TODOS os pedidos em andamento da conversa chatID
+// (botão ⏹ do chat) — a IA longa e eventuais comandos locais paralelos.
+// Se não há pedido em andamento, é um no-op.
 func (a *App) CancelarChat(chatID int64) {
 	a.muCancela.Lock()
-	cancel := a.cancelaChat[chatID]
+	cancela := a.cancelaChat[chatID]
+	delete(a.cancelaChat, chatID)
 	a.muCancela.Unlock()
-	if cancel != nil {
-		cancel()
+	for _, item := range cancela {
+		item.fn()
 	}
+}
+
+// RespostaComandoLocal é o resultado de EnviarComandoRapido: o frontend
+// usa Reconhecido para decidir entre mostrar a resposta na hora ou mandar
+// a mensagem para a fila do assistente.
+type RespostaComandoLocal struct {
+	Reconhecido bool                   `json:"reconhecido"`
+	Resposta    string                 `json:"resposta"`
+	Acoes       []service.AcaoDoAgente `json:"acoes"`
+}
+
+// EnviarComandoRapido tenta rodar a mensagem como comando rígido local
+// (mover card, apagar, /vincular…) SEM tocar na IA — serve para executar o
+// pedido na hora mesmo enquanto o assistente está respondendo outra coisa.
+// Se a mensagem não casa com nenhum comando local, devolve Reconhecido
+// false sem gravar nem executar nada; aí o frontend a coloca na fila normal.
+func (a *App) EnviarComandoRapido(chatID int64, mensagem string) (RespostaComandoLocal, error) {
+	if a.chats == nil {
+		return RespostaComandoLocal{}, fmt.Errorf("conversas indisponíveis")
+	}
+	mensagem = strings.TrimSpace(mensagem)
+	if mensagem == "" {
+		return RespostaComandoLocal{}, fmt.Errorf("mensagem vazia")
+	}
+	inicio := time.Now()
+	comandoNome, local, reconhecido := a.comandoLocal(mensagem, chatID)
+	if !reconhecido {
+		return RespostaComandoLocal{Reconhecido: false}, nil
+	}
+	if err := a.chats.AddMensagem(a.ctx, chatID, "user", mensagem, ""); err != nil {
+		return RespostaComandoLocal{}, friendly("EnviarComandoRapido", err)
+	}
+	if local.Acoes == nil {
+		local.Acoes = []service.AcaoDoAgente{}
+	}
+	if err := a.gravarResposta(chatID, local); err != nil {
+		return RespostaComandoLocal{}, err
+	}
+	a.registrarAuditoria(chatID, db.OrigemLocalComando, comandoNome, mensagem, local.Resposta, local, time.Since(inicio))
+	return RespostaComandoLocal{Reconhecido: true, Resposta: local.Resposta, Acoes: local.Acoes}, nil
 }
 
 // comandoLocal roda a cadeia de comandos rígidos (sem IA) e devolve o nome

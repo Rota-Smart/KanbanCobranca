@@ -194,9 +194,26 @@ export default function ChatDrawer(props: {
   async function enviar(textoForcado?: string, chatDaFila?: number | null) {
     const m = (textoForcado ?? texto).trim();
     if (!m) return;
-    if (enviando) {
-      setFila((f) => [...f, { texto: m, chat: chatIDRef.current }]);
+    if (enviando && chatIDRef.current !== null) {
+      // Enquanto o assistente pensa, comandos rígidos (mover card, apagar,
+      // /vincular…) rodam na hora pelo caminho local, sem IA e sem esperar
+      // a resposta; o "pensando…" continua. O que não for comando local
+      // segue para a fila como antes.
       if (textoForcado === undefined) setTexto('');
+      try {
+        const r = await App.EnviarComandoRapido(chatIDRef.current, m);
+        if (r.reconhecido) {
+          const acoes = r.acoes ?? [];
+          setMsgs((ms) => [...ms, { papel: 'user', conteudo: m }, { papel: 'assistant', conteudo: r.resposta, acoes }]);
+          if (acoes.length > 0) props.onMutou();
+          App.ListarChats().then((cs) => setChats(cs ?? []));
+          return;
+        }
+      } catch (e) {
+        props.onToast(`⚠ ${String(e)}`);
+        return;
+      }
+      setFila((f) => [...f, { texto: m, chat: chatIDRef.current }]);
       return;
     }
     let id = chatDaFila !== undefined ? chatDaFila : chatID;
