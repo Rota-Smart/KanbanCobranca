@@ -212,6 +212,9 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 
 	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
 	defer cancel()
+	// O chatID no ctx identifica a conversa dona do pedido — o ExecutarAgente
+	// usa para servir a pré-busca da conversa certa (há concorrência).
+	ctx = context.WithValue(ctx, chaveChatID{}, chatID)
 	item := &cancelaItem{fn: cancel}
 	a.muCancela.Lock()
 	if a.cancelaChat == nil {
@@ -273,11 +276,14 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 	}
 	if pre != nil {
 		a.muPrebusca.Lock()
-		a.cachePrebusca = pre.cache
+		if a.cachePrebusca == nil {
+			a.cachePrebusca = map[int64]map[string]string{}
+		}
+		a.cachePrebusca[chatID] = pre.cache
 		a.muPrebusca.Unlock()
 		defer func() {
 			a.muPrebusca.Lock()
-			a.cachePrebusca = nil
+			delete(a.cachePrebusca, chatID)
 			a.muPrebusca.Unlock()
 		}()
 	}
@@ -503,7 +509,7 @@ func (a *App) ExecutarAgente(ctx context.Context, ferramenta, argsJSON string) (
 
 	// Ferramenta cuja fatia a pré-busca já injetou no contexto: responde do
 	// cache — zero HTTP e zero rodada extra de API.
-	if txt, ok := a.cacheServir(ferramenta); ok {
+	if txt, ok := a.cacheServir(ctx, ferramenta); ok {
 		return txt, "respondeu do contexto pré-coletado (" + ferramenta + ")", nil
 	}
 

@@ -49,7 +49,8 @@ type App struct {
 	// Pré-busca de contexto do assistente: resultado da coleta local antes
 	// de chamar a IA; o ExecutarAgente serve daqui se o modelo pedir de novo.
 	muPrebusca    sync.Mutex
-	cachePrebusca map[string]string
+	// cache é por chatID: duas conversas em andamento não se sobrescrevem
+	cachePrebusca map[int64]map[string]string
 
 	// Cancelamento dos pedidos ao assistente: enquanto a IA responde, os
 	// CancelFunc da conversa ficam aqui (pode haver mais de um pedido

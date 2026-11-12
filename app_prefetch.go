@@ -395,13 +395,19 @@ func (a *App) registrarStatsPrebusca(p *prebusca, acoes []service.AcaoDoAgente) 
 }
 
 // cacheServir responde uma ferramenta removida a partir do que a pré-busca
-// já coletou: zero HTTP, zero rodada extra.
-func (a *App) cacheServir(ferramenta string) (string, bool) {
+// já coletou: zero HTTP, zero rodada extra. O cache é por chatID (vem no
+// ctx do pedido) — conversas concorrentes não trocam contexto entre si.
+func (a *App) cacheServir(ctx context.Context, ferramenta string) (string, bool) {
+	id, _ := ctx.Value(chaveChatID{}).(int64)
 	a.muPrebusca.Lock()
 	defer a.muPrebusca.Unlock()
-	if a.cachePrebusca == nil {
+	if id <= 0 || a.cachePrebusca == nil {
 		return "", false
 	}
-	v, ok := a.cachePrebusca[ferramenta]
+	v, ok := a.cachePrebusca[id][ferramenta]
 	return v, ok
 }
+
+// chaveChatID carrega o id da conversa no contexto do pedido — é como o
+// ExecutarAgente sabe de qual conversa vem a ferramenta chamada.
+type chaveChatID struct{}

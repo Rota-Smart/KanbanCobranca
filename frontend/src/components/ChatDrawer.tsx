@@ -70,7 +70,10 @@ export default function ChatDrawer(props: {
   const [chatID, setChatID] = useState<number | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [texto, setTexto] = useState('');
-  const [enviando, setEnviando] = useState(false);
+  // enviandoEm é o chatID cujo pedido está em voo — NÃO a conversa exibida.
+  // Com o chat em segundo plano respondendo, a conversa da frente continua
+  // navegável e a resposta cai no banco da conversa certa (nunca na tela errada).
+  const [enviandoEm, setEnviandoEm] = useState<number | null>(null);
   const [gravando, setGravando] = useState(false);
   const [parcial, setParcial] = useState('');
   // Fila: mensagens enviadas enquanto o assistente ainda estava respondendo.
@@ -109,7 +112,23 @@ export default function ChatDrawer(props: {
 
   useEffect(() => {
     fimRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [msgs, enviando]);
+  }, [msgs, enviandoEm]);
+
+  // mostrarResposta escreve a resposta que chegou na conversa a que ELA
+  // pertence: se o usuário trocou de conversa durante a espera, a resposta
+  // já está gravada no banco — abrir de novo a traz; nunca se injeta na
+  // conversa que está na frente. Se o "…" do placeholder sumiu da tela
+  // (ex.: recarregou o histórico), acrescenta em vez de sobrescrever.
+  function mostrarResposta(id: number, conteudo: string, acoes?: AcaoDoAgente[]) {
+    if (chatIDRef.current !== id) return;
+    setMsgs((ms) => {
+      const i = ms.length - 1;
+      const placeholder = i >= 0 && ms[i].papel === 'assistant' && ms[i].conteudo === '…';
+      return placeholder
+        ? [...ms.slice(0, i), { papel: 'assistant', conteudo, acoes }]
+        : [...ms, { papel: 'assistant', conteudo, acoes }];
+    });
+  }
 
   // Alternar o microfone: ao clicar de novo (ou no teto de 60s), a gravação
   // vira WAV, vai ao Whisper local e o texto entra no campo de mensagem.
@@ -176,6 +195,7 @@ export default function ChatDrawer(props: {
 
   async function apagar(id: number) {
     try {
+      if (enviandoEm === id) App.CancelarChat(id); // não apaga conversa com resposta em voo
       await App.ApagarChat(id);
       const restantes = chats.filter((c) => c.id !== id);
       setChats(restantes);
@@ -194,7 +214,7 @@ export default function ChatDrawer(props: {
   async function enviar(textoForcado?: string, chatDaFila?: number | null) {
     const m = (textoForcado ?? texto).trim();
     if (!m) return;
-    if (enviando && chatIDRef.current !== null) {
+    if (enviandoEm !== null && chatIDRef.current !== null) {
       // Enquanto o assistente pensa, comandos rígidos (mover card, apagar,
       // /vincular…) rodam na hora pelo caminho local, sem IA e sem esperar
       // a resposta; o "pensando…" continua. O que não for comando local
@@ -228,32 +248,34 @@ export default function ChatDrawer(props: {
         return;
       }
     }
-    if (chatDaFila !== undefined && id !== null && id !== chatIDRef.current) await abrir(id);
+    const visivel = id === chatIDRef.current;
+    // A fila NUNCA troca a conversa na tela: manda em segundo plano e a
+    // resposta vai direto pro banco da conversa de origem. Na tela, só
+    // ecoa user + "…" quando a conversa enviada é a que está aberta.
     if (textoForcado === undefined) setTexto('');
-    setMsgs((ms) => [...ms, { papel: 'user', conteudo: m }, { papel: 'assistant', conteudo: '…' }]);
-    setEnviando(true);
+    if (visivel) setMsgs((ms) => [...ms, { papel: 'user', conteudo: m }, { papel: 'assistant', conteudo: '…' }]);
+    setEnviandoEm(id);
     try {
       const res = await App.EnviarChat(id, m);
-      const acoes = res.acoes ?? [];
-      setMsgs((ms) => [...ms.slice(0, -1), { papel: 'assistant', conteudo: res.resposta, acoes }]);
-      if (acoes.length > 0) props.onMutou();
+      mostrarResposta(id, res.resposta, res.acoes ?? []);
+      if ((res.acoes ?? []).length > 0) props.onMutou();
       App.ListarChats().then((cs) => setChats(cs ?? [])); // reordena pela atividade + título auto
     } catch (e) {
       const msg = String(e);
       const conteudo = msg.includes('cancelado') ? `⏹ ${msg}` : `⚠ ${msg}`;
-      setMsgs((ms) => [...ms.slice(0, -1), { papel: 'assistant', conteudo }]);
+      mostrarResposta(id, conteudo);
     } finally {
-      setEnviando(false);
+      setEnviandoEm(null);
     }
   }
 
   useEffect(() => {
-    if (enviando || fila.length === 0) return;
+    if (enviandoEm !== null || fila.length === 0) return;
     const [proxima, ...resto] = fila;
     setFila(resto);
     void enviar(proxima.texto, proxima.chat);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enviando]);
+  }, [enviandoEm]);
 
   useEffect(() => {
     if (inicialEnviada.current) return;
@@ -301,6 +323,9 @@ export default function ChatDrawer(props: {
                 onClick={() => abrir(c.id)}
               >
                 <span className="flex-1 truncate" title={c.titulo}>{c.titulo}</span>
+                {enviandoEm === c.id && (
+                  <span className="text-blue-500 animate-pulse" title="respondendo…">⏳</span>
+                )}
                 <button
                   aria-label="Apagar conversa"
                   className="hidden group-hover:block text-slate-400 hover:text-red-500 ml-1"
@@ -362,14 +387,14 @@ export default function ChatDrawer(props: {
                 )}
               </div>
             ))}
-            {enviando && (
+            {enviandoEm === chatID && chatID !== null && (
               <div className="self-start flex items-center gap-2">
                 <p className="text-xs text-slate-400">pensando…</p>
                 <button
                   type="button"
                   className="text-xs rounded border border-slate-300 dark:border-slate-500 px-1.5 py-0.5 text-slate-600 dark:text-slate-300 hover:bg-red-500/10 hover:text-red-600 hover:border-red-400"
                   title="Cancela o pedido à IA: nada é enviado e a mensagem continua no histórico"
-                  onClick={() => { const c = chatIDRef.current; if (c !== null) App.CancelarChat(c); }}
+                  onClick={() => { if (enviandoEm !== null) App.CancelarChat(enviandoEm); }}
                 >
                   ⏹ Cancelar
                 </button>
@@ -378,7 +403,7 @@ export default function ChatDrawer(props: {
             <div ref={fimRef} />
           </div>
 
-          {dicaDaBarra(texto) && !enviando && (
+          {dicaDaBarra(texto) && enviandoEm === null && (
             <button
               type="button"
               className="mt-1 self-start text-xs rounded bg-white/60 dark:bg-slate-700/70 border border-white/30 dark:border-white/10 px-2 py-1 text-slate-600 dark:text-slate-200 hover:bg-white/80 dark:hover:bg-slate-600"
@@ -388,7 +413,7 @@ export default function ChatDrawer(props: {
               {dicaDaBarra(texto)}
             </button>
           )}
-          {!texto.trim() && !enviando && (
+          {!texto.trim() && enviandoEm === null && (
             <div className="mt-2 flex flex-wrap gap-1" aria-label="Sugestões de comando">
               {sugestoesChat.map((sug) => (
                 <button
@@ -450,7 +475,7 @@ export default function ChatDrawer(props: {
               placeholder={
                 gravando
                   ? 'Ouvindo… fale sua mensagem'
-                  : enviando
+                  : enviandoEm !== null
                     ? 'Digite — a mensagem entra na fila e sai quando ele terminar…'
                     : 'Peça uma ação ao assistente…'
               }
@@ -461,7 +486,7 @@ export default function ChatDrawer(props: {
               type="submit"
               className="bg-blue-600 text-white rounded px-3 py-1.5 text-sm disabled:opacity-50"
               disabled={!texto.trim()}
-              title={enviando ? 'O assistente está respondendo: a mensagem vai para a fila' : undefined}
+              title={enviandoEm !== null ? 'O assistente está respondendo: a mensagem vai para a fila' : undefined}
             >
               Enviar
             </button>
