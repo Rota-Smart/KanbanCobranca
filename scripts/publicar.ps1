@@ -86,6 +86,13 @@ print('zip ok', dentro)
         # Set-Content com -NoNewline falha em silencio no PS 5.1 (nao grava nada);
         # WriteAllText grava sem BOM e sem quebra de linha.
         [IO.File]::WriteAllText((Join-Path $ReleaseDir 'versao.txt'), $Versao)
+        # So UM exe versionado na pasta: os exes de releases anteriores saem
+        # (acumulavam ~20 MB por release). O update do app prefere o nome com
+        # versao (anti-cache do CDN) e cai para rotasuite.exe se faltar — com
+        # o ULTIMO sempre presente, nada quebra.
+        Get-ChildItem (Join-Path $ReleaseDir 'rotasuite-*.exe') |
+            Where-Object { $_.Name -ne ('rotasuite-' + $Versao + '.exe') } |
+            ForEach-Object { git -C $ReleaseDir rm -q -f -- $_.Name 2>$null | Out-Null }
         git -C $ReleaseDir add -f rotasuite.exe ("rotasuite-" + $Versao + ".exe") rota-suite.zip versao.txt
         git -C $ReleaseDir commit -m ("v" + $Versao + ": publicacao automatica (main " + $Commit.Substring(0,7) + ")")
         Log "commit release feito"
