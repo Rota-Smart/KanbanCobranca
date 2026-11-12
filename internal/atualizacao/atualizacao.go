@@ -19,7 +19,7 @@ import (
 )
 
 // VersaoApp é a versão deste binário; bump a cada release.
-const VersaoApp = "1.85.0"
+const VersaoApp = "1.86.0"
 
 // BasePadrao é a fonte de atualização padrão (branch release do repo).
 const BasePadrao = "https://raw.githubusercontent.com/Rota-Smart/KanbanCobranca/release"
@@ -134,9 +134,12 @@ func (c *Cliente) baixarUmaVez(ctx context.Context, destino, versao string, fn f
 		return resp.Body, resp.ContentLength, nil
 	}
 
-	// Nomes candidatos, do mais específico ao mais antigo: o com versão na
-	// URL (imune a cache stale do CDN) e os legados, pra releases antigas.
-	candidatos := []string{"rotasuite.exe", "rota-smart.exe"}
+	// Com a versão conhecida, SÓ o arquivo com versão na URL: ele é único por
+	// release, nunca sai velho do cache do CDN. O genérico rotasuite.exe é
+	// sobrescrito a cada release e o cache por URL pode servir o exe ANTERIOR
+	// — foi assim que, na 1.82, o app baixou a 1.83 em vez da 1.84. Os nomes
+	// legados ficam só para chamada sem versão (instalações muito antigas).
+	var candidatos []string
 	if v := strings.Map(func(r rune) rune {
 		switch {
 		case r >= '0' && r <= '9', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '.', r == '-', r == '_':
@@ -145,6 +148,8 @@ func (c *Cliente) baixarUmaVez(ctx context.Context, destino, versao string, fn f
 		return -1
 	}, strings.TrimSpace(versao)); v != "" {
 		candidatos = append([]string{"rotasuite-" + v + ".exe"}, candidatos...)
+	} else {
+		candidatos = []string{"rotasuite.exe", "rota-smart.exe"}
 	}
 
 	var body io.ReadCloser

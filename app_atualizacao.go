@@ -224,6 +224,13 @@ func (a *App) baixarEInstalar(info atualizacao.Info) {
 		wailsRuntime.EventsEmit(a.ctx, evAtualizaErro, map[string]string{"mensagem": friendly("InstalarAtualizacao", err).Error()})
 		return
 	}
+	// Se saiu release mais nova enquanto baixava, descarta e busca de novo —
+	// instalar sempre a mais recente, nunca a que ficou velha no meio do caminho.
+	if outra, errVer := a.VerificarAtualizacao(); errVer == nil && outra.TemNova && outra.VersaoNova != info.VersaoNova {
+		os.Remove(novo)
+		a.baixarEInstalar(outra)
+		return
+	}
 
 	if err := atualizacao.Instalar(exeAtual, novo); err != nil {
 		wailsRuntime.EventsEmit(a.ctx, evAtualizaErro, map[string]string{"mensagem": friendly("InstalarAtualizacao", err).Error()})

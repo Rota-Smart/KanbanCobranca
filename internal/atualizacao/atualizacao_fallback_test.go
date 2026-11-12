@@ -10,16 +10,13 @@ import (
 	"testing"
 )
 
-// Sem o exe legado no nome atual: prefere o nome com versão na URL (imune a
-// cache stale do CDN) e cai pro legado quando só ele existe.
-func TestBaixarPreferirNomeComVersao(t *testing.T) {
+// Com a versão conhecida, o nome com versão na URL é baixado.
+func TestBaixarNomeComVersao(t *testing.T) {
 	exeFake := strings.Repeat("M", 2<<20)
 	var pedidos []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pedidos = append(pedidos, r.URL.Path)
-		// Só o GENÉRICO rotasuite.exe existe: o nome com versão é 404 e o
-		// cliente deve cair pra ele em vez de desistir.
-		if r.URL.Path == "/rotasuite.exe" {
+		if r.URL.Path == "/rotasuite-9.9.9.exe" {
 			w.Write([]byte(exeFake))
 			return
 		}
@@ -38,7 +35,30 @@ func TestBaixarPreferirNomeComVersao(t *testing.T) {
 	}
 }
 
-// Só o nome antigo na release (releases anteriores a 1.4.4) ainda baixa.
+// REGRESSÃO do incidente "na 1.82 baixou a 1.83": com a versão conhecida, o
+// genérico rotasuite.exe NÃO é baixado — o cache do CDN pode estar servindo o
+// exe da release anterior sob a mesma URL. 404 no nome com versão tem que
+// falhar (o BaixarProgresso tenta de novo 3x), nunca cair pro genérico.
+func TestBaixarRecusaGenericoComVersao(t *testing.T) {
+	exeFake := strings.Repeat("M", 2<<20)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rotasuite.exe" {
+			w.Write([]byte(exeFake)) // genérico "antigo" disponível
+			return
+		}
+		http.NotFound(w, r) // rotasuite-9.9.9.exe não propagou
+	}))
+	defer srv.Close()
+	destino := filepath.Join(t.TempDir(), "novo.exe")
+	if err := NovoCliente(srv.URL).Baixar(context.Background(), destino, "9.9.9"); err == nil {
+		t.Fatal("deveria recusar o genérico quando a versão é conhecida")
+	}
+	if _, err := os.Stat(destino); err == nil {
+		t.Error("nenhum arquivo deveria ter sido gravado")
+	}
+}
+
+// Sem versão na chamada (instalações antigas), os nomes legados ainda valem.
 func TestBaixarFallbackNomeAntigo(t *testing.T) {
 	exeFake := strings.Repeat("M", 2<<20)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
