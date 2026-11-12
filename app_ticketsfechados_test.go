@@ -70,6 +70,28 @@ func TestCardsQueNaoMexer(t *testing.T) {
 	if !cardsQueNaoMexer(extra, nil)[7] {
 		t.Error("coluna digitada com caixa diferente deveria proteger igual")
 	}
+	// variações do nome da coluna (quadro dinâmico) protegem igual — o
+	// casamento é por palavra-chave, não por nome exato
+	variants := []db.Ticket{
+		{ID: 8, ColunaAtual: "Aguardando assinatura do contrato"},
+		{ID: 9, ColunaAtual: "  Aguardando Assinatura  "},
+		{ID: 10, ColunaAtual: "AGUARDANDO PAGAMENTO"},
+		{ID: 11, ColunaAtual: "Pagamento em análise"},
+	}
+	prot := cardsQueNaoMexer(variants, nil)
+	for _, id := range []int64{8, 9, 10, 11} {
+		if !prot[id] {
+			t.Errorf("card %d em variação do nome deveria ser protegido", id)
+		}
+	}
+	livre := []db.Ticket{
+		{ID: 12, ColunaAtual: "Negociando"},
+		{ID: 13, ColunaAtual: "Pagando"},
+	}
+	nao := cardsQueNaoMexer(livre, nil)
+	if nao[12] || nao[13] {
+		t.Error("colunas sem assinatura/pagamento pendente não deveriam ser protegidas")
+	}
 }
 
 // TestVerificarFechadosSemSessao: sem sessão do 360 a verificação aborta

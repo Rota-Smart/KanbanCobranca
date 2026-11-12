@@ -39,13 +39,16 @@ type ResultadoVerificacao struct {
 // desfazer: quem já está na coluna de fechados agora e quem já passou por ela
 // alguma vez (movimentações) — se o usuário arrastou um desses de volta para
 // outra coluna, foi decisão manual e o card fica onde está. Também protege os
-// cards em colunas de negociação (colunasProtegidasFechado): mesmo com todos
-// os tickets fechados no 360, card em Aguardando Assinatura/Pagamento fica
-// onde está.
-// colunasProtegidasFechado são colunas de negociação em andamento: card nelas
-// não é fechado pela verificação, independente do status dos tickets no 360 —
-// assinatura e pagamento pendentes significam negócio vivo.
-var colunasProtegidasFechado = []string{"Aguardando Assinatura", "Aguardando Pagamento"}
+// cards em colunas de negociação: mesmo com todos os tickets fechados no
+// 360, card em Aguardando Assinatura/Pagamento fica onde está — assinatura e
+// pagamento pendentes significam negócio vivo. O casamento é por palavra-
+// chave (contém "assinatura" ou "pagamento", sem olhar caixa/acento): as
+// colunas do quadro são dinâmicas e variações do nome ("Aguardando assinatura
+// do contrato") escapavam da comparação exata e eram fechadas.
+func colunaNegociacaoFechado(col string) bool {
+	s := strings.ToLower(strings.TrimSpace(col))
+	return strings.Contains(s, "assinatura") || strings.Contains(s, "pagamento")
+}
 
 func cardsQueNaoMexer(ts []db.Ticket, hist []db.MovimentoFechado) map[int64]bool {
 	naoMexer := map[int64]bool{}
@@ -54,11 +57,8 @@ func cardsQueNaoMexer(ts []db.Ticket, hist []db.MovimentoFechado) map[int64]bool
 			naoMexer[t.ID] = true
 			continue
 		}
-		for _, col := range colunasProtegidasFechado {
-			if strings.EqualFold(strings.TrimSpace(t.ColunaAtual), col) {
-				naoMexer[t.ID] = true
-				break
-			}
+		if colunaNegociacaoFechado(t.ColunaAtual) {
+			naoMexer[t.ID] = true
 		}
 	}
 	for _, m := range hist {
