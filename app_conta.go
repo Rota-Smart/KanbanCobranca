@@ -2,13 +2,16 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf16"
 
+	"github.com/danieljoos/wincred"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/zalando/go-keyring"
 
@@ -249,6 +252,7 @@ func (a *App) DesconectarConta() (ContaStatus, error) {
 	if err := keyring.Delete(cofreServico, cofreConta); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return ContaStatus{}, errors.New("não consegui desconectar neste computador")
 	}
+	apagarTokenLegado()
 	if a.db != nil {
 		ctx := context.Background()
 		_ = contasync.MetaSet(ctx, a.db, "nome", "")
@@ -272,7 +276,45 @@ func (a *App) acordar() {
 func lerTokenConta() (string, error) {
 	tok, err := keyring.Get(cofreServico, cofreConta)
 	if errors.Is(err, keyring.ErrNotFound) {
-		return "", nil
+		// O go-keyring novo procura "serviço:usuário" no Credential Manager;
+		// tokens gravados por versões antigas ficam no alvo só com o serviço.
+		// Sem esta leitura, um computador pareado deixa de sincronizar calado.
+		legado := lerTokenLegado()
+		if legado == "" {
+			return "", nil
+		}
+		// Regrava no nome novo; o legado fica (DesconectarConta apaga os dois).
+		_ = keyring.Set(cofreServico, cofreConta, legado)
+		return legado, nil
 	}
 	return tok, err
+}
+
+// lerTokenLegado lê o token no formato do go-keyring antigo.
+func lerTokenLegado() string {
+	cred, err := wincred.GetGenericCredential(cofreServico)
+	if err != nil || cred.UserName != cofreConta {
+		return ""
+	}
+	return textoDoBlob(cred.CredentialBlob)
+}
+
+// textoDoBlob limpa o token do Credential Manager: versões antigas gravaram
+// como UTF-16 (bytes nulos entre os caracteres), o que torna o cabeçalho
+// Authorization inválido e para o sync sem mensagem de erro.
+func textoDoBlob(b []byte) string {
+	if bytes.IndexByte(b, 0) >= 0 {
+		units := make([]uint16, len(b)/2)
+		for i := range units {
+			units[i] = uint16(b[2*i]) | uint16(b[2*i+1])<<8
+		}
+		return strings.TrimRight(string(utf16.Decode(units)), "\x00 \t\r\n")
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func apagarTokenLegado() {
+	if cred, err := wincred.GetGenericCredential(cofreServico); err == nil && cred.UserName == cofreConta {
+		_ = cred.Delete()
+	}
 }

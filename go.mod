@@ -5,6 +5,7 @@ go 1.26.0
 toolchain go1.27.3
 
 require (
+	github.com/danieljoos/wincred v1.2.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
 	github.com/lib/pq v1.10.9
@@ -20,7 +21,6 @@ require (
 	al.essio.dev/pkg/shellescape v1.5.1 // indirect
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
-	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.16 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect

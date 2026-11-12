@@ -51,19 +51,21 @@ func (a *App) GetMetricas() (*Metricas, error) {
 		`SELECT count(*) FROM tickets WHERE coluna_atual = ? AND visita_data = ?`, ColunaVisitaAgendada, hoje); err != nil {
 		return nil, err
 	}
+	// As janelas usam strftime no formato das colunas ('...T...Z'); o texto do
+	// datetime('now') não casa e a comparação de string estoura a borda do dia.
 	if m.EntradasSemana, err = metricasUmValor(ctx, a.db,
-		`SELECT count(*) FROM tickets WHERE created_at >= datetime('now','-7 days')`); err != nil {
+		`SELECT count(*) FROM tickets WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')`); err != nil {
 		return nil, err
 	}
 	if m.FechadosSemana, err = metricasUmValor(ctx, a.db,
-		`SELECT count(*) FROM movimentacoes WHERE para_coluna = ? AND created_at >= datetime('now','-7 days')`,
+		`SELECT count(*) FROM movimentacoes WHERE para_coluna = ? AND created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')`,
 		ColunaTicketFechado); err != nil {
 		return nil, err
 	}
 	if m.TempoMedioDias, err = metricasUmFloat(ctx, a.db,
 		`SELECT AVG(julianday(m.created_at) - julianday(t.created_at))
 		 FROM movimentacoes m JOIN tickets t ON t.id = m.ticket_id
-		 WHERE m.para_coluna = ? AND m.created_at >= datetime('now','-30 days')`,
+		 WHERE m.para_coluna = ? AND m.created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')`,
 		ColunaTicketFechado); err != nil {
 		return nil, err
 	}
