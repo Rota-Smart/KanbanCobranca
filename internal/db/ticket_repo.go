@@ -8,7 +8,7 @@ import (
 	"strconv"
 )
 
-const ticketCols = `id, nome_cliente, tipo_ticket, numero_ticket, cod_service, endereco, telefone, coluna_atual, posicao, created_at, updated_at, ticket360_id, ticket360_numero, observacoes, visita_data, visita_turno, visita_hora, visita_endereco, visita_realizada_em,
+const ticketCols = `id, nome_cliente, tipo_ticket, numero_ticket, cod_service, endereco, telefone, coluna_atual, posicao, created_at, updated_at, ticket360_id, ticket360_numero, observacoes, visita_data, visita_turno, visita_hora, visita_endereco, visita_realizada_em, visita_origem,
 	(SELECT COUNT(*) FROM tentativas_contato tc WHERE tc.ticket_id = tickets.id),
 	(SELECT COALESCE(MAX(tc.created_at), '') FROM tentativas_contato tc WHERE tc.ticket_id = tickets.id)`
 
@@ -72,7 +72,7 @@ func (r *TicketRepo) Get(ctx context.Context, id int64) (*Ticket, error) {
 	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada,
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada, &t.VisitaOrigem,
 		&t.Tentativas, &t.UltimaTentativa)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTicketNaoEncontrado
@@ -94,7 +94,7 @@ func (r *TicketRepo) GetPorNumero360(ctx context.Context, numero int64) (*Ticket
 	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada,
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada, &t.VisitaOrigem,
 		&t.Tentativas, &t.UltimaTentativa)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -114,7 +114,7 @@ func (r *TicketRepo) GetPorCodService(ctx context.Context, cod string) (*Ticket,
 	).Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada,
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada, &t.VisitaOrigem,
 		&t.Tentativas, &t.UltimaTentativa)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -220,7 +220,7 @@ func scanTicket(rows *sql.Rows, t *Ticket) error {
 	if err := rows.Scan(&t.ID, &t.NomeCliente, &t.TipoTicket, &t.NumeroTicket, &t.CodService,
 		&t.Endereco, &t.Telefone, &t.ColunaAtual, &t.Posicao, &t.CreatedAt, &t.UpdatedAt,
 		&t.Ticket360ID, &t.Ticket360Numero, &t.Observacoes,
-		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada,
+		&t.VisitaData, &t.VisitaTurno, &t.VisitaHora, &t.VisitaEndereco, &t.VisitaRealizada, &t.VisitaOrigem,
 		&t.Tentativas, &ultima); err != nil {
 		return err
 	}
@@ -247,12 +247,30 @@ func (r *TicketRepo) SetVisita(ctx context.Context, id int64, data, turno, hora,
 	return nil
 }
 
+// SetVisitaOrigem grava (ou limpa, com "") a coluna de onde o card veio ao
+// entrar em "Visita Agendada"; cancelar a visita usa essa marca pra devolver
+// o card pra coluna de origem.
+func (r *TicketRepo) SetVisitaOrigem(ctx context.Context, id int64, coluna string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE tickets SET visita_origem = ?,
+		   updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+		 WHERE id = ?`, coluna, id)
+	if err != nil {
+		return fmt.Errorf("salvar origem da visita: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrTicketNaoEncontrado
+	}
+	return nil
+}
+
 // CancelarVisita apaga o agendamento de visita do card (todos os campos,
 // inclusive a marca de realizada) — igual ao cancelar pelo site.
 func (r *TicketRepo) CancelarVisita(ctx context.Context, id int64) error {
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE tickets SET visita_data = '', visita_turno = '', visita_hora = '',
-		   visita_endereco = '', visita_realizada_em = '',
+		   visita_endereco = '', visita_realizada_em = '', visita_origem = '',
 		   updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
 		 WHERE id = ?`, id)
 	if err != nil {

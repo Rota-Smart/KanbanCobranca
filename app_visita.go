@@ -38,11 +38,24 @@ func (a *App) SalvarVisita(ticketID int64, data, turno, hora, endereco string) (
 }
 
 // CancelarVisita apaga o agendamento de visita do card e devolve o card
-// atualizado. A lista de visitas é a mesma no site e no app (mesmo banco da
-// nuvem) — cancelar num lado some nos dois.
+// atualizado. O card parado na "Visita Agendada" volta pra coluna de origem
+// (gravada quando ele entrou nela) — cancelou, sai da coluna. A lista de
+// visitas é a mesma no site e no app (mesmo banco da nuvem) — cancelar num
+// lado some nos dois.
 func (a *App) CancelarVisita(ticketID int64) (db.Ticket, error) {
+	antes, err := a.tickets.Get(a.ctx, ticketID)
+	if err != nil {
+		return db.Ticket{}, friendly("CancelarVisita", err)
+	}
 	if err := a.tickets.CancelarVisita(a.ctx, ticketID); err != nil {
 		return db.Ticket{}, friendly("CancelarVisita", err)
+	}
+	// Cancelou com o card ainda na "Visita Agendada": devolve pra coluna de
+	// origem (no fim dela). Sem origem gravada (cards antigos), fica onde está.
+	if antes.ColunaAtual == ColunaVisitaAgendada && antes.VisitaOrigem != "" && antes.VisitaOrigem != ColunaVisitaAgendada {
+		if err := a.tickets.Move(a.ctx, ticketID, ColunaVisitaAgendada, antes.VisitaOrigem, 1<<30); err != nil {
+			return db.Ticket{}, friendly("CancelarVisita", err)
+		}
 	}
 	t, err := a.tickets.Get(a.ctx, ticketID)
 	if err != nil {

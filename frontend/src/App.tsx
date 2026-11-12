@@ -488,11 +488,12 @@ export default function App() {
     for (const lista of Object.values(board)) {
       for (const t of lista) {
         if (t.visitaRealizada) continue; // realizadas saem do aviso de visitas
-        if (t.visitaData || t.colunaAtual === colunaVisitaAgendada) itens.push(t);
+        // Só com data marcada: card cancelado/sem agendamento (mesmo parado na
+        // coluna "Visita Agendada") não entra no aviso.
+        if (t.visitaData) itens.push(t);
       }
     }
     itens.sort((a, b) => {
-      if (!a.visitaData !== !b.visitaData) return a.visitaData ? -1 : 1; // sem data por último
       if (a.visitaData !== b.visitaData) return a.visitaData < b.visitaData ? -1 : 1;
       if (a.visitaHora || b.visitaHora) return (a.visitaHora || '99:99') < (b.visitaHora || '99:99') ? -1 : 1;
       return (ordemTurno[a.visitaTurno] ?? 3) - (ordemTurno[b.visitaTurno] ?? 3);
@@ -600,7 +601,10 @@ export default function App() {
       setBoard((b) => {
         const novo: Board = {};
         for (const [c, ts] of Object.entries(b)) {
-          novo[c] = ts.map((x) => (x.id === t.id ? t : x));
+          // A coluna pode ter mudado (ex.: cancelar visita devolve o card pra
+          // origem): remove de todas e recoloca na coluna atual do card.
+          const semEle = ts.filter((x) => x.id !== t.id);
+          novo[c] = c === t.colunaAtual ? [...semEle, t] : semEle;
         }
         return novo;
       });
@@ -807,7 +811,8 @@ export default function App() {
         visitaHora: '',
         visitaEndereco: '',
         visitaRealizada: '',
-                tentativas: 0,
+        visitaOrigem: '',
+        tentativas: 0,
         ultimaTentativa: '',
 colunaAtual: coluna,
         posicao: fim,

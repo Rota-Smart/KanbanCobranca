@@ -270,6 +270,18 @@ func (a *App) MoveTicket(id int64, coluna string, posicao int) error {
 	if err := a.tickets.Move(a.ctx, id, t.ColunaAtual, coluna, posicao); err != nil {
 		return friendly("MoveTicket", err)
 	}
+	// Origem da visita: entrou em "Visita Agendada" vindo de outra coluna,
+	// grava de onde veio (cancelar a visita devolve o card pra lá); saiu da
+	// coluna, limpa a marca. Reordenação na mesma coluna não mexe.
+	if coluna == ColunaVisitaAgendada && t.ColunaAtual != coluna {
+		if err := a.tickets.SetVisitaOrigem(a.ctx, id, t.ColunaAtual); err != nil {
+			return friendly("MoveTicket", err)
+		}
+	} else if t.ColunaAtual == ColunaVisitaAgendada && coluna != ColunaVisitaAgendada {
+		if err := a.tickets.SetVisitaOrigem(a.ctx, id, ""); err != nil {
+			return friendly("MoveTicket", err)
+		}
+	}
 	// Chegou a uma coluna que fecha a visita ("Visita Realizada" ou
 	// "Ticket Fechado"): grava a data-hora da realização — sempre que ainda
 	// não há marca, com ou sem agendamento (idempotente; re-agendar limpa).

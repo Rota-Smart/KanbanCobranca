@@ -67,6 +67,7 @@ var tabelas = map[string]specTabela{
 			{"visita_hora", campoTexto},
 			{"visita_endereco", campoTexto},
 			{"visita_realizada_em", campoTexto},
+			{"visita_origem", campoTexto},
 			{"created_at", campoTempo},
 			{"updated_at", campoTempo},
 		},

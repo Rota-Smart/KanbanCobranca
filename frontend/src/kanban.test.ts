@@ -19,6 +19,7 @@ function t(id: number, coluna: string, posicao: number): Ticket {
     visitaHora: '',
     visitaEndereco: '',
     visitaRealizada: '',
+    visitaOrigem: '',
         tentativas: 0,
     ultimaTentativa: '',
 colunaAtual: coluna,
