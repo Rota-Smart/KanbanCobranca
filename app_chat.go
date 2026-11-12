@@ -289,8 +289,16 @@ func (a *App) EnviarChat(chatID int64, mensagem string) (service.ChatResultado, 
 	}
 
 	res, err := a.groq.ConversarCom(ctx, historico, mensagem, a.textoPadroes(a.ctx), a, nil, pre.opcoes())
-	slog.Info("chat: fim do ciclo da IA", "duracao_total_ms", time.Since(inicio).Milliseconds(),
-		"rodadas", res.Rodadas, "saldo_tpm", a.groq.SaldoTPM())
+	// res vem NIL junto com o erro (cancelamento ⏹, teto de TPM, timeout):
+	// logar res.Rodadas sem guarda panicava e a promessa do frontend nunca
+	// resolvia — era por isso que o ⏹ parecia "não cancelar nada".
+	if err != nil {
+		slog.Info("chat: fim do ciclo da IA", "duracao_total_ms", time.Since(inicio).Milliseconds(),
+			"erro", err.Error(), "saldo_tpm", a.groq.SaldoTPM())
+	} else {
+		slog.Info("chat: fim do ciclo da IA", "duracao_total_ms", time.Since(inicio).Milliseconds(),
+			"rodadas", res.Rodadas, "saldo_tpm", a.groq.SaldoTPM())
+	}
 	if err != nil {
 		if err == service.ErrGroqSemChave {
 			return service.ChatResultado{}, err
