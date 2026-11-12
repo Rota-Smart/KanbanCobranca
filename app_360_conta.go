@@ -103,13 +103,56 @@ func enviarSessaoConta(ctx context.Context, cookie string) {
 	}
 }
 
+// recusasSeguidas conta recusas do 360 em sequência: 1 = cookie local morto
+// (hora de buscar o da conta); 2 = o da conta também está morto — para de
+// tentar sozinho e pede reconexão ao usuário.
+var recusasSeguidas atomic.Int32
+
+// clienteRota cria o cliente do 360 com o gancho de sessão recusada — toda
+// sessão usada pelo app passa por aqui.
+func (a *App) clienteRota(cookie *rota360.Cookie) *rota360.Cliente {
+	c := rota360.NovoCliente(cookie)
+	c.AoRecusar = a.AoRecusarSessao
+	return c
+}
+
+// AoRecusarSessao roda quando o 360 devolve 401/403: descarta o cookie salvo
+// morto e adota obrigatoriamente a sessão da conta do site — o app volta a
+// funcionar sem o usuário notar. Se a sessão da conta também for recusada em
+// seguida, avisa a UI em vez de martelar a API.
+func (a *App) AoRecusarSessao() {
+	n := recusasSeguidas.Add(1)
+	slog.Warn("360 recusou a sessão — descartando o cookie salvo", "recusas", n)
+	a.muRota.Lock()
+	a.rota = nil
+	a.muRota.Unlock()
+	if a.config != nil {
+		_ = a.config.Set(a.ctx, cfgRotaCookie, "")
+	}
+	if n > 1 || !podeBuscarSessao(intervaloBuscaSessao) {
+		if n > 1 && a.uiPronta {
+			runtime.EventsEmit(a.ctx, evRotaConectado, Rota360Status{Conectado: false,
+				Mensagem: "A sessão do 360 venceu (a do site também). Use Conectar e faça o login no 360."})
+		}
+		return
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
+	cookie, err := buscarSessaoConta(ctx)
+	cancel()
+	if err != nil {
+		slog.Warn("sessão da conta indisponível após recusa", "err", err)
+		return
+	}
+	_ = a.adotarSessaoRemota(cookie)
+}
+
 // adotarSessaoRemota instala um cookie vindo da conta como a sessão local.
 func (a *App) adotarSessaoRemota(cookieTxt string) error {
 	c, err := rota360.ParseCookieColado(cookieTxt)
 	if err != nil {
 		return err
 	}
-	a.definirRota(rota360.NovoCliente(c), "conta", cookieTxt)
+	a.definirRota(a.clienteRota(c), "conta", cookieTxt)
 	slog.Info("sessão do 360 vinda da conta do site")
 	if a.uiPronta {
 		runtime.EventsEmit(a.ctx, evRotaConectado,
@@ -128,7 +171,7 @@ func (a *App) manterSessao360() {
 		a.muRota.Lock()
 		tem := a.rota != nil
 		a.muRota.Unlock()
-		if tem || !podeBuscarSessao(intervaloBuscaSessaoBg) {
+		if tem || recusasSeguidas.Load() > 1 || !podeBuscarSessao(intervaloBuscaSessaoBg) {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)

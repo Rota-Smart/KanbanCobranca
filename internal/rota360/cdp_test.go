@@ -117,7 +117,7 @@ func TestAvaliarUsuarioWSRespostaVazia(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	if nome, err := avaliarUsuarioWS(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")); err != nil || nome != "" {
+	if nome, err := avaliarWS(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), jsNomeUsuario); err != nil || nome != "" {
 		t.Errorf("nome=%q err=%v; esperava vazio sem erro", nome, err)
 	}
 }

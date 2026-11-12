@@ -86,6 +86,9 @@ func cookiesPerfilAssistido() (*Cookie, error) {
 
 	deadline := time.Now().Add(cdpTimeoutLogin)
 	for time.Now().Before(deadline) {
+		// Sem o "Mantenha-me conectado" o portal só guarda a sessão por
+		// algumas horas — marca na janela de login sozinho, toda volta.
+		marcarMantenhaConectado(context.Background(), porta)
 		if cookie, err := cookiesViaCDP(porta); err == nil {
 			// A janela está aberta no portal já logado: aproveita para ler o
 			// nome do usuário no cabeçalho (falha silenciosa se não achar).
@@ -246,6 +249,32 @@ type alvoCDP struct {
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 
+// abasCDP devolve as abas de página abertas num domínio do portal.
+func abasCDP(ctx context.Context, porta int) []alvoCDP {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/list", porta), nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	var alvos []alvoCDP
+	if err := json.NewDecoder(resp.Body).Decode(&alvos); err != nil {
+		resp.Body.Close()
+		return nil
+	}
+	resp.Body.Close()
+	var noPortal []alvoCDP
+	for _, alvo := range alvos {
+		if alvo.Type != "page" || !strings.Contains(alvo.URL, CookieDomain) || alvo.WebSocketDebuggerURL == "" {
+			continue
+		}
+		noPortal = append(noPortal, alvo)
+	}
+	return noPortal
+}
+
 // usuarioViaCDP acha uma aba aberta no 360 e extrai da página o nome do
 // usuário logado — o mesmo do cabeçalho do portal ("p" com font-semibold,
 // leading-none e text-slate-800). Melhor esforço: vazio se não houver porta
@@ -253,26 +282,34 @@ type alvoCDP struct {
 func usuarioViaCDP(porta int) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/list", porta), nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return ""
-	}
-	var alvos []alvoCDP
-	if err := json.NewDecoder(resp.Body).Decode(&alvos); err != nil {
-		resp.Body.Close()
-		return ""
-	}
-	resp.Body.Close()
-	for _, alvo := range alvos {
-		if alvo.Type != "page" || !strings.Contains(alvo.URL, CookieDomain) || alvo.WebSocketDebuggerURL == "" {
-			continue
-		}
-		if nome, err := avaliarUsuarioWS(ctx, alvo.WebSocketDebuggerURL); err == nil && nome != "" {
+	for _, alvo := range abasCDP(ctx, porta) {
+		if nome, err := avaliarWS(ctx, alvo.WebSocketDebuggerURL, jsNomeUsuario); err == nil && nome != "" {
 			return nome
 		}
 	}
 	return ""
+}
+
+// jsMarcarLembrar marca o "Mantenha-me conectado" da tela de login. O portal
+// usa ids fixos nos dois temas do formulário (login-lembrar / portal-lembrar);
+// um click nativo dispara o onChange do React e grava a escolha.
+const jsMarcarLembrar = `(function(){
+var ids = ['login-lembrar','portal-lembrar'];
+for (var i = 0; i < ids.length; i++) {
+  var el = document.getElementById(ids[i]);
+  if (el) { if (!el.checked) { el.click(); } return '1'; }
+}
+return '';
+})()`
+
+// marcarMantenhaConectado roda jsMarcarLembrar na aba do login. Melhor
+// esforço: silencioso enquanto a página não renderizou o formulário.
+func marcarMantenhaConectado(ctx context.Context, porta int) {
+	for _, alvo := range abasCDP(ctx, porta) {
+		if ok, err := avaliarWS(ctx, alvo.WebSocketDebuggerURL, jsMarcarLembrar); err == nil && ok != "" {
+			return
+		}
+	}
 }
 
 // jsNomeUsuario busca no DOM o parágrafo do nome do usuário no cabeçalho do
@@ -289,8 +326,9 @@ for (var i = 0; i < ps.length; i++) {
 return '';
 })()`
 
-// avaliarUsuarioWS roda jsNomeUsuario numa aba via Runtime.evaluate.
-func avaliarUsuarioWS(ctx context.Context, wsURL string) (string, error) {
+// avaliarWS roda uma expressão JS numa aba via Runtime.evaluate e devolve o
+// valor de texto que ela retornou.
+func avaliarWS(ctx context.Context, wsURL, expressao string) (string, error) {
 	dialer := websocket.Dialer{HandshakeTimeout: 3 * time.Second}
 	conn, _, err := dialer.DialContext(ctx, wsURL, nil)
 	if err != nil {
@@ -300,7 +338,7 @@ func avaliarUsuarioWS(ctx context.Context, wsURL string) (string, error) {
 	if err := conn.WriteJSON(map[string]any{
 		"id":     1,
 		"method": "Runtime.evaluate",
-		"params": map[string]any{"expression": jsNomeUsuario, "returnByValue": true},
+		"params": map[string]any{"expression": expressao, "returnByValue": true},
 	}); err != nil {
 		return "", fmt.Errorf("pedir avaliação ao CDP: %w", err)
 	}

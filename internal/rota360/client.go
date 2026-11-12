@@ -22,6 +22,18 @@ type Cliente struct {
 	base   string
 	http   *http.Client
 	cookie *http.Cookie // cookie de sessão (nome=valor)
+
+	// AoRecusar roda quando o 360 devolve 401/403 — o momento em que um
+	// cookie salvo morreu e é hora de buscar sessão nova (conta do site).
+	// Roda fora da linha da requisição; pode ficar nil.
+	AoRecusar func()
+}
+
+// recusou avisa o dono do cliente que o 360 rejeitou a sessão.
+func (c *Cliente) recusou() {
+	if c.AoRecusar != nil {
+		go c.AoRecusar()
+	}
 }
 
 // NovoCliente cria o cliente a partir do cookie de sessão do 360.
@@ -82,6 +94,7 @@ func (c *Cliente) get(ctx context.Context, path string, out any) error {
 			return fmt.Errorf("%s: HTTP %d", path, resp.StatusCode)
 		}
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			c.recusou()
 			return ErrSessaoExpirada
 		}
 		if resp.StatusCode != http.StatusOK {

@@ -56,7 +56,7 @@ func (a *App) rotaAtual() *rota360.Cliente {
 	}
 	if cookie := a.configGet(a.ctx, cfgRotaCookie); cookie != "" {
 		if c, err := rota360.ParseCookieColado(cookie); err == nil {
-			a.rota = rota360.NovoCliente(c)
+			a.rota = a.clienteRota(c)
 			return a.rota
 		}
 	}
@@ -83,7 +83,8 @@ func (a *App) Rota360Status() Rota360Status {
 		return Rota360Status{Conectado: true, Origem: "sessão salva"}
 	}
 	if cookie, err := rota360.DetectaCookieChrome(); err == nil {
-		c := rota360.NovoCliente(cookie)
+		c := a.clienteRota(cookie)
+		recusasSeguidas.Store(0) // sessão fresca do Chrome: recomeça o contador
 		a.muRota.Lock()
 		a.rota = c
 		a.muRota.Unlock()
@@ -124,6 +125,9 @@ func (a *App) ConectarRota360() (Rota360Status, error) {
 			a.muConectando.Unlock()
 		}()
 		c, origem, err := rota360.SessaoDetectada()
+		if err == nil {
+			c.AoRecusar = a.AoRecusarSessao
+		}
 		if err != nil {
 			// Última chance: a sessão da conta do site (login feito lá).
 			ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
@@ -139,6 +143,7 @@ func (a *App) ConectarRota360() (Rota360Status, error) {
 		a.muRota.Lock()
 		a.rota = c
 		a.muRota.Unlock()
+		recusasSeguidas.Store(0) // o usuário conectou de verdade: recomeça o contador
 		// Persiste para a sessão sobreviver a reinícios do app (a leitura
 		// passiva do banco do Chrome não é mais possível no Chrome recente).
 		if ck := c.CookieSalva(); ck != nil {
@@ -172,7 +177,8 @@ func (a *App) DefinirCookieRota360(cookieTxt string) (Rota360Status, error) {
 		return Rota360Status{}, err
 	}
 	cookieTxt = strings.TrimSpace(cookieTxt)
-	a.definirRota(rota360.NovoCliente(c), "manual", cookieTxt)
+	a.definirRota(a.clienteRota(c), "manual", cookieTxt)
+	recusasSeguidas.Store(0) // cookie novo colado à mão: recomeça o contador
 	// Compartilha com a conta do site. Melhor esforço, em background.
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

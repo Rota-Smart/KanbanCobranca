@@ -46,6 +46,7 @@ func (c *Cliente) envia(ctx context.Context, metodo, path string, corpo any) ([]
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		c.recusou()
 		return body, ErrSessaoExpirada
 	}
 	if resp.StatusCode >= 300 {
