@@ -79,6 +79,41 @@ func (m *Motor) Ciclo(ctx context.Context) (Relatorio, error) {
 		return Relatorio{}, err
 	}
 
+	// Baixa antes de subir: com o que a nuvem tem de novo já aplicado, o
+	// envio nunca sobe uma cópia velha de linha que acabou de mudar na
+	// nuvem — subir primeiro deixava a mudança mais recente perder e o
+	// card voltar de coluna na conferência seguinte. Erro de rede na baixa
+	// não impede o envio: a subida segue com o que está na fila.
+	aplicou := 0
+	{
+		desde, err := cursor(ctx, m.DB)
+		if err != nil {
+			return Relatorio{}, err
+		}
+		pacote, err := m.API.Buscar(ctx, token, desde)
+		if err != nil {
+			if EhNaoAutorizado(err) {
+				return Relatorio{Estado: EstadoReconectar}, nil
+			}
+			if !EhRede(err) {
+				slog.Warn("sync busca recusada", "err", err)
+			}
+		} else {
+			aplicou, err = m.aplicarPacote(ctx, pacote.Alteracoes)
+			if err != nil {
+				return Relatorio{}, err
+			}
+			if pacote.Agora != "" {
+				if err := gravarCursor(ctx, m.DB, pacote.Agora); err != nil {
+					return Relatorio{}, err
+				}
+			}
+		}
+		if err := reservarFaixa(ctx, m.DB); err != nil {
+			return Relatorio{}, err
+		}
+	}
+
 	for rodada := 0; rodada < 30; rodada++ {
 		itens, err := pendentes(ctx, m.DB, m.agora(), 40)
 		if err != nil {
@@ -115,35 +150,6 @@ func (m *Motor) Ciclo(ctx context.Context) (Relatorio, error) {
 		}
 	}
 
-	desde, err := cursor(ctx, m.DB)
-	if err != nil {
-		return Relatorio{}, err
-	}
-	pacote, err := m.API.Buscar(ctx, token, desde)
-	if err != nil {
-		if EhNaoAutorizado(err) {
-			return Relatorio{Estado: EstadoReconectar}, nil
-		}
-		if EhRede(err) {
-			n, _ := ContarPendentes(ctx, m.DB)
-			return Relatorio{Estado: EstadoAguardando, Pendentes: n}, nil
-		}
-		slog.Warn("sync busca recusada", "err", err)
-		n, _ := ContarPendentes(ctx, m.DB)
-		return Relatorio{Estado: EstadoOk, Pendentes: n}, nil
-	}
-	aplicou, err := m.aplicarPacote(ctx, pacote.Alteracoes)
-	if err != nil {
-		return Relatorio{}, err
-	}
-	if pacote.Agora != "" {
-		if err := gravarCursor(ctx, m.DB, pacote.Agora); err != nil {
-			return Relatorio{}, err
-		}
-	}
-	if err := reservarFaixa(ctx, m.DB); err != nil {
-		return Relatorio{}, err
-	}
 	if ultima, _ := MetaGet(ctx, m.DB, "conferido_em"); m.agora().Sub(parseCarimbo(ultima)) >= intervaloConferencia {
 		desdeAgora, _ := cursor(ctx, m.DB)
 		if _, err := conferir(ctx, m, token, desdeAgora); err != nil {

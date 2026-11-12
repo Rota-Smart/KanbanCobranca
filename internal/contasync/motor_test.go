@@ -120,10 +120,12 @@ type apiFalsa struct {
 	pacote     Pacote
 	decidir    func([]Alteracao) []Resultado
 	tokenVisto string
+	ordem      []string // "busca" e "envio" na ordem em que o ciclo chamou
 }
 
 func (f *apiFalsa) Enviar(_ context.Context, token string, alts []Alteracao) ([]Resultado, error) {
 	f.tokenVisto = token
+	f.ordem = append(f.ordem, "envio")
 	f.enviadas = append(f.enviadas, alts...)
 	if f.errEnvio != nil {
 		return nil, f.errEnvio
@@ -139,6 +141,7 @@ func (f *apiFalsa) Enviar(_ context.Context, token string, alts []Alteracao) ([]
 }
 
 func (f *apiFalsa) Buscar(context.Context, string, string) (Pacote, error) {
+	f.ordem = append(f.ordem, "busca")
 	if f.errBusca != nil {
 		return Pacote{}, f.errBusca
 	}
@@ -451,4 +454,24 @@ func fmtInt(n int64) string {
 		b[i] = '-'
 	}
 	return string(b[i:])
+}
+
+// O ciclo baixa as novidades da nuvem ANTES de subir a fila: subindo antes,
+// uma cópia local velha de uma linha só reenfileirada (ex.: reajuste de
+// posição dos outros cards) partia para a nuvem e vencia a mudança mais
+// recente — card movido voltava de coluna.
+func TestCicloBaixaAntesDeSubir(t *testing.T) {
+	database := banco(t)
+	ctx := context.Background()
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO tickets (nome_cliente, tipo_ticket, coluna_atual) VALUES ('Ana', 'Cobrança', 'Fazer contato')`); err != nil {
+		t.Fatal(err)
+	}
+	api := &apiFalsa{}
+	if _, err := motor(database, api, "t").Ciclo(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.ordem) < 2 || api.ordem[0] != "busca" {
+		t.Fatalf("ordem do ciclo: %v — queria busca antes de envio", api.ordem)
+	}
 }

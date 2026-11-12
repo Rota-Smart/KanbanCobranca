@@ -72,11 +72,18 @@ func conferir(ctx context.Context, m *Motor, token, cursorAtual string) (Confere
 			if _, v, tem, err := lerEstado(ctx, m.DB, spec.nome, id); err == nil && tem && v > versao {
 				versao = v
 			}
+			// Carimba com o horário real da mudança da linha (mesma regra
+			// dos gatilhos): com "agora", a cópia local vencia na nuvem uma
+			// alteração mais recente que ela mesma — card voltava de coluna.
+			carimbo := agora
+			if c, err := carimboLinhaLocal(ctx, m.DB, spec, id); err == nil && c != "" {
+				carimbo = c
+			}
 			if _, err := m.DB.ExecContext(ctx,
 				`INSERT INTO sync_fila (tabela, registro_id, op, atualizado_em, versao, tentativas, proxima_em)
 				 VALUES (?, ?, 'upsert', ?, ?, 0, ?)
 				 ON CONFLICT(tabela, registro_id) DO NOTHING`,
-				spec.nome, id, agora, versao+1, agora); err != nil {
+				spec.nome, id, carimbo, versao+1, agora); err != nil {
 				return res, err
 			}
 			res.Enfileiradas++
@@ -86,6 +93,23 @@ func conferir(ctx context.Context, m *Motor, token, cursorAtual string) (Confere
 		slog.Info("conferência com a nuvem", "comparadas", res.Comparadas, "enfileiradas", res.Enfileiradas)
 	}
 	return res, nil
+}
+
+// carimboLinhaLocal devolve o horário real da mudança da linha (mesma regra
+// dos gatilhos) para as tabelas com updated_at; nas demais devolve "" e a
+// conferência usa o horário corrente.
+func carimboLinhaLocal(ctx context.Context, db executor, spec specTabela, id string) (string, error) {
+	if !strings.Contains(spec.carimboLocal, "updated_at") {
+		return "", nil
+	}
+	pk, err := idArg(spec, id)
+	if err != nil {
+		return "", err
+	}
+	var carimbo string
+	err = db.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT %s FROM %s WHERE %s = ?", spec.carimboLocal, spec.nome, spec.pk), pk).Scan(&carimbo)
+	return carimbo, err
 }
 
 func idsLocais(ctx context.Context, m *Motor, spec specTabela) ([]string, error) {

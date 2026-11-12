@@ -95,18 +95,35 @@ func exprRegistro(pk, linha string) string {
 	return linha + "." + pk
 }
 
+// carimboLinha: para tabelas com updated_at, a fila é carimbada com o
+// horário REAL da mudança da linha, não com o horário do enfileiramento.
+// Com o carimbo "agora", uma linha só reenfileirada (ex.: o reajuste de
+// posição dos outros cards ao mover um) subia com horário fresco e a cópia
+// velha dela vencia na nuvem uma mudança mais recente — o card voltava de
+// coluna. Nas demais tabelas (insert-only ou posição de colunas) o horário
+// do gatilho continua sendo usado.
+var carimboLinha = map[string]string{
+	"tickets":   "COALESCE(NULLIF(NEW.updated_at,''), NEW.created_at, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+	"cobrancas": "COALESCE(NULLIF(NEW.updated_at,''), NEW.created_at, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+	"comissoes": "COALESCE(NULLIF(NEW.updated_at,''), NEW.created_at, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+}
+
 // gatilhosSync grava uma linha na fila a cada inserção, alteração ou exclusão.
 // Enquanto sync_suprimir.ativo = 1 (aplicando o que veio da nuvem), não grava —
 // senão o app reenviaria o que acabou de receber.
 func gatilhosSync(tabela, pk string) string {
 	novo := exprRegistro(pk, "NEW")
 	velho := exprRegistro(pk, "OLD")
+	carimbo, real := carimboLinha[tabela]
+	if !real {
+		carimbo = "strftime('%%Y-%%m-%%dT%%H:%%M:%%fZ','now')"
+	}
 	upsert := fmt.Sprintf(`
 CREATE TRIGGER %s_sync_ins AFTER INSERT ON %s
 WHEN (SELECT ativo FROM sync_suprimir WHERE id = 1) = 0
 BEGIN
     INSERT INTO sync_fila (tabela, registro_id, op, atualizado_em, versao, tentativas, proxima_em)
-    VALUES ('%s', %s, 'upsert', strftime('%%Y-%%m-%%dT%%H:%%M:%%fZ','now'),
+    VALUES ('%s', %s, 'upsert', %s,
         COALESCE((SELECT versao FROM sync_estado WHERE tabela = '%s' AND registro_id = %s), 0) + 1,
         0, strftime('%%Y-%%m-%%dT%%H:%%M:%%fZ','now'))
     ON CONFLICT(tabela, registro_id) DO UPDATE SET
@@ -121,7 +138,7 @@ CREATE TRIGGER %s_sync_upd AFTER UPDATE ON %s
 WHEN (SELECT ativo FROM sync_suprimir WHERE id = 1) = 0
 BEGIN
     INSERT INTO sync_fila (tabela, registro_id, op, atualizado_em, versao, tentativas, proxima_em)
-    VALUES ('%s', %s, 'upsert', strftime('%%Y-%%m-%%dT%%H:%%M:%%fZ','now'),
+    VALUES ('%s', %s, 'upsert', %s,
         COALESCE((SELECT versao FROM sync_estado WHERE tabela = '%s' AND registro_id = %s), 0) + 1,
         0, strftime('%%Y-%%m-%%dT%%H:%%M:%%fZ','now'))
     ON CONFLICT(tabela, registro_id) DO UPDATE SET
@@ -149,9 +166,9 @@ BEGIN
 END;
 `,
 		tabela, tabela,
-		tabela, novo, tabela, novo,
+		tabela, novo, carimbo, tabela, novo,
 		tabela, tabela,
-		tabela, novo, tabela, novo,
+		tabela, novo, carimbo, tabela, novo,
 		tabela, tabela,
 		tabela, velho, tabela, velho, tabela, velho,
 	)
