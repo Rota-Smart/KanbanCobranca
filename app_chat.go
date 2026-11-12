@@ -393,6 +393,7 @@ func (a *App) comandoLocal(mensagem string, chatID int64) (string, *service.Chat
 		{"apagar", a.executarComandoApagar},
 		{"realizada", a.executarComandoRealizada},
 		{"abrir", a.executarIntencaoAbrir},
+		{"agende", a.executarIntencaoAgendar},
 		{"intencao_local", a.executarIntencaoLocal},
 	}
 	for _, c := range casos {
@@ -2222,6 +2223,53 @@ func (a *App) apagarCardResolvido(card service.CardResumo, colunaDita string) *s
 		Resposta: fmt.Sprintf("Card %d (%s) apagado, junto com os acordos dele (estava em %q).", card.ID, card.NomeCliente, card.ColunaAtual),
 		Acoes:    []service.AcaoDoAgente{{Ferramenta: "apagar_card", Resumo: fmt.Sprintf("apagou o card %d (%s, em %s) via comando local", card.ID, card.NomeCliente, card.ColunaAtual)}},
 	}
+}
+
+// executarIntencaoAgendar roda o "agende (a visita) (do cliente X) pra
+// <quando>" solto, sem IA: resolve o card (nome citado ou cliente em
+// discussão no chat), move para Visita Agendada quando não está lá e grava
+// a visita (hora vazia quando só o turno foi citado — v1.84.0). ok=false
+// devolve a mensagem à IA: quando fora dos padrões locais ("sexta-feira",
+// "dia 20"), card não encontrado (a IA busca/importa do 360) ou sem cliente
+// identificado na conversa.
+func (a *App) executarIntencaoAgendar(mensagem string, chatID int64) (*service.ChatResultado, bool) {
+	in, ok := service.ParseIntencaoAgendar(mensagem)
+	if !ok {
+		return nil, false
+	}
+	var card service.CardResumo
+	if in.Alvo == "" || service.EhAlvoDeContexto(in.Alvo) {
+		c, cod, achou := a.cardDoContextoChat(chatID)
+		if !achou {
+			if cod != "" {
+				return a.importarCardDoContexto(chatID, cod, ColunaVisitaAgendada, false, in.Quando), true
+			}
+			return nil, false
+		}
+		card = c
+	} else {
+		ts, err := a.tickets.List(a.ctx)
+		if err != nil {
+			return &service.ChatResultado{Resposta: "Não consegui listar os cards: " + err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+		}
+		cards := make([]service.CardResumo, 0, len(ts))
+		for _, t := range ts {
+			cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
+		}
+		c, err := service.ResolverCard(in.Alvo, cards)
+		if err != nil {
+			return nil, false
+		}
+		card = c
+	}
+	res := &service.ChatResultado{Acoes: []service.AcaoDoAgente{}}
+	// já em Visita Agendada (nome pode variar): não move de novo
+	if colunas, err := a.colunas.List(a.ctx); err == nil {
+		if coluna, err := service.CasarColuna(ColunaVisitaAgendada, colunas); err == nil && card.ColunaAtual != coluna {
+			res = a.moverCardResolvido(card, ColunaVisitaAgendada, false)
+		}
+	}
+	return a.agendarVisitaDoChat(res, card.ID, in.Quando), true
 }
 
 // executarIntencaoLocal reconhece comandos rígidos de card no texto e os

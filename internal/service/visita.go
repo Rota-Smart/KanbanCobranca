@@ -151,3 +151,14 @@ func ValidarVisita(data, turno, hora, endereco string) error {
 	}
 	return nil
 }
+
+// QuandoVisitaReconhecido diz se o texto do "quando" cabe nos padrões
+// locais do agendamento (dia relativo hoje/amanhã/depois de amanhã e/ou
+// hora/turno). Falso = deixar com a IA ("sexta-feira", "dia 20", "mês que vem").
+func QuandoVisitaReconhecido(quando string) bool {
+	if reDiaVisita.FindString(normalizar(quando)) != "" {
+		return true
+	}
+	hora, turno := NormalizarQuando(quando)
+	return hora != "" || TurnoVisitaValido(turno)
+}

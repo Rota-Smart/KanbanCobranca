@@ -726,3 +726,77 @@ func TirarAbraNoFim(msg string) (string, bool) {
 	}
 	return strings.TrimSpace(msg[:loc[0]]), true
 }
+
+// ---- "agende" solto (backend-only, com fallback pra IA) ----
+
+// IntencaoAgendar é o "agende (a visita) (do cliente X) pra <quando>" solto:
+// Alvo vazio = cliente em discussão no chat; Quando segue os padrões de
+// ParseQuandoVisita (hoje/amanhã/depois de amanhã + hora/turno). ok=false
+// devolve a mensagem à IA — "sexta-feira", "dia 20" e card não encontrado
+// são coisa da IA (v1.84.0).
+type IntencaoAgendar struct {
+	Alvo   string
+	Quando string
+}
+
+// reAgendarSolto casa o início: verbo agendar/marcar/remarcar (+ "a/uma
+// visita"). Passados ("agendei", "agendou") casam no \w*, mas o guard de
+// QuandoVisitaReconhecido devolve à IA.
+var reAgendarSolto = regexp.MustCompile(
+	`(?i)^(?:me\s+)?(?:re)?(?:agend|mar[ck]|marq)\w*(?:\s+(?:(?:uma?|a|o)\s+)?visita)?\s+(.+)$`)
+
+// reAgendarSoltoPra separa o alvo do "quando" na 1.ª ocorrência de pra/para/pro/p/.
+var reAgendarSoltoPra = regexp.MustCompile(`(?i)\s+(?:pra|para|pro|p/)\s+(.+)$`)
+
+// reAlvoAgendarSolto tira da frente o "do (o|a) (cliente)" / "com (o|a)".
+var reAlvoAgendarSolto = regexp.MustCompile(`(?i)^(?:do|da|dos|das|com)\s+(?:o|a|os|as|um|uma)?\s*(?:cliente\s+)?(.+)$`)
+
+// reQuandoLider tira o pra/para/pro/p//em/na/no grudado no começo do resto
+// ("agende pra hoje a tarde" → quando "hoje a tarde").
+var reQuandoLider = regexp.MustCompile(`(?i)^(?:pra|para|pro|p/|em|na|no)\s+(.+)$`)
+
+// reQuandoNoMeio acha o início do "quando" grudado no alvo quando não houve
+// pra/para ("agende a visita do João amanhã as 8"): dia relativo, turno ou
+// hora. Roda no texto original — [ãa] cobre acento.
+var reQuandoNoMeio = regexp.MustCompile(
+	`(?i)\s(?:hoje|amanh[ãa]\w*|depois de amanh[ãa]\w*|de (?:manh[ãa]|tarde|noite)|\d{1,2}\s*[h:]\s*\d{0,2}\s*h?)`)
+
+// ParseIntencaoAgendar devolve o alvo e o quando do "agende" solto. ok=false
+// quando a mensagem não é dele ou o quando é fora dos padrões locais — aí o
+// chat cai no agente normal.
+func ParseIntencaoAgendar(msg string) (IntencaoAgendar, bool) {
+	m := reAgendarSolto.FindStringSubmatch(strings.TrimSpace(msg))
+	if m == nil {
+		return IntencaoAgendar{}, false
+	}
+	resto := strings.TrimSpace(m[1])
+	in := IntencaoAgendar{}
+	switch {
+	case reAgendarSoltoPra.FindStringSubmatchIndex(resto) != nil:
+		loc := reAgendarSoltoPra.FindStringSubmatchIndex(resto)
+		in.Quando = limparBordas(resto[loc[2]:loc[3]])
+		resto = limparBordas(resto[:loc[0]])
+	case reQuandoLider.FindStringSubmatch(resto) != nil:
+		// "agende pra hoje a tarde": o quando começa logo no resto
+		in.Quando = limparBordas(reQuandoLider.FindStringSubmatch(resto)[1])
+		resto = ""
+	}
+	if a := reAlvoAgendarSolto.FindStringSubmatch(resto); a != nil {
+		in.Alvo = limparBordas(a[1])
+	} else if in.Quando == "" {
+		// "agende a visita hoje a tarde" sem pra/para: tudo é quando
+		in.Quando = limparBordas(resto)
+	}
+	// sem pra/para e com alvo citado, o quando pode estar grudado no alvo:
+	// "do João amanhã as 8" → alvo "João", quando "amanhã as 8"
+	if in.Quando == "" && in.Alvo != "" {
+		if loc := reQuandoNoMeio.FindStringIndex(in.Alvo); loc != nil {
+			in.Quando = limparBordas(in.Alvo[loc[0]:])
+			in.Alvo = limparBordas(in.Alvo[:loc[0]])
+		}
+	}
+	if in.Quando == "" || !QuandoVisitaReconhecido(in.Quando) {
+		return IntencaoAgendar{}, false
+	}
+	return in, true
+}

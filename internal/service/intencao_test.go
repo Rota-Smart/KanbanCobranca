@@ -497,3 +497,51 @@ func TestCodigoRotuladoPrefereCodigoService(t *testing.T) {
 		t.Errorf("colado sem espaço: quer 23233, veio %q", cod)
 	}
 }
+
+func TestParseIntencaoAgendar(t *testing.T) {
+	casos := []struct {
+		msg    string
+		alvo   string
+		quando string
+		ok     bool
+	}{
+		{"agende pra hoje a tarde", "", "hoje a tarde", true},
+		{"agende a visita pra hoje a tarde", "", "hoje a tarde", true},
+		{"agende a visita do cliente Padaria Central pra amanhã as 8h45", "Padaria Central", "amanhã as 8h45", true},
+		{"marque visita com o Carlos para amanhã de manhã", "Carlos", "amanhã de manhã", true},
+		{"agende amanhã as 8", "", "amanhã as 8", true},
+		{"agende a visita do João amanhã as 8", "João", "amanhã as 8", true},
+		{"remarque pra depois de amanhã as 14:30", "", "depois de amanhã as 14:30", true},
+		{"agende pra sexta-feira", "", "", false},                      // data fora dos padrões → IA
+		{"agende pro dia 20", "", "", false},                           // idem
+		{"agendei a visita ontem", "", "", false},                      // passado: quando não reconhecido
+		{"mova para Visita Agendada e agende pra hoje", "", "", false}, // outro comando cuida
+		{"agende", "", "", false},                                      // sem quando
+		{"quero agendar um horario", "", "", false},                    // não é comando de visita com quando
+	}
+	for _, c := range casos {
+		in, ok := ParseIntencaoAgendar(c.msg)
+		if ok != c.ok {
+			t.Errorf("%q: ok=%v, queria %v", c.msg, ok, c.ok)
+			continue
+		}
+		if ok && (in.Alvo != c.alvo || in.Quando != c.quando) {
+			t.Errorf("%q: alvo=%q quando=%q, queria alvo=%q quando=%q", c.msg, in.Alvo, in.Quando, c.alvo, c.quando)
+		}
+	}
+}
+
+func TestQuandoVisitaReconhecido(t *testing.T) {
+	nao := []string{"", "sexta-feira", "dia 20", "mês que vem", "semana que vem"}
+	for _, q := range nao {
+		if QuandoVisitaReconhecido(q) {
+			t.Errorf("%q deveria ser desconhecido", q)
+		}
+	}
+	sim := []string{"hoje a tarde", "amanhã as 8:45", "depois de amanhã de noite", "tarde", "8h", "amanhã"}
+	for _, q := range sim {
+		if !QuandoVisitaReconhecido(q) {
+			t.Errorf("%q deveria ser reconhecido", q)
+		}
+	}
+}
