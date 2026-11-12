@@ -198,3 +198,20 @@ Repositório: github.com/luisboneta/banco-de-dados (privado).
    você soltar), e o histórico recarrega na hora — o card mais antigo da
    lista visível sai e continua acessível pelo botão "🗂 Histórico de
    fechados" no rodapé da coluna.
+
+26. ABA CONTATOS NO CARD (v1.41.0): o menu completo do cliente (clique no
+   card) ganhou a aba 📞 Contatos — registre cada ligação/WhatsApp/e-mail
+   com canal e nota (data e hora automáticas) e veja o histórico completo;
+   cada registro pode ser apagado com o ✕. O assistente do chat também lê
+   esse histórico (tool tentativas_contato) e registra contatos quando você
+   diz "registre o contato com o cliente" / "anote que liguei".
+
+27. PAINEL DO QUADRO (v1.76.0): o botão "📊 Painel" no topo mostra o
+   quadro em números — cards por coluna, entradas e fechados dos últimos
+   7 dias, tempo médio até o fechamento, acordos ativos com o valor e as
+   visitas agendadas (com destaque para as de hoje).
+
+28. QUADRO EM TEMPO REAL (v1.76.0): quando outra máquina conectada à
+   mesma conta move um card, o quadro atualiza sozinho em poucos segundos
+   — sem recarregar nada. Durante o seu arrasto o app espera você soltar
+   o card antes de atualizar, para não bagunçar a tela.
