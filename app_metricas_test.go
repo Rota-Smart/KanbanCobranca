@@ -28,28 +28,47 @@ func TestGetMetricas(t *testing.T) {
 		ColunaVisitaAgendada, time.Now().Format("2006-01-02"), visita.ID); err != nil {
 		t.Fatalf("marcar visita: %v", err)
 	}
-	// Acordo ativo de R$ 100,00.
+	// Acordo ativo de R$ 100,00 que fecha junto com o card…
 	_, err = a.db.Exec(`INSERT INTO cobrancas (ticket_id, total_aberto_cents, entrada_cents, numero_vezes, parcela_base_cents, parcelado_cents, ultima_parcela_cents, final_cents, status, ativa)
 		VALUES (?, 10000, 0, 1, 10000, 10000, 10000, 10000, 'proposta', 1)`, card.ID)
 	if err != nil {
 		t.Fatalf("cobranca: %v", err)
 	}
-	// Fechamento de hoje: movimentação para o Ticket Fechado.
+	// …e um segundo acordo que fica em aberto.
+	emAberto, err := a.SaveTicket(exemploTicket())
+	if err != nil {
+		t.Fatalf("SaveTicket em aberto: %v", err)
+	}
+	_, err = a.db.Exec(`INSERT INTO cobrancas (ticket_id, total_aberto_cents, entrada_cents, numero_vezes, parcela_base_cents, parcelado_cents, ultima_parcela_cents, final_cents, status, ativa)
+		VALUES (?, 5000, 0, 1, 5000, 5000, 5000, 5000, 'aceita', 1)`, emAberto.ID)
+	if err != nil {
+		t.Fatalf("cobranca em aberto: %v", err)
+	}
+	// Fechamento de hoje: movimentação para o Ticket Fechado — o acordo do
+	// card vira "concluida" e sai da contagem do painel.
 	if err := a.MoveTicket(card.ID, ColunaTicketFechado, 0); err != nil {
 		t.Fatalf("MoveTicket: %v", err)
+	}
+	var status string
+	var ativa int
+	if err := a.db.QueryRow(`SELECT status, ativa FROM cobrancas WHERE ticket_id = ?`, card.ID).Scan(&status, &ativa); err != nil {
+		t.Fatalf("ler cobranca: %v", err)
+	}
+	if status != "concluida" || ativa != 0 {
+		t.Fatalf("acordo deveria estar concluida/ativa=0, veio %q ativa=%d", status, ativa)
 	}
 
 	m, err := a.GetMetricas()
 	if err != nil {
 		t.Fatalf("GetMetricas: %v", err)
 	}
-	if m.TotalCards != 2 || m.EntradasSemana != 2 || m.FechadosSemana != 1 {
+	if m.TotalCards != 3 || m.EntradasSemana != 3 || m.FechadosSemana != 1 {
 		t.Fatalf("contagens erradas: %+v", m)
 	}
 	if m.VisitasAgendadas != 1 || m.VisitasHoje != 1 {
 		t.Fatalf("visitas erradas: %+v", m)
 	}
-	if m.CobrancasAtivas != 1 || m.ValorEmAbertoCents != 10000 {
+	if m.CobrancasAtivas != 1 || m.ValorEmAbertoCents != 5000 {
 		t.Fatalf("acordos errados: %+v", m)
 	}
 	if m.TempoMedioDias < 0 || m.TempoMedioDias > 1 {

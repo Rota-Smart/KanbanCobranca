@@ -39,10 +39,14 @@ var TiposTicketValidos = []string{
 
 // StatusCobrancaValidos são os únicos status aceitos em SaveCobranca
 // e UpdateStatusCobranca.
-var StatusCobrancaValidos = []string{"proposta", "aceita", "quebrada", "cancelada"}
+var StatusCobrancaValidos = []string{"proposta", "aceita", "quebrada", "cancelada", "concluida"}
 
 // StatusProposta é o status inicial de todo acordo novo.
 const StatusProposta = "proposta"
+
+// StatusConcluida marca o acordo fechado com sucesso: o card chegou à
+// coluna Ticket Fechado e o acordo deixa de contar no painel 📊.
+const StatusConcluida = "concluida"
 
 // Limites de tamanho de texto validados em app.go (Etapa 5.3).
 const (

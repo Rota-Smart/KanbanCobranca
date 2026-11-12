@@ -19,7 +19,7 @@ import type {
 import { formatCents, parseCents } from '../money';
 import OrcamentoModal from './OrcamentoModal';
 
-const statusValidos = ['proposta', 'aceita', 'quebrada', 'cancelada'] as const;
+const statusValidos = ['proposta', 'aceita', 'quebrada', 'cancelada', 'concluida'] as const;
 // espelha ErrTotalInvalido do Go: total em aberto precisa ser positivo
 const MIN_TOTAL_CENTS = 1;
 

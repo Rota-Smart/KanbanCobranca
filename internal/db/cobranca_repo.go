@@ -125,6 +125,20 @@ func (r *CobrancaRepo) UpdateStatus(ctx context.Context, id int64, status string
 	return nil
 }
 
+// ConcluirPorTicket marca o acordo ativo do ticket como concluída (e o
+// desativa, para parar de contar no painel 📊). É chamado quando o card
+// chega à coluna Ticket Fechado; não ter acordo ativo não é erro.
+// Literal em vez de service.StatusConcluida: db não importa service.
+func (r *CobrancaRepo) ConcluirPorTicket(ctx context.Context, ticketID int64) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE cobrancas SET status = 'concluida', ativa = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+		 WHERE ticket_id = ? AND ativa = 1`, ticketID)
+	if err != nil {
+		return fmt.Errorf("concluir cobrança do ticket %d: %w", ticketID, err)
+	}
+	return nil
+}
+
 // UpdateTotal substitui o total em aberto da cobrança ativa e as parcelas
 // derivadas já recalculadas (botão "atualizar valor salvo" após os juros
 // rodarem no 360).

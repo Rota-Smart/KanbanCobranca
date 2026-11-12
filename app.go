@@ -279,6 +279,13 @@ func (a *App) MoveTicket(id int64, coluna string, posicao int) error {
 			return friendly("MoveTicket", err)
 		}
 	}
+	// Acordo fechado: card chegou ao Ticket Fechado, o acordo ativo vira
+	// "concluida" e sai da contagem de valor em acordos do painel.
+	if coluna == ColunaTicketFechado {
+		if err := a.cobrancas.ConcluirPorTicket(a.ctx, id); err != nil {
+			return friendly("MoveTicket", err)
+		}
+	}
 	return nil
 }
 
