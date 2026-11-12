@@ -95,6 +95,9 @@ func (a *App) VincularTicketsPendentes() (ResultadoVinculacao, error) {
 		if comVinculo[t.ID] || strings.TrimSpace(t.Ticket360ID) != "" {
 			continue // restrição única: só cards sem NENHUM ticket vinculado
 		}
+		if t.ColunaAtual == ColunaTicketFechado {
+			continue // finalização: concluído, a coluna é só arquivo — fora da varredura
+		}
 		res.Varridos++
 		tk := escolherTicketParaCard(t, fila)
 		if tk == nil {
