@@ -156,6 +156,10 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   const [periodoRelatorio, setPeriodoRelatorio] = useState<'hoje' | '7' | '30'>('7');
   const [textoRelatorio, setTextoRelatorio] = useState('');
   const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
+  // Envio por WhatsApp: número do dono (só dígitos) + histórico dos resumos
+  // semanais que o app gera sozinho na abertura.
+  const [whatsappDono, setWhatsappDono] = useState('');
+  const [historicoResumos, setHistoricoResumos] = useState<{ quando: string; texto: string }[]>([]);
   // Versão já baixada e trocada no disco esperando reinício ("Depois" no
   // aviso): enquanto existir, o botão de reiniciar fica fixo aqui.
   const [prontaReinicio, setProntaReinicio] = useState<string | null>(null);
@@ -246,7 +250,35 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
     recarregar();
     App.GetFonteAtualizacao().then(setFonte).catch(() => {});
     recarregarSync();
+    App.HistoricoRelatorios()
+      .then(setHistoricoResumos)
+      .catch(() => setHistoricoResumos([]));
   }, []);
+
+  // O número do WhatsApp do dono chega junto do cfg; sincroniza o input.
+  useEffect(() => {
+    if (cfg) setWhatsappDono(cfg.whatsappDono ?? '');
+  }, [cfg]);
+
+  async function salvarWhatsappDono() {
+    try {
+      await App.SetWhatsappDono(whatsappDono.trim());
+      props.onToast('WhatsApp do dono salvo.');
+      recarregar();
+    } catch (e) {
+      props.onToast(String(e));
+    }
+  }
+
+  function enviarWhatsapp(texto: string) {
+    if (!texto.trim()) {
+      props.onToast('Gere o resumo primeiro.');
+      return;
+    }
+    App.AbrirRelatorioWhatsapp(texto)
+      .then(() => props.onToast('WhatsApp aberto no navegador padrão.'))
+      .catch((e: unknown) => props.onToast(String(e)));
+  }
 
   async function verificarAtualizacao() {
     setVerificando(true);
@@ -1039,6 +1071,66 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               value={textoRelatorio}
             />
           )}
+          {/* Envio por WhatsApp: com número do dono salvo já vai pro chat
+              dele; sem número, o WhatsApp deixa escolher o contato. */}
+          <div className="mt-3 border-t pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                className="flex-1 min-w-[14rem] border rounded px-2 py-1 text-sm"
+                placeholder="WhatsApp do dono (só dígitos, com DDI+DDD — ex.: 5511999998888)"
+                value={whatsappDono}
+                onChange={(e) => setWhatsappDono(e.target.value)}
+              />
+              <button
+                className="border rounded px-3 py-1 text-sm disabled:opacity-50"
+                disabled={!!cfg && (cfg.whatsappDono ?? '') === whatsappDono.trim()}
+                onClick={salvarWhatsappDono}
+              >
+                Salvar número
+              </button>
+              <button
+                className="bg-emerald-600 text-white rounded px-3 py-1 text-sm"
+                title="Abre o WhatsApp no navegador padrão com o resumo pré-preenchido"
+                onClick={() => enviarWhatsapp(textoRelatorio)}
+              >
+                Enviar por WhatsApp
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Sem número salvo, o WhatsApp abre e você escolhe o contato na hora. Todo início de
+              semana o app gera o resumo dos últimos 7 dias sozinho e avisa com um banner no topo.
+            </p>
+            {historicoResumos.length > 0 && (
+              <>
+                <p className="text-xs font-semibold text-slate-600 mt-3">Resumos anteriores</p>
+                <ul className="mt-1 flex flex-col gap-1">
+                  {historicoResumos.map((r) => (
+                    <li key={r.quando} className="flex items-center gap-2 text-xs">
+                      <span className="text-slate-500">{r.quando}</span>
+                      <button
+                        className="text-indigo-700 dark:text-indigo-300 hover:underline"
+                        title="Mostrar este resumo no campo acima"
+                        onClick={() => setTextoRelatorio(r.texto)}
+                      >
+                        ver
+                      </button>
+                      <button
+                        className="text-indigo-700 dark:text-indigo-300 hover:underline"
+                        onClick={() =>
+                          navigator.clipboard
+                            .writeText(r.texto)
+                            .then(() => props.onToast('Resumo copiado.'))
+                            .catch((e: unknown) => props.onToast(String(e)))
+                        }
+                      >
+                        copiar
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
         </section>
 
         {/* Parâmetros de negociação */}

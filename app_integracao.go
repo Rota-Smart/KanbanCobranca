@@ -788,7 +788,10 @@ type ConfigApp struct {
 	// o token padrão embutido no app).
 	CloudflareChavePropria bool   `json:"cloudflareChavePropria"`
 	Autor360               string `json:"autor360"`
-	RotaConectado          bool   `json:"rotaConectado"`
+	// WhatsappDono: número do destinatário do relatório semanal (só dígitos,
+	// DDI+DDD; vazio = wa.me sem número, o usuário escolhe o contato).
+	WhatsappDono  string `json:"whatsappDono"`
+	RotaConectado bool   `json:"rotaConectado"`
 	RotaOrigem             string `json:"rotaOrigem"`
 	RotaMensagem           string `json:"rotaMensagem"`
 }
@@ -808,6 +811,7 @@ func (a *App) GetConfig() ConfigApp {
 		CloudflareTemConta:     a.cloudflareConta() != "",
 		CloudflareChavePropria: a.configGet(a.ctx, cfgCloudflareChave) != "",
 		Autor360:               a.configGet(a.ctx, cfgAutor360),
+		WhatsappDono:           a.configGet(a.ctx, cfgWhatsappDono),
 		RotaConectado:          a.rotaAtual() != nil,
 	}
 }

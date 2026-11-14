@@ -46,6 +46,10 @@ type App struct {
 	padroes    *db.PadraoRepo
 	stats      *db.AgenteStatsRepo // aprendizado da pré-busca (classe → ferramentas)
 
+	// caminhoRelatorios: arquivo do histórico dos resumos semanais; vazio
+	// usa a pasta de dados do app (testes apontam pra pasta própria).
+	caminhoRelatorios string
+
 	// Pré-busca de contexto do assistente: resultado da coleta local antes
 	// de chamar a IA; o ExecutarAgente serve daqui se o modelo pedir de novo.
 	muPrebusca    sync.Mutex
