@@ -151,6 +151,11 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
   const [contaOcupada, setContaOcupada] = useState(false);
   const [usoGroq, setUsoGroq] = useState<import('../wails-types').UsoGroq | null>(null);
   const [exportandoAuditoria, setExportandoAuditoria] = useState(false);
+  // Relatório do período: seletor Hoje / 7 dias / 30 dias; o texto é montado
+  // no Go com números do banco local e pode ser copiado ou salvo como .txt.
+  const [periodoRelatorio, setPeriodoRelatorio] = useState<'hoje' | '7' | '30'>('7');
+  const [textoRelatorio, setTextoRelatorio] = useState('');
+  const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
   // Versão já baixada e trocada no disco esperando reinício ("Depois" no
   // aviso): enquanto existir, o botão de reiniciar fica fixo aqui.
   const [prontaReinicio, setProntaReinicio] = useState<string | null>(null);
@@ -956,6 +961,84 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
               {exportandoAuditoria ? 'Salvando…' : '💾 Salvar histórico como…'}
             </button>
           </div>
+        </section>
+
+        {/* Relatório do período (números do banco local, sem IA) */}
+        <section className="mt-3 border rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-slate-700">Resumo do período</h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Texto pronto para colar no WhatsApp/e-mail com os números do período: acordos fechados,
+            visitas realizadas, tickets encerrados, tentativas de contato e cards novos — contados
+            direto no banco local, nos mesmos critérios do painel de métricas.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <select
+              className="border rounded px-2 py-1 text-sm"
+              value={periodoRelatorio}
+              onChange={(e) => setPeriodoRelatorio(e.target.value as 'hoje' | '7' | '30')}
+            >
+              <option value="hoje">Hoje</option>
+              <option value="7">Últimos 7 dias</option>
+              <option value="30">Últimos 30 dias</option>
+            </select>
+            <button
+              className="border rounded px-3 py-1 text-sm disabled:opacity-50"
+              disabled={gerandoRelatorio}
+              onClick={() => {
+                setGerandoRelatorio(true);
+                const hoje = new Date();
+                const fmt = (d: Date) =>
+                  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const fim = fmt(hoje);
+                const inicio =
+                  periodoRelatorio === 'hoje'
+                    ? fim
+                    : fmt(new Date(hoje.getTime() - (periodoRelatorio === '7' ? 6 : 29) * 86400000));
+                App.GerarRelatorio(inicio, fim)
+                  .then(setTextoRelatorio)
+                  .catch((e: unknown) => props.onToast(String(e)))
+                  .finally(() => setGerandoRelatorio(false));
+              }}
+            >
+              {gerandoRelatorio ? 'Gerando…' : '📊 Gerar resumo'}
+            </button>
+            {textoRelatorio && (
+              <>
+                <button
+                  className="border rounded px-3 py-1 text-sm"
+                  onClick={() => {
+                    navigator.clipboard
+                      .writeText(textoRelatorio)
+                      .then(() => props.onToast('Resumo copiado.'))
+                      .catch((e: unknown) => props.onToast(String(e)));
+                  }}
+                >
+                  📋 Copiar
+                </button>
+                <button
+                  className="border rounded px-3 py-1 text-sm"
+                  onClick={() => {
+                    const blob = new Blob([textoRelatorio], { type: 'text/plain;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `rotasuite-relatorio-${new Date().toISOString().slice(0, 10)}.txt`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  💾 Salvar como .txt
+                </button>
+              </>
+            )}
+          </div>
+          {textoRelatorio && (
+            <textarea
+              readOnly
+              className="mt-2 w-full border rounded p-2 text-sm h-40 font-mono"
+              value={textoRelatorio}
+            />
+          )}
         </section>
 
         {/* Parâmetros de negociação */}
