@@ -74,6 +74,33 @@ function assuntosPorCard(vinculos: Vinculo360[]): Map<number, string[]> {
   return mapa;
 }
 
+// Selos do card (os mesmos que o TicketCard desenha): chave + rótulo do filtro.
+// "acordo" e "comissao" dependem de mapas carregados no App, então o teste
+// deles fica fora desta função (ver selosDoTicket).
+const selosConhecidos = [
+  { chave: 'ticket360', rotulo: '🎫 Ticket 360' },
+  { chave: 'obs', rotulo: '🗒️ Com observações' },
+  { chave: 'tentativas', rotulo: '📞 Tentativas de contato' },
+  { chave: 'visita', rotulo: '📅 Visita' },
+  { chave: 'acordo', rotulo: '🤝 Acordo/renegociação' },
+  { chave: 'comissao', rotulo: '💰 Comissão' },
+] as const;
+
+type SeloChave = (typeof selosConhecidos)[number]['chave'];
+
+// selosDoTicket devolve as chaves dos selos que o card tem, olhando só campos
+// do ticket; qtdAcordos e temComissao vêm dos mapas do App (acordos eUpgrade).
+function selosDoTicket(t: Ticket, qtdAcordos: number, temComissao: boolean): SeloChave[] {
+  const selos: SeloChave[] = [];
+  if (t.ticket360Numero) selos.push('ticket360');
+  if (t.observacoes?.trim()) selos.push('obs');
+  if ((t.tentativas ?? 0) > 0) selos.push('tentativas');
+  if (t.visitaData) selos.push('visita');
+  if (qtdAcordos > 0) selos.push('acordo');
+  if (temComissao) selos.push('comissao');
+  return selos;
+}
+
 // cardPassaNoFiltro: o texto casa com nome do cliente, número do ticket ou
 // assunto; o assunto selecionado tem que estar entre os vínculos do card.
 function cardPassaNoFiltro(t: Ticket, assuntos: string[], texto: string, assunto: string): boolean {
@@ -260,6 +287,7 @@ export default function App() {
   // Coluna focada pelo painel de métricas: clicar num item de "Cards por
   // coluna" mostra só aquela coluna no quadro (null = todas).
   const [colunaFocada, setColunaFocada] = useState<string | null>(null);
+  const [filtroSelo, setFiltroSelo] = useState<SeloChave | ''>('');
   const [vinculos, setVinculos] = useState<Vinculo360[]>([]);
   const [historicoFechados, setHistoricoFechados] = useState<FechadoHistorico[]>([]);
   const [historicoAberto, setHistoricoAberto] = useState(false);
@@ -286,9 +314,17 @@ export default function App() {
 
   const assuntosTodos = assuntosDistintos(vinculos);
   const mapaAssuntos = assuntosPorCard(vinculos);
-  const filtroAtivo = filtroTexto.trim() !== '' || filtroAssunto !== '';
+  const filtroAtivo = filtroTexto.trim() !== '' || filtroAssunto !== '' || filtroSelo !== '';
+
+  // Cards com comissão (Set para o filtro sem varrer a lista a cada card;
+  // comissoesPorTicket só existe mais abaixo, depois dos handlers de comissão).
+  const ticketsComComissao = new Set(comissoes.map((c) => c.ticketId));
 
   function cardVisivel(t: Ticket): boolean {
+    if (filtroSelo) {
+      const selos = selosDoTicket(t, acordosPorTicket[t.id] ?? 0, ticketsComComissao.has(t.id));
+      if (!selos.includes(filtroSelo)) return false;
+    }
     return cardPassaNoFiltro(t, mapaAssuntos.get(t.id) ?? [], filtroTexto, filtroAssunto);
   }
 
@@ -1418,6 +1454,7 @@ ${txt.trim()}` : txt.trim());
                 onClick={() => {
                   setFiltroTexto('');
                   setFiltroAssunto('');
+                  setFiltroSelo('');
                 }}
               >
                 ✕ Limpar
@@ -1433,6 +1470,17 @@ ${txt.trim()}` : txt.trim());
             <option value="">Assunto: todos</option>
             {assuntosTodos.map((a) => (
               <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+          <select
+            value={filtroSelo}
+            onChange={(e) => setFiltroSelo(e.target.value as SeloChave | '')}
+            className="text-sm rounded-xl px-3 py-1.5 max-w-[12rem] bg-white/60 dark:bg-white/10 border border-white/70 dark:border-white/10 outline-none focus:ring-2 focus:ring-indigo-400/60"
+            title="Filtrar cards que tenham o selo escolhido"
+          >
+            <option value="">Selo: todos</option>
+            {selosConhecidos.map((s) => (
+              <option key={s.chave} value={s.chave}>{s.rotulo}</option>
             ))}
           </select>
           <div className="relative">
