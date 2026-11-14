@@ -934,6 +934,34 @@ export default function Configuracoes(props: { onFechar: () => void; onToast: (m
             O assistente resume o ticket com a descrição e a última mensagem que não é sua; diga aqui
             quem é você para ele filtrar direito.
           </p>
+          {/* Pré-busca de contexto na IA: o backend coleta os dados do cliente
+              alvo antes de chamar o modelo, e as tools de leitura saem do
+              request — menos tokens e menos rodadas. Interruptor para desligar
+              em caso de problema. */}
+          <label className="mt-3 flex items-start gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={cfg?.prebuscaIA ?? true}
+              onChange={(e) => {
+                const ativo = e.target.checked;
+                App.SetPrebuscaIA(ativo)
+                  .then(() => {
+                    recarregar();
+                    props.onToast(ativo ? 'Pré-busca de contexto ligada.' : 'Pré-busca de contexto desligada.');
+                  })
+                  .catch((err: unknown) => props.onToast(String(err)));
+              }}
+            />
+            <span className="dark:text-slate-100">
+              Pré-busca de contexto na IA
+              <span className="block text-xs text-slate-500">
+                Antes de responder, o app já coleta financeiro, OS, observações, último acordo,
+                tentativas de contato e posição no quadro do cliente em discussão — a IA gasta muito
+                menos tokens. Desligue se notar comportamento estranho no assistente.
+              </span>
+            </span>
+          </label>
         </section>
 
         {/* Histórico do assistente (auditoria append-only) */}

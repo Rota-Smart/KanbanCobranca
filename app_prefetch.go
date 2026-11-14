@@ -48,19 +48,29 @@ func (p *prebusca) opcoes() *service.OpcoesConversa {
 func (a *App) prepararPrebusca(ctx context.Context, msg string) (*prebusca, error) {
 	classe := service.ClassificarConsulta(msg)
 	if classe == service.ConsultaNenhuma {
-		return nil, nil
+		// Nem consulta nem ação: mensagens genéricas e follow-ups do chat.
+		// Com o cliente alvo identificado, o contexto dele ainda vai pré-
+		// buscado (melhor esforço) — a IA raramente precisa das tools de
+		// leitura para responder. Falha de rede/sem sessão = nil, o fluxo
+		// antigo (tools completas) segue intacto.
+		return a.prebuscaContextoAlvo(ctx, msg), nil
 	}
 	// Board é 100% banco local: independe de sessão do 360 e roda antes do
 	// check de conexão.
 	if classe == service.ConsultaBoard {
 		return a.prebuscaBoard(msg), nil
 	}
-	// Ação (mover card, responder ticket, orçamento...): não pré-coleta
-	// nada — o ganho é só o roteamento de tools: as que não servem para
-	// essa operação saem do request inteiro (economia de TPM por rodada).
+	// Ação (mover card, responder ticket, orçamento...): não pré-coleta os
+	// dashboards do 360 (o ganho é só o roteamento de tools), mas o contexto
+	// LOCAL do cliente em discussão na conversa (posição no quadro, último
+	// acordo, tentativas de contato) entra de graça: é banco local, sem rede.
 	if service.EhAcao(classe) {
-		return &prebusca{classe: classe, cache: map[string]string{},
-			removidas: service.FerramentasForaDaClasse(classe)}, nil
+		p := &prebusca{classe: classe, cache: map[string]string{},
+			removidas: service.FerramentasForaDaClasse(classe)}
+		if a.prebuscaIAAtivada() {
+			p.bloco = a.blocoContextoLocalDoChat(chatIDOuZero(ctx))
+		}
+		return p, nil
 	}
 
 	c := a.rotaAtual()
@@ -406,6 +416,185 @@ func (a *App) cacheServir(ctx context.Context, ferramenta string) (string, bool)
 	}
 	v, ok := a.cachePrebusca[id][ferramenta]
 	return v, ok
+}
+
+// chatIDOuZero extrai o id da conversa do ctx (0 quando ausente).
+func chatIDOuZero(ctx context.Context) int64 {
+	id, _ := ctx.Value(chaveChatID{}).(int64)
+	return id
+}
+
+// prebuscaContextoAlvo é a pré-busca completa do cliente alvo: roda para
+// mensagens que NÃO classificaram como consulta de dados nem ação — o
+// objetivo é a IA quase nunca precisar das tools de leitura. Num lote só:
+// financeiro/faturas + OS + observações (dashboard 360), histórico de O.S.
+// (os-funil), posição no quadro, último acordo e tentativas de contato
+// (banco local). Melhor esforço SEMPRE: sem cliente alvo, sem sessão ou com
+// rede falhando devolve nil (ou só o bloco local) e o fluxo antigo segue.
+func (a *App) prebuscaContextoAlvo(ctx context.Context, msg string) *prebusca {
+	if !a.prebuscaIAAtivada() {
+		return nil
+	}
+	// Fast-path (reescrita de texto, pergunta sobre o app): o bloco pesado
+	// não seria usado — não puxa nada.
+	if service.MensagemSemFerramentas(msg) {
+		return nil
+	}
+
+	cod := ""
+	// 1) alvo explícito na mensagem vence (cod citado, ou nome → código).
+	alvo := service.ExtrairAlvo(msg)
+	if alvo.Tipo == "cod" {
+		cod = alvo.Valor
+	}
+	// 2) cliente em discussão na conversa (cabeçalho do Shift+F2, follow-ups).
+	cardCtx, codCtx, _ := a.cardDoContextoChat(chatIDOuZero(ctx))
+	if cod == "" && cardCtx.CodService != "" {
+		cod = cardCtx.CodService
+	}
+	if cod == "" {
+		cod = codCtx // código service citado sem card no quadro
+	}
+	if cod == "" && alvo.Tipo == "nome" {
+		if c := a.rotaAtual(); c != nil {
+			if v, err := a.codDoNome(ctx, c, alvo.Valor); err == nil {
+				cod = v
+			}
+		}
+	}
+	if cod == "" {
+		return nil
+	}
+
+	p := &prebusca{classe: service.ConsultaCliente, cache: map[string]string{}}
+	var sb strings.Builder
+	sb.WriteString("CONTEXTO DO CLIENTE (pré-buscado pelo app direto do 360 e do banco local — dado oficial e atual; NÃO chame ferramentas para buscar de novo o que está aqui):\n")
+
+	// Rede, melhor esforço: sessão ausente/expirada ou falha não para nada —
+	// a mensagem nem era consulta de dados, então a IA pode seguir (e, se
+	// precisar de verdade, as tools de leitura continuam no request).
+	c := a.rotaAtual()
+	if c != nil {
+		if fin, err := c.FinanceiroCliente(ctx, cod); err == nil {
+			txt := textoFinanceiro360(cod, fin)
+			sb.WriteString("\n" + txt)
+			p.cache["financeiro_cliente"] = txt
+			p.removidas = append(p.removidas, "financeiro_cliente")
+			if txt2 := textoAtendimentos360(cod, nil, fin); strings.TrimSpace(txt2) != "" {
+				sb.WriteString("\n" + txt2)
+				p.cache["atendimentos_cliente"] = txt2
+			}
+			if txt3 := resumoEquipamentos(fin.Sources.Produtos.Data); strings.TrimSpace(txt3) != "" {
+				sb.WriteString("\n" + txt3)
+				p.cache["equipamentos_cliente"] = txt3
+			}
+		} else if !errors.Is(err, rota360.ErrSessaoExpirada) && !errors.Is(err, rota360.ErrSemSessao) {
+			slog.Warn("pré-busca alvo: dashboard360 falhou", "cod", cod, "err", err)
+		}
+		if dc, err := c.DadosCliente(ctx, cod); err == nil {
+			if obs := strings.TrimSpace(dc.Observacoes); obs != "" {
+				sb.WriteString("\nObservações do cadastro:\n" + limitarTexto(obs, 500) + "\n")
+				p.cache["equipamentos_cliente"] += "\nObservações do cadastro:\n" + limitarTexto(obs, 500)
+				p.removidas = append(p.removidas, "equipamentos_cliente")
+			}
+		}
+		if f, err := c.OSFunil(ctx, cod); err == nil {
+			txt := textoAtendimentos360(cod, f, nil)
+			if strings.TrimSpace(txt) != "" {
+				sb.WriteString("\n" + txt)
+				p.cache["atendimentos_cliente"] += "\n" + txt
+				p.removidas = append(p.removidas, "atendimentos_cliente")
+			}
+		}
+	} else {
+		slog.Info("pré-busca alvo: sem sessão no 360, só contexto local", "cod", cod)
+	}
+
+	if bloco := a.blocoContextoLocalDoChat(chatIDOuZero(ctx)); bloco != "" {
+		sb.WriteString("\n" + bloco)
+	}
+
+	p.bloco = strings.TrimRight(sb.String(), "\n")
+	return p
+}
+
+// blocoContextoLocalDoChat monta o contexto que mora SÓ no banco local sobre
+// o cliente em discussão na conversa: posição no quadro, último acordo de
+// reparcelamento e tentativas de contato recentes. Zero rede — barato o
+// bastante para entrar até nas mensagens de ação. Vazio sem cliente alvo.
+func (a *App) blocoContextoLocalDoChat(chatID int64) string {
+	if a.tickets == nil {
+		return ""
+	}
+	cardCtx, codCtx, _ := a.cardDoContextoChat(chatID)
+	cod := codCtx
+	if cod == "" && cardCtx.CodService != "" {
+		cod = cardCtx.CodService
+	}
+	if cod == "" {
+		return ""
+	}
+	// Card local do cliente (pode não existir): dá id, coluna e ticket
+	// vinculado com todos os campos do banco, não só o resumo do contexto.
+	var card *db.Ticket
+	if ts, err := a.tickets.List(a.ctx); err == nil {
+		for i := range ts {
+			if ts[i].CodService == cod {
+				card = &ts[i]
+				break
+			}
+		}
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "CONTEXTO LOCAL do cliente em discussão nesta conversa (código service %s). Se a operação for sobre OUTRO cliente, ignore este bloco:\n", cod)
+	// Posição no quadro.
+	if card != nil {
+		fmt.Fprintf(&sb, "Posição no quadro: card id %d na coluna %q", card.ID, card.ColunaAtual)
+		if card.Ticket360Numero != "" {
+			fmt.Fprintf(&sb, ", ticket 360 #%s vinculado", card.Ticket360Numero)
+		}
+		sb.WriteString("\n")
+	} else {
+		sb.WriteString("Posição no quadro: sem card no Kanban local.\n")
+	}
+	// Último acordo (acordos moram no card; sem card não há acordo local).
+	// Repos podem faltar (testes/wiring parcial): cada bloco é independente.
+	if card != nil {
+		if a.cobrancas != nil {
+			if cob, err := a.cobrancas.GetAtiva(a.ctx, card.ID); err == nil && cob != nil {
+				fmt.Fprintf(&sb, "Último acordo ativo: contrato %s, %d× de R$ %.2f (entrada R$ %.2f), total parcelado R$ %.2f, aberto R$ %.2f, vencimento %s, status %s.\n",
+					cob.DataContrato, cob.NumeroVezes, float64(cob.ParcelaBaseCents)/100,
+					float64(cob.EntradaCents)/100, float64(cob.ParceladoCents)/100,
+					float64(cob.TotalAbertoCents)/100, cob.DataVencimento, cob.Status)
+			}
+		}
+		if a.clientes != nil {
+			if n, err := a.clientes.ContaRenegociacoesTicket(a.ctx, card.ID); err == nil && n > 1 {
+				fmt.Fprintf(&sb, "Renegociações do card: %d.\n", n)
+			}
+		}
+		// Tentativas de contato recentes (mais recente primeiro).
+		if a.tentativas != nil {
+			if ts, err := a.tentativas.List(a.ctx, card.ID); err == nil && len(ts) > 0 {
+				sb.WriteString("Tentativas de contato recentes:\n")
+				for i, t := range ts {
+					if i >= 5 {
+						fmt.Fprintf(&sb, "… (+%d anteriores)\n", len(ts)-5)
+						break
+					}
+					linha := "- " + t.CreatedAt
+					if t.Canal != "" {
+						linha += " via " + t.Canal
+					}
+					if t.Nota != "" {
+						linha += ": " + limitarTexto(t.Nota, 120)
+					}
+					sb.WriteString(linha + "\n")
+				}
+			}
+		}
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 // chaveChatID carrega o id da conversa no contexto do pedido — é como o
