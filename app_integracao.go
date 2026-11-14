@@ -36,7 +36,8 @@ const (
 	cfgCloudflareModelo = "cloudflare_modelo"
 	cfgIaProvedor       = "ia_provedor"
 	cfgRotaCookie       = "rota360_cookie"
-	cfgAutor360         = "autor_360" // nome do usuário logado no 360 (filtra o resumo do ticket)
+	cfgAutor360         = "autor_360"   // nome do usuário logado no 360 (filtra o resumo do ticket)
+	cfgPrebuscaIA       = "ia_prebusca" // "0" desliga a pré-busca de contexto na IA (default: ligada)
 	evRotaConectado     = "rota360:conectado"
 )
 
@@ -791,6 +792,7 @@ type ConfigApp struct {
 	RotaConectado          bool   `json:"rotaConectado"`
 	RotaOrigem             string `json:"rotaOrigem"`
 	RotaMensagem           string `json:"rotaMensagem"`
+	PrebuscaIA             bool   `json:"prebuscaIA"`
 }
 
 // GetConfig devolve as configurações atuais.
@@ -809,7 +811,31 @@ func (a *App) GetConfig() ConfigApp {
 		CloudflareChavePropria: a.configGet(a.ctx, cfgCloudflareChave) != "",
 		Autor360:               a.configGet(a.ctx, cfgAutor360),
 		RotaConectado:          a.rotaAtual() != nil,
+		PrebuscaIA:             a.prebuscaIAAtivada(),
 	}
+}
+
+// prebuscaIAAtivada lê o interruptor da pré-busca de contexto. Ausente ou
+// qualquer valor diferente de "0" = ligada (default), para nunca deixar a IA
+// sem contexto por falta de configuração.
+func (a *App) prebuscaIAAtivada() bool {
+	if a.config == nil {
+		return true
+	}
+	v, err := a.config.Get(a.ctx, cfgPrebuscaIA)
+	return err != nil || v != "0"
+}
+
+// SetPrebuscaIA liga/desliga a pré-busca de contexto nas Configurações.
+func (a *App) SetPrebuscaIA(ativo bool) error {
+	v := "1"
+	if !ativo {
+		v = "0"
+	}
+	if a.config == nil {
+		return fmt.Errorf("configurações indisponíveis")
+	}
+	return a.config.Set(a.ctx, cfgPrebuscaIA, v)
 }
 
 // groqChavesExtra lê a lista JSON de chaves adicionais do config.
