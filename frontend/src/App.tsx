@@ -594,6 +594,20 @@ export default function App() {
   }
   const filaTemItens = !!(fila && (fila.parados?.length || fila.acordos?.length || fila.orcamentos?.length));
 
+  // Relatório semanal automático: o Go decide na abertura se já passou 7
+  // dias do último resumo; se gerou, só mostramos o banner discreto (com
+  // ver/copiar/enviar por WhatsApp) — nada abre sem clique.
+  const [bannerRelatorio, setBannerRelatorio] = useState<string | null>(null);
+  const [relatorioAberto, setRelatorioAberto] = useState(false);
+  useEffect(() => {
+    bindings
+      .RelatorioSemanalAuto()
+      .then((r) => {
+        if (r.novo) setBannerRelatorio(r.texto);
+      })
+      .catch(() => {});
+  }, []);
+
   async function verificarFechados() {
     if (verificandoFechados) return;
     setVerificandoFechados(true);
@@ -1655,6 +1669,66 @@ ${txt.trim()}` : txt.trim());
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Banner do relatório semanal automático: mesma região do painel de
+          visitas, discreto — ver (abre o texto aqui mesmo), copiar e enviar
+          por WhatsApp (wa.me no navegador padrão). */}
+      {bannerRelatorio && (
+        <div className="glass rounded-2xl px-4 py-2.5 text-sm border border-emerald-400/40 dark:border-emerald-300/30 bg-emerald-500/10 dark:bg-emerald-400/10">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-emerald-800 dark:text-emerald-200">
+              📊 Resumo da semana pronto
+            </span>
+            <button
+              className="text-xs rounded-lg px-2 py-1 bg-white/70 hover:bg-white text-indigo-700 border border-white/70 shadow-sm dark:bg-white/10 dark:hover:bg-white/20 dark:text-indigo-300 dark:border-white/10"
+              onClick={() => setRelatorioAberto((a) => !a)}
+            >
+              {relatorioAberto ? 'Ocultar' : 'Ver'}
+            </button>
+            <button
+              className="text-xs rounded-lg px-2 py-1 bg-white/70 hover:bg-white text-emerald-700 border border-white/70 shadow-sm dark:bg-white/10 dark:hover:bg-white/20 dark:text-emerald-300 dark:border-white/10"
+              title="Abre o WhatsApp no navegador padrão com o resumo pré-preenchido"
+              onClick={() =>
+                bindings
+                  .AbrirRelatorioWhatsapp(bannerRelatorio)
+                  .catch((e: unknown) => showToast('⚠ ' + String(e)))
+              }
+            >
+              Enviar por WhatsApp
+            </button>
+            <div className="flex-1" />
+            <button
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-1"
+              title="Fechar o aviso do resumo"
+              aria-label="Fechar aviso do resumo semanal"
+              onClick={() => setBannerRelatorio(null)}
+            >
+              ✕
+            </button>
+          </div>
+          {relatorioAberto && (
+            <>
+              <textarea
+                readOnly
+                className="mt-2 w-full border rounded p-2 text-xs h-40 font-mono bg-white/70 dark:bg-slate-800/70"
+                value={bannerRelatorio}
+                onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+              />
+              <button
+                className="mt-1 text-xs text-indigo-700 dark:text-indigo-300 hover:underline"
+                onClick={() =>
+                  navigator.clipboard
+                    .writeText(bannerRelatorio)
+                    .then(() => showToast('Resumo copiado.'))
+                    .catch((e: unknown) => showToast('⚠ ' + String(e)))
+                }
+              >
+                📋 Copiar
+              </button>
+            </>
+          )}
         </div>
       )}
 

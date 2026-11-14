@@ -56,24 +56,42 @@ func (a *App) GerarRelatorio(inicio, fim string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	c := a.contadoresRelatorio(ctx, inicio, fim)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Relatório — %s a %s\n", inicio, fim)
+	fmt.Fprintf(&b, "Gerado em %s\n", time.Now().Format("02/01/2006 15:04"))
+	fmt.Fprintf(&b, "\nAcordos fechados: %d", c.acordos)
+	fmt.Fprintf(&b, "\nVisitas realizadas: %d", c.visitas)
+	fmt.Fprintf(&b, "\nTickets encerrados (movidos para %s): %d", ColunaTicketFechado, c.fechados)
+	fmt.Fprintf(&b, "\nTentativas de contato: %d", c.tentativas)
+	fmt.Fprintf(&b, "\nNovos cards criados: %d", c.novos)
+	return b.String(), nil
+}
+
+// contadoresRel reúne os números do período (mesmos critérios do painel de
+// métricas). Serve tanto para o relatório manual quanto para o semanal
+// automático e a linha comparativa com a semana anterior.
+type contadoresRel struct {
+	novos      int
+	visitas    int
+	fechados   int
+	acordos    int
+	tentativas int
+}
+
+// contadoresRelatorio conta os números do período no banco local.
+func (a *App) contadoresRelatorio(ctx context.Context, inicio, fim string) contadoresRel {
 	um := func(q string, args ...any) int {
 		var n int
 		_ = a.db.QueryRowContext(ctx, q, args...).Scan(&n)
 		return n
 	}
-	novos := um(`SELECT count(*) FROM tickets WHERE substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ?`, inicio, fim)
-	visitas := um(`SELECT count(*) FROM tickets WHERE visita_realizada_em != '' AND substr(visita_realizada_em,1,10) >= ? AND substr(visita_realizada_em,1,10) <= ?`, inicio, fim)
-	fechados := um(`SELECT count(*) FROM movimentacoes WHERE para_coluna = ? AND substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ?`, ColunaTicketFechado, inicio, fim)
-	acordos := um(`SELECT count(*) FROM cobrancas WHERE status = 'concluida' AND substr(updated_at,1,10) >= ? AND substr(updated_at,1,10) <= ?`, inicio, fim)
-	tentativas := um(`SELECT count(*) FROM tentativas_contato WHERE substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ?`, inicio, fim)
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "Relatório — %s a %s\n", inicio, fim)
-	fmt.Fprintf(&b, "Gerado em %s\n", time.Now().Format("02/01/2006 15:04"))
-	fmt.Fprintf(&b, "\nAcordos fechados: %d", acordos)
-	fmt.Fprintf(&b, "\nVisitas realizadas: %d", visitas)
-	fmt.Fprintf(&b, "\nTickets encerrados (movidos para %s): %d", ColunaTicketFechado, fechados)
-	fmt.Fprintf(&b, "\nTentativas de contato: %d", tentativas)
-	fmt.Fprintf(&b, "\nNovos cards criados: %d", novos)
-	return b.String(), nil
+	return contadoresRel{
+		novos:      um(`SELECT count(*) FROM tickets WHERE substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ?`, inicio, fim),
+		visitas:    um(`SELECT count(*) FROM tickets WHERE visita_realizada_em != '' AND substr(visita_realizada_em,1,10) >= ? AND substr(visita_realizada_em,1,10) <= ?`, inicio, fim),
+		fechados:   um(`SELECT count(*) FROM movimentacoes WHERE para_coluna = ? AND substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ?`, ColunaTicketFechado, inicio, fim),
+		acordos:    um(`SELECT count(*) FROM cobrancas WHERE status = 'concluida' AND substr(updated_at,1,10) >= ? AND substr(updated_at,1,10) <= ?`, inicio, fim),
+		tentativas: um(`SELECT count(*) FROM tentativas_contato WHERE substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ?`, inicio, fim),
+	}
 }
