@@ -19,6 +19,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useRef, useState } from 'react';
 import * as bindings from '../wailsjs/go/main/App';
+import { main } from '../wailsjs/go/models';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 import type { Comissao, ResultadoCobranca, Ticket, Vinculo360 } from './wails-types';
 import BuscarCliente360Dialog from './components/BuscarCliente360Dialog';
@@ -484,6 +485,9 @@ export default function App() {
   // que estão na coluna "Visita Agendada" sem data gravada — alimentam o botão
   // 📅 Visitas. Ordenadas pela data e depois pelo horário/turno.
   const [menuVisitas, setMenuVisitas] = useState<{ x: number; y: number } | null>(null);
+  // Visitas agendadas pelo CRM: contagem nova vs kanban (busca ao abrir o 📅).
+  const [visitasCrm, setVisitasCrm] = useState<main.ResumoCrmVisitas | null>(null);
+  const [importandoVisitasCrm, setImportandoVisitasCrm] = useState(false);
   const [menuGrupoPos, setMenuGrupoPos] = useState<{ x: number; y: number }>({ x: 64, y: 40 });
   const chaveDia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const hojeISO = chaveDia(new Date());
@@ -1094,6 +1098,10 @@ ${txt.trim()}` : txt.trim());
           onClick={(e) => {
             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
             setMenuVisitas((m) => (m ? null : { x: r.right + 8, y: r.top }));
+            // visitas agendadas no CRM vs kanban: conta as que faltam trazer
+            bindings.CrmVisitas()
+              .then((rv) => setVisitasCrm(rv))
+              .catch(() => setVisitasCrm(null));
           }}
         >
           📅
@@ -1254,6 +1262,35 @@ ${txt.trim()}` : txt.trim());
             style={{ left: menuVisitas.x, top: Math.min(menuVisitas.y, window.innerHeight - 200) }}
           >
             <p className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Visitas agendadas</p>
+            {visitasCrm && (
+              visitasCrm.novas > 0 ? (
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-indigo-700 dark:text-indigo-300 disabled:opacity-60"
+                  disabled={importandoVisitasCrm}
+                  onClick={async () => {
+                    setImportandoVisitasCrm(true);
+                    try {
+                      const msg = await bindings.CrmImportarVisitas();
+                      setMenuVisitas(null);
+                      showToast(msg, 6000);
+                      await recarregarBoard();
+                      const rv = await bindings.CrmVisitas();
+                      setVisitasCrm(rv);
+                    } catch (e) {
+                      showToast(String(e), 6000);
+                    } finally {
+                      setImportandoVisitasCrm(false);
+                    }
+                  }}
+                >
+                  🧲 {importandoVisitasCrm ? 'Trazendo…' : `${visitasCrm.novas} visita(s) do CRM fora do kanban — trazer`}
+                </button>
+              ) : (
+                <div className="px-3 py-2 text-emerald-700 dark:text-emerald-300">
+                  CRM em dia com o kanban ✓
+                </div>
+              )
+            )}
             {visitasProximas.length === 0 ? (
               <div className="px-3 py-2 text-slate-500 dark:text-slate-400">Nenhuma visita agendada.</div>
             ) : (

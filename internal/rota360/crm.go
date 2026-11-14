@@ -72,6 +72,16 @@ type EnderecoCRM struct {
 	CEP        string `json:"cep"`
 }
 
+// VisitaCRM é o resumo de visita do card no CRM (quando existe): data,
+// status (agendada/vencida/realizada) e estado da agenda do SDR.
+type VisitaCRM struct {
+	Data         string `json:"data"`
+	Status       string `json:"status"`
+	DiasVencida  int    `json:"dias_vencida"`
+	EstadoAgenda string `json:"estado_agenda"`
+	Origem       string `json:"origem"`
+}
+
 // NegociacaoCRM é um card do funil. Campos essenciais para o espelho; o que
 // não interessa ao app é omitido de propósito (o 360 devolve muito mais).
 type NegociacaoCRM struct {
@@ -85,6 +95,7 @@ type NegociacaoCRM struct {
 	ClienteNome    string     `json:"cliente_nome"`
 	Document       *string    `json:"documento"`
 	Telefone       string     `json:"telefone_norm"`
+	Endereco       *EnderecoCRM `json:"endereco"`
 	UnidadeNome    string     `json:"unidade_nome"`
 	ResponsavelID  string     `json:"responsavel_id"`
 	Responsavel    string     `json:"responsavel_nome"`
@@ -108,6 +119,21 @@ type NegociacaoCRM struct {
 	FechamentoPrev  *string `json:"fechamento_previsto"`
 	AtualizadoEm    string  `json:"atualizado_em"`
 	AtividadeUltima *string `json:"ultima_atividade_em"`
+	Visita          *VisitaCRM `json:"visita"`
+}
+
+// EnderecoTexto monta o endereço do card em uma linha (para o kanban).
+func (n *NegociacaoCRM) EnderecoTexto() string {
+	if n.Endereco == nil {
+		return ""
+	}
+	parts := []string{}
+	for _, p := range []string{n.Endereco.Logradouro + " " + n.Endereco.Numero, n.Endereco.Bairro, n.Endereco.Cidade} {
+		if s := strings.TrimSpace(p); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // PaginaNegociacoes é o envelope do GET /api/crm/negociacoes.
