@@ -517,6 +517,11 @@ export default function App() {
     return `${dia}${quando ? ' · ' + quando : ''} — ${t.nomeCliente}`;
   }
   const visitaAtrasada = (t: Ticket) => !!t.visitaData && t.visitaData < hojeISO;
+  // Visitas de hoje (não realizadas): alimentam o painel "Visitas de hoje" que
+  // aparece sozinho ao abrir o app, para o atendente não esquecer nenhuma.
+  const visitasHoje = visitasProximas.filter((t) => t.visitaData === hojeISO);
+  // Painel pode ser fechado pelo ✕ (só nesta sessão — ao reabrir o app volta).
+  const [painelVisitasFechado, setPainelVisitasFechado] = useState(false);
 
   async function verificarFechados() {
     if (verificandoFechados) return;
@@ -1450,6 +1455,48 @@ ${txt.trim()}` : txt.trim());
           )}
         </div>
       </header>
+
+      {/* Painel "Visitas de hoje": aparece sozinho ao abrir o app quando há
+          visitas marcadas para hoje — resumo com nome do cliente e hora, e um
+          botão por linha que abre o card no modal (mesma mecânica do menu 📅).
+          Sem visitas hoje não renderiza nada. */}
+      {visitasHoje.length > 0 && !painelVisitasFechado && (
+        <div className="glass rounded-2xl px-4 py-2.5 text-sm border border-amber-400/40 dark:border-amber-300/30 bg-amber-500/10 dark:bg-amber-400/10">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-amber-800 dark:text-amber-200">
+              📅 Visitas de hoje ({visitasHoje.length})
+            </span>
+            <div className="flex-1" />
+            <button
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-1"
+              title="Fechar o lembrete de hoje"
+              aria-label="Fechar lembrete de visitas de hoje"
+              onClick={() => setPainelVisitasFechado(true)}
+            >
+              ✕
+            </button>
+          </div>
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {visitasHoje.map((t) => (
+              <li key={t.id} className="flex items-center gap-2">
+                <span className="text-slate-700 dark:text-slate-200">
+                  🕐 {t.visitaHora || t.visitaTurno || '—'} — {t.nomeCliente}
+                </span>
+                <button
+                  className="ml-auto text-xs rounded-lg px-2 py-1 bg-white/70 hover:bg-white text-indigo-700 border border-white/70 shadow-sm dark:bg-white/10 dark:hover:bg-white/20 dark:text-indigo-300 dark:border-white/10"
+                  title={`Abrir o card de ${t.nomeCliente}`}
+                  onClick={() => {
+                    setPreCobranca(null);
+                    setAberto(t);
+                  }}
+                >
+                  Abrir card
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <DndContext
         sensors={sensors}
