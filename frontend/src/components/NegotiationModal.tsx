@@ -12,6 +12,7 @@ import type {
   RenegociacaoPronta,
   ResultadoCobranca,
   TentativaContato,
+  EventoLinhaDoTempo,
   Ticket,
   TicketDetalhe360,
   Vinculo360,
@@ -37,7 +38,7 @@ interface Props {
 }
 
 // Seções do card completo: o nav troca o conteúdo, estilo coluna do Kanban.
-type Aba = 'acordo' | 'proposta' | 'cliente' | 'ticket' | 'visita' | 'contatos' | 'observacoes' | 'financeiro' | 'historico';
+type Aba = 'acordo' | 'proposta' | 'cliente' | 'ticket' | 'visita' | 'contatos' | 'observacoes' | 'financeiro' | 'historico' | 'linhatempo';
 
 const abas: { id: Aba; icone: string; rotulo: string }[] = [
   { id: 'acordo', icone: '📝', rotulo: 'Acordo' },
@@ -49,6 +50,7 @@ const abas: { id: Aba; icone: string; rotulo: string }[] = [
   { id: 'observacoes', icone: '🗒️', rotulo: 'Observações' },
   { id: 'financeiro', icone: '💰', rotulo: 'Financeiro' },
   { id: 'historico', icone: '🕘', rotulo: 'Histórico' },
+  { id: 'linhatempo', icone: '📅', rotulo: 'Linha do tempo' },
 ];
 
 // Canais de contato do registro rápido (livre — pode digitar outro).
@@ -111,6 +113,23 @@ const dataBR = (iso: string) => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('pt-BR');
 };
 
+// Data e hora em pt-BR para a linha do tempo — ex.: "14/11/2026 15:02".
+const dataHoraBR = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+};
+
+// Ícone e rótulo por tipo de evento da linha do tempo.
+const iconeEvento: Record<string, string> = {
+  criacao: '🆕',
+  movimento: '➡️',
+  tentativa: '📞',
+  acordo: '📜',
+  observacao: '🗒️',
+  visita: '✅',
+};
+
 export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSalvou, onFechar, onAgendarVisita }: Props) {
   const [aba, setAba] = useState<Aba>('acordo');
   const [total, setTotal] = useState('');
@@ -137,6 +156,9 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
   const [condicoes, setCondicoes] = useState('');
   const [gerando, setGerando] = useState(false);
   const [gerarErro, setGerarErro] = useState('');
+  // Linha do tempo: eventos do card (leitura) carregados na abertura da aba.
+  const [linhaTempo, setLinhaTempo] = useState<EventoLinhaDoTempo[] | null>(null);
+  const [linhaTempoErro, setLinhaTempoErro] = useState('');
   const [reneg, setReneg] = useState<RenegociacaoPronta | null>(null);
   const [cobAtiva, setCobAtiva] = useState<Cobranca | null>(null);
   const [valorAtual, setValorAtual] = useState<number | null>(null);
@@ -203,6 +225,14 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
     App.VinculosDoCard(ticket.id).then((vs) => setVinculos(vs ?? [])).catch(() => {});
     App.ListarTentativasContato(ticket.id).then((l) => setContatos(l ?? [])).catch(() => setContatos([]));
   }, [ticket.id, preCobranca]);
+
+  // Linha do tempo: carrega quando a aba é aberta pela primeira vez.
+  useEffect(() => {
+    if (aba !== 'linhatempo' || linhaTempo || linhaTempoErro) return;
+    App.LinhaDoTempo(ticket.id)
+      .then((ev) => setLinhaTempo(ev ?? []))
+      .catch((e) => setLinhaTempoErro(String(e)));
+  }, [aba, ticket.id, linhaTempo, linhaTempoErro]);
 
   // Seleciona o vínculo exibido na aba Ticket: o principal por padrão; se a
   // lista mudar (vínculo removido), cai para o primeiro restante.
@@ -1472,6 +1502,28 @@ export default function NegotiationModal({ ticket, podeGerar, preCobranca, onSal
               </ul>
             ) : (
               <p className="text-sm text-slate-500 dark:text-slate-400">Nenhum acordo registrado para este cliente.</p>
+            )}
+          </div>
+        )}
+
+        {aba === 'linhatempo' && (
+          <div className="mt-3">
+            {linhaTempoErro ? (
+              <p className="text-sm text-red-600">Não consegui carregar a linha do tempo: {linhaTempoErro}</p>
+            ) : linhaTempo === null ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">Carregando…</p>
+            ) : linhaTempo.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">Nada registrado ainda para este cliente.</p>
+            ) : (
+              <ul className="text-sm text-slate-600 dark:text-slate-300 flex flex-col gap-1.5">
+                {linhaTempo.map((e, i) => (
+                  <li key={i} className="flex gap-2 border-b border-slate-100 dark:border-slate-600/40 pb-1.5 last:border-0">
+                    <span title={e.tipo} className="shrink-0">{iconeEvento[e.tipo] ?? '•'}</span>
+                    <span className="uppercase text-xs text-slate-500 dark:text-slate-400 shrink-0 pt-0.5">{dataHoraBR(e.data)}</span>
+                    <span className="break-words min-w-0">{e.texto}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}
