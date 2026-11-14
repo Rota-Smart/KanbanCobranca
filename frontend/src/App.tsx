@@ -560,7 +560,39 @@ export default function App() {
   // aparece sozinho ao abrir o app, para o atendente não esquecer nenhuma.
   const visitasHoje = visitasProximas.filter((t) => t.visitaData === hojeISO);
   // Painel pode ser fechado pelo ✕ (só nesta sessão — ao reabrir o app volta).
-  const [painelVisitasFechado, setPainelVisitasFechado] = useState(false);
+  const [painelFilaFechado, setPainelFilaFechado] = useState(false);
+  // Fila do dia (follow-up calculado no backend): cards parados em colunas
+  // ativas, acordos com prazo chegando e orçamentos sem resposta. Recalcula
+  // quando o quadro muda (sync) ou o limite de dias parado muda.
+  const [fila, setFila] = useState<main.FilaDoDiaResult | null>(null);
+  const [filaDias, setFilaDias] = useState<number>(() => {
+    const v = Number(localStorage.getItem('filaDiasParado'));
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : 5;
+  });
+  useEffect(() => {
+    let vivo = true;
+    bindings.FilaDoDia(filaDias)
+      .then((r) => { if (vivo) setFila(r); })
+      .catch(() => { /* sem banco a fila simplesmente não acende */ });
+    return () => { vivo = false; };
+  }, [filaDias, board]);
+  function mudarFilaDias(v: number) {
+    const n = Math.max(1, Math.floor(v) || 5);
+    setFilaDias(n);
+    localStorage.setItem('filaDiasParado', String(n));
+  }
+  // abrirDaFila abre o card da linha no modal (mesma mecânica do painel de
+  // visitas): acha no board atual, recarregando do banco se estiver velho.
+  async function abrirDaFila(id: number) {
+    const t = await abrirCardPorId(id);
+    if (!t) {
+      showToast('Card não encontrado (pode ter sido apagado).');
+      return;
+    }
+    setPreCobranca(null);
+    setAberto(t);
+  }
+  const filaTemItens = !!(fila && (fila.parados?.length || fila.acordos?.length || fila.orcamentos?.length));
 
   async function verificarFechados() {
     if (verificandoFechados) return;
@@ -1520,31 +1552,44 @@ ${txt.trim()}` : txt.trim());
         </div>
       </header>
 
-      {/* Painel "Visitas de hoje": aparece sozinho ao abrir o app quando há
-          visitas marcadas para hoje — resumo com nome do cliente e hora, e um
-          botão por linha que abre o card no modal (mesma mecânica do menu 📅).
-          Sem visitas hoje não renderiza nada. */}
-      {visitasHoje.length > 0 && !painelVisitasFechado && (
+      {/* Painel "Fila do dia": visão única de manhã com o que merece ação
+          hoje — visitas marcadas, cards parados, acordos com prazo chegando e
+          orçamentos sem resposta. Aparece sozinho ao abrir o app quando há
+          qualquer item; cada linha abre o card no modal e itens de coluna
+          também focam a coluna. ✕ fecha só nesta sessão. */}
+      {(visitasHoje.length > 0 || filaTemItens) && !painelFilaFechado && (
         <div className="glass rounded-2xl px-4 py-2.5 text-sm border border-amber-400/40 dark:border-amber-300/30 bg-amber-500/10 dark:bg-amber-400/10">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-amber-800 dark:text-amber-200">
-              📅 Visitas de hoje ({visitasHoje.length})
+              ☀️ Fila do dia
             </span>
             <div className="flex-1" />
+            <label className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-300">
+              Parado há
+              <input
+                type="number"
+                min={1}
+                value={filaDias}
+                onChange={(e) => mudarFilaDias(Number(e.target.value))}
+                className="w-12 rounded-lg px-1 py-0.5 bg-white/70 dark:bg-white/10 border border-white/70 dark:border-white/10 text-center outline-none focus:ring-2 focus:ring-indigo-400/60"
+                title="Quantos dias sem movimento para o card entrar na fila"
+              />
+              + dias
+            </label>
             <button
               className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-1"
-              title="Fechar o lembrete de hoje"
-              aria-label="Fechar lembrete de visitas de hoje"
-              onClick={() => setPainelVisitasFechado(true)}
+              title="Fechar a fila de hoje"
+              aria-label="Fechar a fila do dia"
+              onClick={() => setPainelFilaFechado(true)}
             >
               ✕
             </button>
           </div>
           <ul className="mt-1 flex flex-col gap-0.5">
             {visitasHoje.map((t) => (
-              <li key={t.id} className="flex items-center gap-2">
+              <li key={'v' + t.id} className="flex items-center gap-2">
                 <span className="text-slate-700 dark:text-slate-200">
-                  🕐 {t.visitaHora || t.visitaTurno || '—'} — {t.nomeCliente}
+                  📅 🕐 {t.visitaHora || t.visitaTurno || '—'} — {t.nomeCliente}
                 </span>
                 <button
                   className="ml-auto text-xs rounded-lg px-2 py-1 bg-white/70 hover:bg-white text-indigo-700 border border-white/70 shadow-sm dark:bg-white/10 dark:hover:bg-white/20 dark:text-indigo-300 dark:border-white/10"
@@ -1553,6 +1598,57 @@ ${txt.trim()}` : txt.trim());
                     setPreCobranca(null);
                     setAberto(t);
                   }}
+                >
+                  Abrir card
+                </button>
+              </li>
+            ))}
+            {(fila?.parados ?? []).map((item) => (
+              <li key={'p' + item.ticketId} className="flex items-center gap-2">
+                <span className="text-slate-700 dark:text-slate-200">
+                  ⏰ {item.cliente} — {item.detalhe} ({item.coluna})
+                </span>
+                <span className="ml-auto flex items-center gap-1">
+                  <button
+                    className="text-xs rounded-lg px-2 py-1 bg-white/70 hover:bg-white text-indigo-700 border border-white/70 shadow-sm dark:bg-white/10 dark:hover:bg-white/20 dark:text-indigo-300 dark:border-white/10"
+                    title={`Focar a coluna ${item.coluna}`}
+                    onClick={() => setColunaFocada(item.coluna)}
+                  >
+                    Focar coluna
+                  </button>
+                  <button
+                    className="text-xs rounded-lg px-2 py-1 bg-white/70 hover:bg-white text-indigo-700 border border-white/70 shadow-sm dark:bg-white/10 dark:hover:bg-white/20 dark:text-indigo-300 dark:border-white/10"
+                    title={`Abrir o card de ${item.cliente}`}
+                    onClick={() => void abrirDaFila(item.ticketId)}
+                  >
+                    Abrir card
+                  </button>
+                </span>
+              </li>
+            ))}
+            {(fila?.acordos ?? []).map((item) => (
+              <li key={'a' + item.ticketId} className="flex items-center gap-2">
+                <span className="text-slate-700 dark:text-slate-200">
+                  🤝 {item.cliente} — {item.detalhe}
+                </span>
+                <button
+                  className="ml-auto text-xs rounded-lg px-2 py-1 bg-white/70 hover:bg-white text-indigo-700 border border-white/70 shadow-sm dark:bg-white/10 dark:hover:bg-white/20 dark:text-indigo-300 dark:border-white/10"
+                  title={`Abrir o card de ${item.cliente}`}
+                  onClick={() => void abrirDaFila(item.ticketId)}
+                >
+                  Abrir card
+                </button>
+              </li>
+            ))}
+            {(fila?.orcamentos ?? []).map((item) => (
+              <li key={'o' + item.ticketId} className="flex items-center gap-2">
+                <span className="text-slate-700 dark:text-slate-200">
+                  📄 {item.cliente} — {item.detalhe}
+                </span>
+                <button
+                  className="ml-auto text-xs rounded-lg px-2 py-1 bg-white/70 hover:bg-white text-indigo-700 border border-white/70 shadow-sm dark:bg-white/10 dark:hover:bg-white/20 dark:text-indigo-300 dark:border-white/10"
+                  title={`Abrir o card de ${item.cliente}`}
+                  onClick={() => void abrirDaFila(item.ticketId)}
                 >
                   Abrir card
                 </button>
