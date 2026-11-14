@@ -21,6 +21,7 @@ export type Financeiro360 = rota360.Financeiro360;
 export type Fatura360 = rota360.Fatura360;
 export type Avaliacao = service.Avaliacao;
 export type ResultadoCobranca = main.ResultadoCobranca;
+export type EventoLinhaDoTempo = main.EventoLinhaDoTempo;
 export type RenegociacaoPronta = main.RenegociacaoPronta;
 export type ParametroNegociacao = db.ParametroNegociacao;
 export type ConfigApp = main.ConfigApp;
