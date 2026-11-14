@@ -208,6 +208,15 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
   const [vinculando, setVinculando] = useState(false);
   const [entradaTicket, setEntradaTicket] = useState('');
   const [erroVinculo, setErroVinculo] = useState('');
+  // Envio do card ao CRM do 360: escolhe funil/etapa e cria/move a negociação.
+  const [crmAberto, setCrmAberto] = useState(false);
+  const [crmFunis, setCrmFunis] = useState<{ id: string; nome: string }[]>([]);
+  const [crmEtapas, setCrmEtapas] = useState<{ id: string; funil_id: string; nome: string; ordem: number }[]>([]);
+  const [crmFunil, setCrmFunil] = useState('');
+  const [crmEtapa, setCrmEtapa] = useState('');
+  const [crmMsg, setCrmMsg] = useState('');
+  const [crmNegociacao, setCrmNegociacao] = useState<{ id: string } | null>(null);
+  const [crmEnviando, setCrmEnviando] = useState(false);
   const [tentativas, setTentativas] = useState<TentativaContato[]>([]);
   const cor = corPorTipo[ticket.tipoTicket] ?? corPorTipo['Outro'];
 
@@ -284,6 +293,47 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
       setErroVinculo(String(e));
     }
   }
+
+  // Abre o formulário de envio ao CRM; carrega funis/etapas na primeira vez.
+  function alternarCrm() {
+    const proximo = !crmAberto;
+    setCrmAberto(proximo);
+    setCrmMsg('');
+    setCrmNegociacao(null);
+    if (proximo && crmFunis.length === 0) {
+      bindings.CrmFunis()
+        .then((cfg) => {
+          const ativos = (cfg?.funis || []).filter((f) => f.situacao !== 'arquivado');
+          setCrmFunis(ativos);
+          setCrmEtapas(cfg?.etapas || []);
+          const rel = ativos.find((f) => /relacionamento/i.test(f.nome) || f.chave === 'relacionamento');
+          setCrmFunil(rel?.id ?? ativos[0]?.id ?? '');
+        })
+        .catch((e) => setCrmMsg(String(e)));
+    }
+  }
+
+  async function enviarCrm() {
+    if (!crmFunil) {
+      setCrmMsg('Escolha o funil.');
+      return;
+    }
+    setCrmEnviando(true);
+    setCrmMsg('');
+    try {
+      const n = await bindings.CrmEnviarCard(ticket.id, crmFunil, crmEtapa);
+      setCrmNegociacao(n);
+      setCrmMsg('Enviado ao CRM ✓');
+    } catch (e) {
+      setCrmMsg(String(e));
+    } finally {
+      setCrmEnviando(false);
+    }
+  }
+
+  const crmEtapasFunil = crmEtapas
+    .filter((e) => e.funil_id === crmFunil)
+    .sort((a, b) => a.ordem - b.ordem);
 
   const itemMenu =
     'block w-full text-left px-3 py-2 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200';
@@ -405,6 +455,62 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
         >
           {ticket.visitaData ? `Editar visita (${visitaResumo(ticket)})` : '📅 Agendar visita…'}
         </button>
+        <button className={itemMenu} onClick={alternarCrm}>
+          🧲 Enviar ao CRM…
+        </button>
+        {crmAberto && (
+          <div className="px-3 py-2 border-t border-slate-500/10 space-y-1.5">
+            <select
+              className="w-full border rounded px-2 py-1 text-xs bg-white/70 dark:bg-slate-800/70"
+              value={crmFunil}
+              onChange={(e) => {
+                setCrmFunil(e.target.value);
+                setCrmEtapa('');
+              }}
+              aria-label="Funil do CRM"
+            >
+              <option value="">Funil…</option>
+              {crmFunis.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.nome}
+                </option>
+              ))}
+            </select>
+            <select
+              className="w-full border rounded px-2 py-1 text-xs bg-white/70 dark:bg-slate-800/70"
+              value={crmEtapa}
+              onChange={(e) => setCrmEtapa(e.target.value)}
+              aria-label="Etapa do CRM"
+            >
+              <option value="">Etapa (padrão do funil)…</option>
+              {crmEtapasFunil.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.nome}
+                </option>
+              ))}
+            </select>
+            <button
+              className="w-full rounded-lg bg-indigo-600 text-white py-1.5 text-xs font-semibold disabled:opacity-60"
+              disabled={crmEnviando || !crmFunil}
+              onClick={enviarCrm}
+            >
+              {crmEnviando ? 'Enviando…' : 'Enviar ao CRM'}
+            </button>
+            {crmMsg && (
+              <p className={`text-[10px] ${crmMsg.includes('✓') ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                {crmMsg}
+              </p>
+            )}
+            {crmNegociacao && (
+              <button
+                className="w-full rounded-lg border border-slate-300/60 dark:border-slate-600/60 py-1.5 text-xs hover:bg-slate-500/10"
+                onClick={() => bindings.CrmAbrirJanela(`/crm/negociacoes/${crmNegociacao.id}`).catch((e) => setCrmMsg(String(e)))}
+              >
+                🗔 Abrir negociação no 360
+              </button>
+            )}
+          </div>
+        )}
         {ticket.visitaData && !ticket.visitaRealizada && (
           <button
             className="block w-full text-left px-3 py-2 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"

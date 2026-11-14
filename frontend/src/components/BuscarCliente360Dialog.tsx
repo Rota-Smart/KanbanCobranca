@@ -93,13 +93,24 @@ export default function BuscarCliente360Dialog(props: {
                   {r.Situacao && r.Situacao !== 'Ativo' ? ` · ${r.Situacao}` : ''}
                 </p>
               </div>
-              <button
-                className="shrink-0 bg-emerald-600 text-white rounded px-2 py-1 text-xs disabled:opacity-50"
-                disabled={importando !== null}
-                onClick={() => importar(r.CodCliente)}
-              >
-                {importando === r.CodCliente ? '…' : 'Adicionar'}
-              </button>
+              <div className="shrink-0 flex flex-col gap-1">
+                <button
+                  className="bg-emerald-600 text-white rounded px-2 py-1 text-xs disabled:opacity-50"
+                  disabled={importando !== null}
+                  onClick={() => importar(r.CodCliente)}
+                >
+                  {importando === r.CodCliente ? '…' : 'Adicionar'}
+                </button>
+                {/* Visão completa do cliente no 360: abre na janela nativa
+                    (mesma sessão, sem login). */}
+                <button
+                  className="border border-slate-300/60 dark:border-slate-600/60 rounded px-2 py-1 text-xs hover:bg-slate-500/10"
+                  title="Abrir a visão 360 completa deste cliente"
+                  onClick={() => App.CrmAbrirJanela(`/clientes?cod=${r.CodCliente}`).catch((e) => setErro(String(e)))}
+                >
+                  👁 Visão 360
+                </button>
+              </div>
             </li>
           ))}
         </ul>

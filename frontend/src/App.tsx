@@ -29,6 +29,7 @@ import KanbanColumn from './components/KanbanColumn';
 import MovimentarTicketDialog from './components/MovimentarTicketDialog';
 import NegotiationModal from './components/NegotiationModal';
 import PainelMetricas from './components/PainelMetricas';
+import FunilEspelho from './components/FunilEspelho';
 import type { ModoCard } from './components/TicketCard';
 import VisitaModal from './components/VisitaModal';
 import { formatCents } from './money';
@@ -242,6 +243,9 @@ export default function App() {
   const [sincronizando, setSincronizando] = useState(false);
   const [contaEstado, setContaEstado] = useState('');
   const [painelAberto, setPainelAberto] = useState(false);
+  const [funilAberto, setFunilAberto] = useState(false);
+  // Grupo aberto do rail (submenu): 'pesquisa' | 'crm' | 'fidelidade' | null
+  const [menuGrupo, setMenuGrupo] = useState<string | null>(null);
   // Tempo real: o sync emite 'conta:quadro' a cada mudança remota. Enfileirar o
   // reload (debounce curto) evita recarregar em rajada; durante o arrasto de um
   // card ele espera o fim, senão a tela volta ao estado de antes do arrasto.
@@ -480,6 +484,7 @@ export default function App() {
   // que estão na coluna "Visita Agendada" sem data gravada — alimentam o botão
   // 📅 Visitas. Ordenadas pela data e depois pelo horário/turno.
   const [menuVisitas, setMenuVisitas] = useState<{ x: number; y: number } | null>(null);
+  const [menuGrupoPos, setMenuGrupoPos] = useState<{ x: number; y: number }>({ x: 64, y: 40 });
   const chaveDia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const hojeISO = chaveDia(new Date());
   const visitasProximas = (() => {
@@ -1048,24 +1053,44 @@ ${txt.trim()}` : txt.trim());
         </button>
         <button
           className="rail-btn"
-          title="Buscar cliente no 360 (Shift+F3)"
-          aria-label="Buscar cliente no 360"
-          onClick={() => setBuscar360Coluna(colunas[0] ?? fallbackColunas[0])}
+          title="Pesquisa: clientes 360, tickets 360 e ações de ticket"
+          aria-label="Pesquisa"
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setMenuGrupo((m) => (m === 'pesquisa' ? null : 'pesquisa'));
+            setMenuGrupoPos({ x: r.right + 8, y: r.top });
+          }}
         >
-          🔎
+          🔍
         </button>
         <button
           className="rail-btn"
-          title="Pesquisar tickets abertos do 360 (Shift+F4)"
-          aria-label="Pesquisar tickets do 360"
-          onClick={() => setBuscaTicketsAberta(true)}
+          title="CRM do 360: funil, propostas, assinaturas e RotaCad"
+          aria-label="CRM"
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setMenuGrupo((m) => (m === 'crm' ? null : 'crm'));
+            setMenuGrupoPos({ x: r.right + 8, y: r.top });
+          }}
         >
-          🎟
+          🧲
         </button>
         <button
           className="rail-btn"
-          title={`Visitas agendadas (qualquer data — atrasadas incluídas)${visitasProximas.length > 0 ? ` — ${visitasProximas.length}` : ''}`}
-          aria-label="Visitas agendadas"
+          title="Fidelidade: WhatsApp e pós-venda"
+          aria-label="Fidelidade"
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setMenuGrupo((m) => (m === 'fidelidade' ? null : 'fidelidade'));
+            setMenuGrupoPos({ x: r.right + 8, y: r.top });
+          }}
+        >
+          🎁
+        </button>
+        <button
+          className="rail-btn"
+          title={`Visitas e roteiro (qualquer data — atrasadas incluídas)${visitasProximas.length > 0 ? ` — ${visitasProximas.length}` : ''}`}
+          aria-label="Visitas e roteiro"
           onClick={(e) => {
             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
             setMenuVisitas((m) => (m ? null : { x: r.right + 8, y: r.top }));
@@ -1077,18 +1102,6 @@ ${txt.trim()}` : txt.trim());
               {visitasProximas.length}
             </span>
           )}
-        </button>
-        <button
-          className="rail-btn disabled:opacity-60"
-          title={verificandoFechados ? 'Conferindo tickets…' : 'Ações de ticket: mover para coluna ou fechar os finalizados'}
-          aria-label="Ações de ticket"
-          disabled={verificandoFechados}
-          onClick={(e) => {
-            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            setMenuAcao((m) => (m ? null : { x: r.right + 8, y: r.top }));
-          }}
-        >
-          {verificandoFechados ? '🔍' : '🎫'}
         </button>
         <div className="flex-1" />
         <button
@@ -1106,6 +1119,133 @@ ${txt.trim()}` : txt.trim());
       </aside>
 
       {/* Menus abertos pelos botões do rail: abrem à direita do botão. */}
+      {menuGrupo && (
+        <>
+          <div className="fixed inset-0 z-[100]" onClick={() => setMenuGrupo(null)} />
+          <div
+            className="fixed z-[101] rounded-2xl text-xs bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-white/60 dark:border-slate-600/60 shadow-2xl overflow-y-auto max-h-[70vh] min-w-[15rem] py-1"
+            style={{ left: menuGrupoPos.x, top: Math.min(menuGrupoPos.y, window.innerHeight - 320) }}
+          >
+            {menuGrupo === 'pesquisa' && (
+              <>
+                <p className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Pesquisa</p>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
+                  onClick={() => {
+                    setMenuGrupo(null);
+                    setBuscar360Coluna(colunas[0] ?? fallbackColunas[0]);
+                  }}
+                >
+                  👥 Clientes 360 (Shift+F3)
+                </button>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
+                  onClick={() => {
+                    setMenuGrupo(null);
+                    setBuscaTicketsAberta(true);
+                  }}
+                >
+                  🎟 Tickets 360 (Shift+F4)
+                </button>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10 disabled:opacity-50"
+                  disabled={verificandoFechados}
+                  onClick={() => {
+                    setMenuGrupo(null);
+                    setMenuAcao({ x: menuGrupoPos.x, y: menuGrupoPos.y });
+                  }}
+                >
+                  {verificandoFechados ? '🔍 Conferindo tickets…' : '🎫 Ações de ticket'}
+                </button>
+              </>
+            )}
+            {menuGrupo === 'crm' && (
+              <>
+                <p className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">CRM · Comercial</p>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
+                  onClick={() => {
+                    setMenuGrupo(null);
+                    setFunilAberto(true);
+                  }}
+                >
+                  🧲 Funil (no app, arrasta card)
+                </button>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
+                  onClick={() => {
+                    setMenuGrupo(null);
+                    bindings.CrmAbrirJanela('/crm/propostas?aba=montar').catch((e) => alert(String(e)));
+                  }}
+                >
+                  📝 Propostas
+                </button>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
+                  onClick={() => {
+                    setMenuGrupo(null);
+                    bindings.CrmAbrirJanela('/crm/assinaturas').catch((e) => alert(String(e)));
+                  }}
+                >
+                  💼 Minhas assinaturas
+                </button>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
+                  onClick={() => {
+                    setMenuGrupo(null);
+                    bindings.CrmAbrirJanela('/crm/prospeccao/registro').catch((e) => alert(String(e)));
+                  }}
+                >
+                  📈 Painel Consultor
+                </button>
+                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">CRM · RotaCad</p>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
+                  onClick={() => {
+                    setMenuGrupo(null);
+                    bindings.CrmAbrirJanela('/crm/projetos').catch((e) => alert(String(e)));
+                  }}
+                >
+                  📋 RotaCad (projetos)
+                </button>
+                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">CRM · Visão 360</p>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
+                  onClick={() => {
+                    setMenuGrupo(null);
+                    setBuscar360Coluna(colunas[0] ?? fallbackColunas[0]);
+                  }}
+                >
+                  👥 Buscar cliente (visão completa)
+                </button>
+              </>
+            )}
+            {menuGrupo === 'fidelidade' && (
+              <>
+                <p className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Fidelidade</p>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
+                  onClick={() => {
+                    setMenuGrupo(null);
+                    bindings.CrmAbrirJanela('/crm/canais?aba=whatsapp').catch((e) => alert(String(e)));
+                  }}
+                >
+                  💬 WhatsApp
+                </button>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
+                  onClick={() => {
+                    setMenuGrupo(null);
+                    bindings.CrmAbrirJanela('/crm/pos-venda?aba=implantacao').catch((e) => alert(String(e)));
+                  }}
+                >
+                  🛠 Pós-venda / Fidelidade Ijuí
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
       {menuVisitas && (
         <>
           <div className="fixed inset-0 z-[100]" onClick={() => setMenuVisitas(null)} />
@@ -1621,6 +1761,7 @@ ${txt.trim()}` : txt.trim());
 
       {configAberta && <Configuracoes onFechar={() => setConfigAberta(false)} onToast={showToast} />}
       {painelAberto && <PainelMetricas onFechar={() => setPainelAberto(false)} />}
+      {funilAberto && <FunilEspelho onFechar={() => setFunilAberto(false)} />}
 
       {chatAberto && (
         <ChatDrawer
