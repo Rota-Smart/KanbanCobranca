@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { GetMetricas } from '../../wailsjs/go/main/App';
+import { GetMetricas, TempoPorColuna } from '../../wailsjs/go/main/App';
 import { formatCents } from '../money';
 
 export interface Metricas {
@@ -12,6 +12,23 @@ export interface Metricas {
   valorEmAbertoCents: number;
   visitasAgendadas: number;
   visitasHoje: number;
+}
+
+export interface TempoColuna {
+  coluna: string;
+  mediaSegundos: number;
+  cards: number;
+}
+
+// "3d 4h", "5h 12min" ou "32min" — tempo médio de permanência na coluna.
+export function formatarTempo(segundos: number): string {
+  if (!segundos || segundos < 60) return '—';
+  const d = Math.floor(segundos / 86400);
+  const h = Math.floor((segundos % 86400) / 3600);
+  const min = Math.floor((segundos % 3600) / 60);
+  if (d > 0) return h > 0 ? `${d}d ${h}h` : `${d}d`;
+  if (h > 0) return min > 0 ? `${h}h ${min}min` : `${h}h`;
+  return `${min}min`;
 }
 
 // Bloco grande de número do painel.
@@ -34,12 +51,16 @@ export default function PainelMetricas(props: {
   onClicarColuna?: (coluna: string) => void;
 }) {
   const [m, setM] = useState<Metricas | null>(null);
+  const [tempos, setTempos] = useState<TempoColuna[]>([]);
   const [erro, setErro] = useState('');
 
   useEffect(() => {
     GetMetricas()
       .then((d) => setM(d as unknown as Metricas))
       .catch((e) => setErro(String(e)));
+    TempoPorColuna()
+      .then((d) => setTempos((d as unknown as TempoColuna[]) || []))
+      .catch(() => setTempos([]));
   }, []);
 
   return (
@@ -91,6 +112,25 @@ export default function PainelMetricas(props: {
                 ))}
                 {m.porColuna.length === 0 && (
                   <li className="text-sm text-slate-500 dark:text-slate-400">quadro vazio</li>
+                )}
+              </ul>
+            </section>
+
+            <section className="mt-3 border rounded-lg p-3">
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">⏱️ Tempo médio por coluna</h3>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">onde os cards passam mais tempo (gargalos)</p>
+              <ul className="mt-2 space-y-1">
+                {tempos.map((t) => (
+                  <li key={t.coluna} className="flex items-center justify-between text-sm">
+                    <span className="text-slate-600 dark:text-slate-300 truncate">{t.coluna}</span>
+                    <span className="text-slate-800 dark:text-white">
+                      <span className="font-semibold">{formatarTempo(t.mediaSegundos)}</span>
+                      <span className="text-xs text-slate-400 dark:text-slate-500 ml-2">{t.cards} cards</span>
+                    </span>
+                  </li>
+                ))}
+                {tempos.length === 0 && (
+                  <li className="text-sm text-slate-500 dark:text-slate-400">sem dados ainda</li>
                 )}
               </ul>
             </section>
