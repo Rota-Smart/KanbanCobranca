@@ -214,7 +214,16 @@ export default function ChatDrawer(props: {
   async function enviar(textoForcado?: string, chatDaFila?: number | null) {
     const m = (textoForcado ?? texto).trim();
     if (!m) return;
-    if (enviandoEm !== null && chatIDRef.current !== null) {
+    // Um pedido por vez: com resposta em voo, TODO envio passa pelo caminho
+    // local/fila — inclusive o de uma conversa nova (chatID null), que senão
+    // dispararia um segundo EnviarChat em paralelo e bagunçaria o estado de
+    // "pensando…" e o ⏹ (CancelaChat é por chatID, um slot só não dá conta).
+    if (enviandoEm !== null) {
+      if (chatIDRef.current === null) {
+        if (textoForcado === undefined) setTexto('');
+        setFila((f) => [...f, { texto: m, chat: null }]);
+        return;
+      }
       // Enquanto o assistente pensa, comandos rígidos (mover card, apagar,
       // /vincular…) rodam na hora pelo caminho local, sem IA e sem esperar
       // a resposta; o "pensando…" continua. O que não for comando local
