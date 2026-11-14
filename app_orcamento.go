@@ -147,6 +147,14 @@ func (a *App) GerarOrcamento(ticketID int64, selecao orcamento.Selecao) (string,
 	}
 	texto := res.PropostaTexto(cliente)
 	texto += a.classificacaoTexto(cod, selecao)
+	// Carimbo para a fila do dia ("orçamento sem resposta"): gerar a proposta
+	// é o nosso registro de envio — o usuário copia o texto e manda na hora.
+	if ticketID > 0 && a.db != nil {
+		if _, err := a.db.Exec(`UPDATE tickets SET orcamento_gerado_em = ? WHERE id = ?`,
+			time.Now().UTC().Format(formatoCarimbo), ticketID); err != nil {
+			slog.Warn("carimbar orcamento gerado", "err", err)
+		}
+	}
 	return texto, nil
 }
 
