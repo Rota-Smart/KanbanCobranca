@@ -28,7 +28,11 @@ function Numero(props: { rotulo: string; valor: string; destaque?: string }) {
 
 // PainelMetricas: resumo do quadro em números — cards por coluna, entradas e
 // fechados da semana, tempo médio até o fechamento, acordos ativos e visitas.
-export default function PainelMetricas(props: { onFechar: () => void }) {
+// Clicar num item de "Cards por coluna" fecha o painel e foca a coluna no quadro.
+export default function PainelMetricas(props: {
+  onFechar: () => void;
+  onClicarColuna?: (coluna: string) => void;
+}) {
   const [m, setM] = useState<Metricas | null>(null);
   const [erro, setErro] = useState('');
 
@@ -74,9 +78,15 @@ export default function PainelMetricas(props: { onFechar: () => void }) {
               <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Cards por coluna</h3>
               <ul className="mt-2 space-y-1">
                 {m.porColuna.map((c) => (
-                  <li key={c.coluna} className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600 dark:text-slate-300 truncate">{c.coluna}</span>
-                    <span className="font-semibold text-slate-800 dark:text-white">{c.total}</span>
+                  <li key={c.coluna}>
+                    <button
+                      className="w-full flex items-center justify-between text-sm rounded-lg px-1.5 -mx-1.5 py-0.5 hover:bg-slate-500/10 dark:hover:bg-white/10 cursor-pointer transition"
+                      title={`Mostrar só a coluna ${c.coluna}`}
+                      onClick={() => props.onClicarColuna?.(c.coluna)}
+                    >
+                      <span className="text-slate-600 dark:text-slate-300 truncate">{c.coluna}</span>
+                      <span className="font-semibold text-slate-800 dark:text-white">{c.total}</span>
+                    </button>
                   </li>
                 ))}
                 {m.porColuna.length === 0 && (

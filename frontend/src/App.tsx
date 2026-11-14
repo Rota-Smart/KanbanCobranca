@@ -257,6 +257,9 @@ export default function App() {
   const [ordenacoes, setOrdenacoes] = useState<Record<string, Ordenacao>>(ordenacoesDoStorage);
   const [filtroTexto, setFiltroTexto] = useState('');
   const [filtroAssunto, setFiltroAssunto] = useState('');
+  // Coluna focada pelo painel de métricas: clicar num item de "Cards por
+  // coluna" mostra só aquela coluna no quadro (null = todas).
+  const [colunaFocada, setColunaFocada] = useState<string | null>(null);
   const [vinculos, setVinculos] = useState<Vinculo360[]>([]);
   const [historicoFechados, setHistoricoFechados] = useState<FechadoHistorico[]>([]);
   const [historicoAberto, setHistoricoAberto] = useState(false);
@@ -1392,6 +1395,19 @@ ${txt.trim()}` : txt.trim());
         <div className="flex-1" />
 
         <div className="flex items-center gap-2 flex-wrap">
+          {colunaFocada && colunas.includes(colunaFocada) && (
+            <span className="flex items-center gap-1 text-xs rounded-lg px-2 py-1 bg-indigo-500/15 text-slate-700 dark:text-slate-100">
+              Coluna: {colunaFocada}
+              <button
+                aria-label="Limpar foco da coluna"
+                title="Mostrar todas as colunas"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer"
+                onClick={() => setColunaFocada(null)}
+              >
+                ✕
+              </button>
+            </span>
+          )}
           {filtroAtivo && (
             <>
               <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -1509,6 +1525,8 @@ ${txt.trim()}` : txt.trim());
         <div className="flex gap-4 pb-1 overflow-x-auto overscroll-x-contain flex-1 min-h-0">
           <SortableContext items={colunas} strategy={horizontalListSortingStrategy}>
               {colunas.map((c) => {
+                // Foco vindo do painel: mostra só a coluna clicada.
+                if (colunaFocada && c !== colunaFocada) return null;
                 const todosDaColuna = (board[c] ?? []).filter(cardVisivel);
                 const ehFechada = c === colunaTicketFechado;
                 // Coluna de fechados: só os últimos movidos ficam visíveis —
@@ -1844,7 +1862,16 @@ ${txt.trim()}` : txt.trim());
       )}
 
       {configAberta && <Configuracoes onFechar={() => setConfigAberta(false)} onToast={showToast} />}
-      {painelAberto && <PainelMetricas onFechar={() => setPainelAberto(false)} />}
+      {painelAberto && (
+        <PainelMetricas
+          onFechar={() => setPainelAberto(false)}
+          onClicarColuna={(coluna) => {
+            // Métrica clicável: fecha o painel e foca a coluna no quadro.
+            setColunaFocada(coluna);
+            setPainelAberto(false);
+          }}
+        />
+      )}
       {funilAberto && <FunilEspelho onFechar={() => setFunilAberto(false)} />}
 
       {chatAberto && (
