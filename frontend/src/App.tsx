@@ -24,6 +24,7 @@ import { EventsOn } from '../wailsjs/runtime/runtime';
 import type { Comissao, ResultadoCobranca, Ticket, Vinculo360 } from './wails-types';
 import BuscarCliente360Dialog from './components/BuscarCliente360Dialog';
 import BuscarTickets360Dialog from './components/BuscarTickets360Dialog';
+import FidelidadeDashboard from './components/FidelidadeDashboard';
 import ChatDrawer from './components/ChatDrawer';
 import Configuracoes from './components/Configuracoes';
 import KanbanColumn from './components/KanbanColumn';
@@ -263,6 +264,7 @@ export default function App() {
   const [comissoesAberto, setComissoesAberto] = useState(false);
   const [buscar360Coluna, setBuscar360Coluna] = useState<string | null>(null);
   const [buscaTicketsAberta, setBuscaTicketsAberta] = useState(false);
+  const [fidelidadeAberta, setFidelidadeAberta] = useState(false);
   const [movimentaAberta, setMovimentaAberta] = useState(false);
   const [configAberta, setConfigAberta] = useState(false);
   const [chatAberto, setChatAberto] = useState(false);
@@ -1279,6 +1281,15 @@ ${txt.trim()}` : txt.trim());
                   className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
                   onClick={() => {
                     setMenuGrupo(null);
+                    setFidelidadeAberta(true);
+                  }}
+                >
+                  📊 Dashboard de clientes
+                </button>
+                <button
+                  className="block w-full text-left px-3 py-2 hover:bg-slate-500/10"
+                  onClick={() => {
+                    setMenuGrupo(null);
                     bindings.CrmAbrirJanela('/crm/canais?aba=whatsapp').catch((e) => alert(String(e)));
                   }}
                 >
@@ -1725,6 +1736,8 @@ ${txt.trim()}` : txt.trim());
       )}
 
       {buscaTicketsAberta && <BuscarTickets360Dialog onFechar={() => setBuscaTicketsAberta(false)} />}
+
+      {fidelidadeAberta && <FidelidadeDashboard onFechar={() => setFidelidadeAberta(false)} />}
 
       {historicoAberto && (
         <div
