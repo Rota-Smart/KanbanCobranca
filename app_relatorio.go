@@ -88,10 +88,10 @@ func (a *App) contadoresRelatorio(ctx context.Context, inicio, fim string) conta
 		return n
 	}
 	return contadoresRel{
-		novos:      um(`SELECT count(*) FROM tickets WHERE substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ?`, inicio, fim),
-		visitas:    um(`SELECT count(*) FROM tickets WHERE visita_realizada_em != '' AND substr(visita_realizada_em,1,10) >= ? AND substr(visita_realizada_em,1,10) <= ?`, inicio, fim),
-		fechados:   um(`SELECT count(*) FROM movimentacoes WHERE para_coluna = ? AND substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ?`, ColunaTicketFechado, inicio, fim),
-		acordos:    um(`SELECT count(*) FROM cobrancas WHERE status = 'concluida' AND substr(updated_at,1,10) >= ? AND substr(updated_at,1,10) <= ?`, inicio, fim),
-		tentativas: um(`SELECT count(*) FROM tentativas_contato WHERE substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ?`, inicio, fim),
+		novos:      um(`SELECT count(*) FROM tickets WHERE date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?`, inicio, fim),
+		visitas:    um(`SELECT count(*) FROM tickets WHERE visita_realizada_em != '' AND date(visita_realizada_em, 'localtime') >= ? AND date(visita_realizada_em, 'localtime') <= ?`, inicio, fim),
+		fechados:   um(`SELECT count(*) FROM movimentacoes WHERE para_coluna = ? AND date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?`, ColunaTicketFechado, inicio, fim),
+		acordos:    um(`SELECT count(*) FROM cobrancas WHERE status = 'concluida' AND date(updated_at, 'localtime') >= ? AND date(updated_at, 'localtime') <= ?`, inicio, fim),
+		tentativas: um(`SELECT count(*) FROM tentativas_contato WHERE date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?`, inicio, fim),
 	}
 }
