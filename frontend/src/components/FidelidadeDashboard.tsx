@@ -1,14 +1,27 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as App from '../../wailsjs/go/main/App';
-import type { ResumoCliente360 } from '../wails-types';
+import type { ContratoResumo, ResumoCliente360 } from '../wails-types';
+import {
+  chaveCacheContratos,
+  formatTempoContrato,
+  gravarCacheContratos,
+  lerCacheContratos,
+  lerComConcorrencia,
+  parseDataBR,
+} from '../fidelidade';
 
 // FidelidadeDashboard: visão e ação sobre a base de clientes do programa
 // (fonte: busca de clientes do 360, mesma usada na pesquisa). Cabeçalho com
 // números clicáveis que filtram a lista, distribuição visual por status e
 // lista interativa com ordenação, filtro e abertura da visão 360.
+// A ordenação por fidelidade usa o PRIMEIRO contrato do cliente — os dados
+// são lidos progressivamente (1 request por cliente) e cacheados por 15 min.
 
 type FiltroStatus = 'todos' | 'ativos' | 'inativos' | 'semcpf';
-type Ordem = 'nome' | 'situacao' | 'codigo';
+type Ordem = 'nome' | 'situacao' | 'codigo' | 'fidelidade-antiga' | 'fidelidade-nova' | 'tempo';
+
+// Ordens que dependem dos contratos (leitura progressiva, 1 request/cliente).
+const ordensContrato: Ordem[] = ['fidelidade-antiga', 'fidelidade-nova', 'tempo'];
 
 function situacaoAtiva(r: ResumoCliente360): boolean {
   return (r.Situacao || '').trim().toLowerCase() === 'ativo';
@@ -28,6 +41,12 @@ export default function FidelidadeDashboard(props: { onFechar: () => void }) {
   const [ordem, setOrdem] = useState<Ordem>('nome');
   const [ordemAsc, setOrdemAsc] = useState(true);
   const [expandido, setExpandido] = useState<number | null>(null);
+  const [termoBase, setTermoBase] = useState('');
+  // Resumos de contrato por código do cliente (null = leitura falhou → "—").
+  const [contratos, setContratos] = useState<Record<string, ContratoResumo | null>>({});
+  const [leitura, setLeitura] = useState<{ feitas: number; total: number } | null>(null);
+  const cancelarLeitura = useRef(false);
+  const lendoRef = useRef(false);
 
   async function carregar() {
     const q = termo.trim();
@@ -35,8 +54,13 @@ export default function FidelidadeDashboard(props: { onFechar: () => void }) {
     setCarregando(true);
     setErro('');
     setExpandido(null);
+    cancelarLeitura.current = true; // nova base: para a leitura anterior
     try {
-      setClientes(await App.Rota360BuscarClientes(q));
+      const base = await App.Rota360BuscarClientes(q);
+      setTermoBase(q);
+      setContratos({});
+      setLeitura(null);
+      setClientes(base);
     } catch (e) {
       setErro(String(e));
       setClientes([]);
@@ -44,6 +68,48 @@ export default function FidelidadeDashboard(props: { onFechar: () => void }) {
       setCarregando(false);
     }
   }
+
+  // lerContratosFaltantes: leitura progressiva dos resumos de contrato dos
+  // clientes que ainda não têm dado (cache de 15 min em localStorage). Roda
+  // 2 em paralelo e atualiza a lista conforme chega; botão cancelar para o loop.
+  async function lerContratosFaltantes(alvo: ResumoCliente360[], chave: string) {
+    if (lendoRef.current) return;
+    const cache = lerCacheContratos(chave);
+    let dados: Record<string, ContratoResumo | null> = cache ? { ...cache } : {};
+    if (cache) setContratos(dados);
+    const faltantes = alvo.filter((r) => !(r.CodCliente in dados));
+    if (faltantes.length === 0) return;
+    lendoRef.current = true;
+    cancelarLeitura.current = false;
+    setLeitura({ feitas: 0, total: faltantes.length });
+    let feitas = 0;
+    const total = faltantes.length;
+    await lerComConcorrencia(
+      faltantes,
+      2,
+      async (r) => App.ContratosResumo(String(r.CodCliente)),
+      (r, res) => {
+        feitas++;
+        dados = { ...dados, [String(r.CodCliente)]: res };
+        setContratos(dados);
+        setLeitura({ feitas, total });
+        if (feitas === total) gravarCacheContratos(chave, dados);
+      },
+      () => cancelarLeitura.current,
+    );
+    lendoRef.current = false;
+    setLeitura(null);
+    // Cache parcial: grava o que deu para usar na próxima abertura.
+    gravarCacheContratos(chave, dados);
+  }
+
+  // Ao ativar uma ordem de fidelidade (ou carregar base nova com ela ativa),
+  // dispara a leitura dos contratos que faltam.
+  useEffect(() => {
+    if (!termoBase || !ordensContrato.includes(ordem) || !clientes?.length) return;
+    void lerContratosFaltantes(clientes, chaveCacheContratos(termoBase));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ordem, clientes, termoBase]);
 
   const resumo = useMemo(() => {
     const lista = clientes ?? [];
@@ -58,12 +124,23 @@ export default function FidelidadeDashboard(props: { onFechar: () => void }) {
     else if (filtro === 'inativos') l = l.filter((r) => !situacaoAtiva(r));
     else if (filtro === 'semcpf') l = l.filter((r) => !(r.CGCCPF || '').trim());
     const sinal = ordemAsc ? 1 : -1;
+    const assinaturaDe = (r: ResumoCliente360): number => {
+      const d = parseDataBR(contratos[String(r.CodCliente)]?.PrimeiraAssinatura);
+      return d ? d.getTime() : Number.POSITIVE_INFINITY; // sem dado vai pro fim
+    };
     return [...l].sort((a, b) => {
       if (ordem === 'codigo') return (a.CodCliente - b.CodCliente) * sinal;
       if (ordem === 'situacao') return situacaoCurta(a).localeCompare(situacaoCurta(b), 'pt-BR') * sinal || a.Nome.localeCompare(b.Nome, 'pt-BR');
+      if (ordem === 'fidelidade-antiga') return (assinaturaDe(a) - assinaturaDe(b)) * sinal || a.Nome.localeCompare(b.Nome, 'pt-BR');
+      if (ordem === 'fidelidade-nova') return (assinaturaDe(a) - assinaturaDe(b)) * sinal || a.Nome.localeCompare(b.Nome, 'pt-BR');
+      if (ordem === 'tempo') {
+        const mesesA = contratos[String(a.CodCliente)]?.MesesDeContrato ?? -1;
+        const mesesB = contratos[String(b.CodCliente)]?.MesesDeContrato ?? -1;
+        return (mesesB - mesesA) * sinal || a.Nome.localeCompare(b.Nome, 'pt-BR');
+      }
       return a.Nome.localeCompare(b.Nome, 'pt-BR') * sinal;
     });
-  }, [clientes, filtro, ordem, ordemAsc]);
+  }, [clientes, filtro, ordem, ordemAsc, contratos]);
 
   function clicarCard(f: FiltroStatus) {
     setFiltro((atual) => (atual === f ? 'todos' : f));
@@ -160,13 +237,16 @@ export default function FidelidadeDashboard(props: { onFechar: () => void }) {
             )}
 
             {/* Ordenação da lista. */}
-            <div className="mt-4 flex items-center gap-2 text-xs">
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-400">Ordenar por:</span>
               {(
                 [
                   ['nome', 'Nome'],
                   ['situacao', 'Status'],
                   ['codigo', 'Código'],
+                  ['fidelidade-antiga', 'Fidelidade mais antiga'],
+                  ['fidelidade-nova', 'Fidelidade mais nova'],
+                  ['tempo', 'Maior tempo de contrato'],
                 ] as [Ordem, string][]
               ).map(([k, rotulo]) => (
                 <button
@@ -176,7 +256,9 @@ export default function FidelidadeDashboard(props: { onFechar: () => void }) {
                     if (ordem === k) setOrdemAsc((v) => !v);
                     else {
                       setOrdem(k);
-                      setOrdemAsc(true);
+                      // Sentido natural de cada ordem nova: antiga = mais
+                      // antiga primeiro; nova/tempo = mais recente/maior primeiro.
+                      setOrdemAsc(k === 'fidelidade-antiga');
                     }
                   }}
                 >
@@ -191,6 +273,23 @@ export default function FidelidadeDashboard(props: { onFechar: () => void }) {
               )}
             </div>
 
+            {/* Progresso da leitura dos contratos (ordens de fidelidade). */}
+            {leitura && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span>
+                  lendo contratos {leitura.feitas}/{leitura.total}…
+                </span>
+                <button
+                  className="rounded border border-slate-300/60 dark:border-slate-600/60 px-2 py-0.5 hover:bg-slate-500/10"
+                  onClick={() => {
+                    cancelarLeitura.current = true;
+                  }}
+                >
+                  cancelar
+                </button>
+              </div>
+            )}
+
             {/* Lista interativa. */}
             {lista.length === 0 ? (
               <p className="mt-4 text-sm text-slate-500">
@@ -201,6 +300,8 @@ export default function FidelidadeDashboard(props: { onFechar: () => void }) {
                 {lista.map((r) => {
                   const ativo = situacaoAtiva(r);
                   const aberto = expandido === r.CodCliente;
+                  const ct = contratos[String(r.CodCliente)];
+                  const tempo = ct?.PrimeiraAssinatura ? formatTempoContrato(ct.MesesDeContrato) : '';
                   return (
                     <li key={r.CodCliente} className="border rounded-lg">
                       <button
@@ -215,6 +316,15 @@ export default function FidelidadeDashboard(props: { onFechar: () => void }) {
                           </p>
                         </div>
                         <div className="shrink-0 flex items-center gap-2">
+                          {/* Tempo de contrato, quando já foi lido ("há 2a 3m"). */}
+                          {ordensContrato.includes(ordem) && (
+                            <span
+                              className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-300"
+                              title={ct?.PrimeiraAssinatura ? `Primeira assinatura: ${ct.PrimeiraAssinatura}` : ''}
+                            >
+                              {ct === undefined ? '…' : tempo ? `há ${tempo}` : '—'}
+                            </span>
+                          )}
                           <span
                             className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                               ativo ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' : 'bg-rose-500/15 text-rose-600 dark:text-rose-300'
@@ -227,11 +337,20 @@ export default function FidelidadeDashboard(props: { onFechar: () => void }) {
                       </button>
                       {aberto && (
                         <div className="border-t px-3 py-2 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p>CPF/CNPJ: {r.CGCCPF || '—'}</p>
+                        <div className="min-w-0">
+                          <p>CPF/CNPJ: {r.CGCCPF || '—'}</p>
+                          <p>
+                            Fone: {r.Fone1 || '—'} · Celular: {r.Celular || '—'}
+                          </p>
+                          {ct?.PrimeiraAssinatura ? (
                             <p>
-                              Fone: {r.Fone1 || '—'} · Celular: {r.Celular || '—'}
+                              Primeiro contrato: {ct.PrimeiraAssinatura}
+                              {ct.ContratoAtual ? ` · ${ct.ContratoAtual}` : ''}
+                              {ct.ContratoPrazo > 0 ? ` (${ct.ContratoPrazo}m)` : ''} · tempo de contrato: {tempo ? `há ${tempo}` : '—'}
                             </p>
+                          ) : (
+                            <p>Primeiro contrato: {ct === undefined ? 'não lido' : '—'}</p>
+                          )}
                             <p className="truncate">
                               Endereço: {r.Endereco || '—'}
                               {r.NumEndereco ? `, ${r.NumEndereco}` : ''} · {r.Cidade || '—'}
