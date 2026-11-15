@@ -27,6 +27,7 @@ export type ParametroNegociacao = db.ParametroNegociacao;
 export type ConfigApp = main.ConfigApp;
 export type ModeloCloudflare = main.ModeloCloudflare;
 export type Rota360Status = main.Rota360Status;
+export type ContratoResumo = main.ContratoResumo;
 export type UsoGroq = main.UsoGroq;
 export type AcaoDoAgente = service.AcaoDoAgente;
 export type ChatResultado = service.ChatResultado;
