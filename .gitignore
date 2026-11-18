@@ -3,3 +3,10 @@ node_modules/
 */node_modules/
 **/node_modules/
 
+# repos do site vivem aqui dentro, cada um com repo proprio — nunca rastrear
+Site/Backend/
+Site/FrontEnd/
+Site/Whatsapp/
+.zcode/
+.zcodeignore
+frontend/
