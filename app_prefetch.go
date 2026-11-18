@@ -219,6 +219,7 @@ func (a *App) prebuscaTicket(ctx context.Context, c *rota360.Cliente, numero str
 	if autor == "" {
 		autor = det.ResponsavelNome
 	}
+	a.sanearAssuntoVinculo(ctx, det.ID, assuntoDoDetalhe(det))
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Ticket #%s — %s [%s] | cliente %s (código %s) | assunto %s/%s | responsável %s\n\n",
 		det.Numero, det.Titulo, det.Status, det.Solicitante, det.CodService, det.CategoriaNome, det.AssuntoNome, det.ResponsavelNome)

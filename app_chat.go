@@ -1494,14 +1494,16 @@ func (a *App) vincularTicket360(ticketID int64, entrada string) (db.Ticket, stri
 	if err := a.tickets.VincularTicket360(a.ctx, t.ID, uuid, numero, cod); err != nil {
 		return db.Ticket{}, "", friendly("VincularTicket360", err)
 	}
-	// Vínculos múltiplos: registra também na lista (com o título do 360 como
-	// assunto) para a aba Cliente exibir e abrir cada ticket. O vínculo
-	// principal já foi gravado — falha aqui não pode virar "não consegui
-	// vincular" (o card fica vinculado e o chat acusando erro); vira aviso.
+	// Vínculos múltiplos: registra também na lista (com o assunto real do 360)
+	// para a aba Cliente exibir e abrir cada ticket, e o filtro por assunto do
+	// board casar com "Cobrança", "Cancelamento" etc. (o título do ticket é
+	// genérico: "Em andamento", "Pendente"…). O vínculo principal já foi
+	// gravado — falha aqui não pode virar "não consegui vincular" (o card fica
+	// vinculado e o chat acusando erro); vira aviso.
 	if a.vinculos != nil {
 		assunto := ""
 		if det != nil {
-			assunto = det.Titulo
+			assunto = assuntoDoDetalhe(det)
 		}
 		if err := a.vinculos.Upsert(a.ctx, t.ID, uuid, numero, assunto); err != nil {
 			slog.Warn("vínculo múltiplo não registrado", "card", t.ID, "ticket", numero, "err", err)
@@ -1702,6 +1704,7 @@ func (a *App) agentDetalheTicket(ctx context.Context, numero string) (string, st
 	if autor == "" {
 		autor = det.ResponsavelNome
 	}
+	a.sanearAssuntoVinculo(ctx, det.ID, assuntoDoDetalhe(det))
 	sb.WriteString(resumoMensagensTicket(det.Mensagens, autor))
 	return sb.String(), fmt.Sprintf("leu o ticket #%s do 360", det.Numero), nil
 }

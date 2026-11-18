@@ -131,6 +131,37 @@ func (a *App) VincularTicketsPendentes() (ResultadoVinculacao, error) {
 	return res, nil
 }
 
+// assuntoDoDetalhe é o assunto de verdade do ticket: o assunto_nome do 360
+// ("Cobrança", "Cancelamento"…), com a categoria e o título como reserva —
+// o título costuma ser genérico ("Em andamento", "Pendente").
+func assuntoDoDetalhe(det *rota360.TicketDetalhe360) string {
+	if s := strings.TrimSpace(det.AssuntoNome); s != "" {
+		return s
+	}
+	if s := strings.TrimSpace(det.CategoriaNome); s != "" {
+		return s
+	}
+	return strings.TrimSpace(det.Titulo)
+}
+
+// sanearAssuntoVinculo corrige, de passada, o assunto do vínculo do ticket
+// quando foi gravado com o título (versões antigas gravavam "Em andamento").
+// Falha silenciosa: é um favor, não pode atrapalhar quem chamou.
+func (a *App) sanearAssuntoVinculo(ctx context.Context, uuid, assunto string) {
+	if a.vinculos == nil || uuid == "" || assunto == "" {
+		return
+	}
+	vs, err := a.vinculos.ListTodos(ctx)
+	if err != nil {
+		return
+	}
+	for _, v := range vs {
+		if v.Ticket360ID == uuid && v.Assunto != assunto {
+			_ = a.vinculos.Upsert(ctx, v.TicketID, uuid, v.Ticket360Numero, assunto)
+		}
+	}
+}
+
 // escolherTicketParaCard acha na fila o melhor ticket para o card: primeiro
 // por código service exato; sem código (ou sem match), pelo nome do cliente
 // contra o solicitante do ticket nos dois sentidos. nil = nenhum candidato.

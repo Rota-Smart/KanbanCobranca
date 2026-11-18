@@ -424,6 +424,7 @@ func (a *App) detalheDoTicket(uuid string) *rota360.TicketDetalhe360 {
 		slog.Warn("detalhe do ticket do 360", "uuid", uuid, "err", err)
 		return nil
 	}
+	a.sanearAssuntoVinculo(ctx, t.ID, assuntoDoDetalhe(t))
 	return t
 }
 
