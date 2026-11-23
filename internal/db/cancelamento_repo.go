@@ -23,15 +23,16 @@ type Cancelamento struct {
 	ID        int64  `json:"id"`
 	TicketID  int64  `json:"ticketId"`
 	Motivo    string `json:"motivo"`
-	Resultado string `json:"resultado"` // reversao | perda
+	Resultado string `json:"resultado"` // reversao | perda | em_tratamento
 	CriadoEm  string `json:"criadoEm"`
 }
 
 type MetricaMotivo struct {
-	Motivo   string `json:"motivo"`
-	Total    int    `json:"total"`
-	Reversao int    `json:"reversao"`
-	Perda    int    `json:"perda"`
+	Motivo     string `json:"motivo"`
+	Total      int    `json:"total"`
+	Reversao   int    `json:"reversao"`
+	Perda      int    `json:"perda"`
+	Tratamento int    `json:"tratamento"`
 }
 
 type PontoSerie struct {
@@ -41,11 +42,12 @@ type PontoSerie struct {
 }
 
 type MetricasCancelamento struct {
-	Total     int             `json:"total"`
-	Reversao  int             `json:"reversao"`
-	Perda     int             `json:"perda"`
-	PorMotivo []MetricaMotivo `json:"porMotivo"`
-	Serie     []PontoSerie    `json:"serie"`
+	Total      int             `json:"total"`
+	Reversao   int             `json:"reversao"`
+	Perda      int             `json:"perda"`
+	Tratamento int             `json:"tratamento"`
+	PorMotivo  []MetricaMotivo `json:"porMotivo"`
+	Serie      []PontoSerie    `json:"serie"`
 }
 
 type CancelamentoRepo struct {
@@ -164,9 +166,10 @@ func (r *CancelamentoRepo) Metricas(ctx context.Context, dias int) (*MetricasCan
 	err := r.db.QueryRowContext(ctx,
 		`SELECT count(*),
 		        COALESCE(SUM(CASE WHEN resultado='reversao' THEN 1 ELSE 0 END),0),
-		        COALESCE(SUM(CASE WHEN resultado='perda' THEN 1 ELSE 0 END),0)
+		        COALESCE(SUM(CASE WHEN resultado='perda' THEN 1 ELSE 0 END),0),
+		        COALESCE(SUM(CASE WHEN resultado='em_tratamento' THEN 1 ELSE 0 END),0)
 		 FROM cancelamentos c`+filtro, args...,
-	).Scan(&m.Total, &m.Reversao, &m.Perda)
+	).Scan(&m.Total, &m.Reversao, &m.Perda, &m.Tratamento)
 	if err != nil {
 		return nil, fmt.Errorf("métricas de cancelamento: %w", err)
 	}
@@ -174,7 +177,8 @@ func (r *CancelamentoRepo) Metricas(ctx context.Context, dias int) (*MetricasCan
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT m.nome, count(*),
 		        COALESCE(SUM(CASE WHEN c.resultado='reversao' THEN 1 ELSE 0 END),0),
-		        COALESCE(SUM(CASE WHEN c.resultado='perda' THEN 1 ELSE 0 END),0)
+		        COALESCE(SUM(CASE WHEN c.resultado='perda' THEN 1 ELSE 0 END),0),
+		        COALESCE(SUM(CASE WHEN c.resultado='em_tratamento' THEN 1 ELSE 0 END),0)
 		 FROM cancelamentos c JOIN motivos_cancelamento m ON m.id = c.motivo_id`+filtro+`
 		 GROUP BY m.id ORDER BY count(*) DESC, m.nome`, args...)
 	if err != nil {
@@ -183,7 +187,7 @@ func (r *CancelamentoRepo) Metricas(ctx context.Context, dias int) (*MetricasCan
 	defer rows.Close()
 	for rows.Next() {
 		var x MetricaMotivo
-		if err := rows.Scan(&x.Motivo, &x.Total, &x.Reversao, &x.Perda); err != nil {
+		if err := rows.Scan(&x.Motivo, &x.Total, &x.Reversao, &x.Perda, &x.Tratamento); err != nil {
 			return nil, err
 		}
 		m.PorMotivo = append(m.PorMotivo, x)

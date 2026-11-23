@@ -16,7 +16,7 @@ const (
 
 // Erros de validação de padrões (voltam como mensagem ao agente/usuário).
 var (
-	ErrPadraoNomeVazio    = errPadrao("o padrão precisa de um nome")
+	ErrPadraoNomeVazio     = errPadrao("o padrão precisa de um nome")
 	ErrPadraoConteudoVazio = errPadrao("o conteúdo do padrão está vazio")
 	ErrPadraoNaoEncontrado = errPadrao("padrão não encontrado")
 	ErrPadroesExcedidos    = errPadrao("limite de 30 padrões atingido — apague um antes de criar outro")

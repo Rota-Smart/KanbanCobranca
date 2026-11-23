@@ -11,8 +11,9 @@ import (
 
 // Resultados válidos do cancelamento.
 const (
-	CancelamentoReversao = "reversao" // cliente reverteu, ficou
-	CancelamentoPerda    = "perda"    // cancelamento confirmado, cliente saiu
+	CancelamentoReversao   = "reversao"      // cliente reverteu, ficou
+	CancelamentoPerda      = "perda"         // cancelamento confirmado, cliente saiu
+	CancelamentoTratamento = "em_tratamento" // ainda tratando, ticket em aberto (lista colada)
 )
 
 // ErrCancelamentoSemMotivo bloqueia o fechamento: a mensagem carrega o marcador
@@ -20,9 +21,10 @@ const (
 var ErrCancelamentoSemMotivo = errors.New(
 	"CANCELAMENTO_SEM_MOTIVO: este card tem ticket de cancelamento — escolha o motivo (reversão ou perda) antes de fechar")
 
-// CancelamentoResultadoValido confere o resultado marcado no fechamento.
+// CancelamentoResultadoValido confere o resultado marcado no fechamento
+// (em_tratamento só entra pela lista colada — nunca pela trava de fechamento).
 func CancelamentoResultadoValido(r string) bool {
-	return r == CancelamentoReversao || r == CancelamentoPerda
+	return r == CancelamentoReversao || r == CancelamentoPerda || r == CancelamentoTratamento
 }
 
 // AssuntoCancelamento diz se o assunto do vínculo é de cancelamento — sem

@@ -25,7 +25,7 @@ func TestAuditoriaSobreviveAoApagarChat(t *testing.T) {
 		t.Fatalf("registrar local: %v", err)
 	}
 	if err := aud.Registrar(ctx, AuditoriaChat{ChatID: id, Origem: OrigemIA, Mensagem: "quem deve?",
-		Ferramentas: `[{"nome":"financeiro_cliente","args":"{\"cod\":\"1\"}"}]`,
+		Ferramentas:  `[{"nome":"financeiro_cliente","args":"{\"cod\":\"1\"}"}]`,
 		PromptTokens: 1200, CompletionTokens: 80, Rodadas: 2, DuracaoMs: 900}); err != nil {
 		t.Fatalf("registrar ia: %v", err)
 	}

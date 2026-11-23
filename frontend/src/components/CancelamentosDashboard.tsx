@@ -4,20 +4,51 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   BarChart, Bar,
 } from 'recharts';
-import { CancelamentosDoMotivo, GetTickets, MetricasCancelamentos } from '../../wailsjs/go/main/App';
+import { CancelamentosDoMotivo, GetColunas, GetTickets, ImportarCancelamentos, MetricasCancelamentos, PreviaImportarCancelamentos } from '../../wailsjs/go/main/App';
 import type { Ticket } from '../wails-types';
 
 // CancelamentosDashboard: abre pelo botão 🚪 no painel 📊. Mostra o total de
-// cancelamentos (últimos 7/30/90 dias ou todos), quantos viraram reversão ou
-// perda e a quebra por motivo — pizza clicável, linha por dia e barras por
-// motivo. Dados do banco local (o que esta máquina fechou).
+// cancelamentos (últimos 7/30/90 dias ou todos), quantos viraram reversão,
+// perda ou seguem em tratamento e a quebra por motivo — pizza clicável, linha
+// por dia e barras por motivo. O botão 📋 cola uma lista pronta
+// ("NOME - MOTIVO - CANCELADO") e importa tudo de uma vez.
 
 interface Metricas {
   total: number;
   reversao: number;
   perda: number;
-  porMotivo: { motivo: string; total: number; reversao: number; perda: number }[];
+  tratamento: number;
+  porMotivo: { motivo: string; total: number; reversao: number; perda: number; tratamento: number }[];
   serie: { dia: string; reversao: number; perda: number }[];
+}
+
+interface LinhaImport {
+  linha: number;
+  nome: string;
+  motivo: string;
+  resultado: string;
+  ticketId: number;
+  codService: string;
+  coluna: string;
+  candidatos: string[];
+}
+
+interface PreviaImport {
+  cancelados: LinhaImport[];
+  revertidos: LinhaImport[];
+  tratamento: LinhaImport[];
+  ambiguos: LinhaImport[];
+  semCard: LinhaImport[];
+  erros: string[];
+  totalLinhas: number;
+}
+
+interface ResumoImport {
+  registrados: number;
+  movidos: number;
+  importados: number;
+  jaFechados: number;
+  falhas: string[];
 }
 
 interface Cancelamento {
@@ -58,11 +89,23 @@ export default function CancelamentosDashboard(props: {
   const [motivoAberto, setMotivoAberto] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<Cancelamento[]>([]);
   const [tickets, setTickets] = useState<Record<number, Ticket>>({});
+  const [importador, setImportador] = useState(false);
+  const [texto, setTexto] = useState('');
+  const [previa, setPrevia] = useState<PreviaImport | null>(null);
+  const [colunaTratamento, setColunaTratamento] = useState('');
+  const [colunas, setColunas] = useState<string[]>([]);
+  const [importando, setImportando] = useState(false);
+  const [resumo, setResumo] = useState<ResumoImport | null>(null);
+  const [erroImport, setErroImport] = useState('');
 
-  useEffect(() => {
+  function recarregar() {
     MetricasCancelamentos(dias)
       .then((d) => setM(d as unknown as Metricas))
       .catch((e) => setErro(String(e)));
+  }
+
+  useEffect(() => {
+    recarregar();
     GetTickets()
       .then((ts) => {
         const idx: Record<number, Ticket> = {};
@@ -71,6 +114,44 @@ export default function CancelamentosDashboard(props: {
       })
       .catch(() => setTickets({}));
   }, [dias]);
+
+  async function abrirImportador() {
+    setImportador(true);
+    setPrevia(null);
+    setResumo(null);
+    setErroImport('');
+    try {
+      setColunas((await GetColunas()) as unknown as string[]);
+    } catch {
+      setColunas([]);
+    }
+  }
+
+  async function analisar() {
+    setErroImport('');
+    setResumo(null);
+    setPrevia(null);
+    try {
+      setPrevia((await PreviaImportarCancelamentos(texto)) as unknown as PreviaImport);
+    } catch (e) {
+      setErroImport(String(e));
+    }
+  }
+
+  async function importar() {
+    setImportando(true);
+    setErroImport('');
+    try {
+      const r = (await ImportarCancelamentos(texto, colunaTratamento)) as unknown as ResumoImport;
+      setResumo(r);
+      setPrevia(null);
+      recarregar();
+    } catch (e) {
+      setErroImport(String(e));
+    } finally {
+      setImportando(false);
+    }
+  }
 
   async function clicarMotivo(nome: string) {
     const nomeAberto = motivoAberto === nome ? null : nome;
@@ -84,10 +165,15 @@ export default function CancelamentosDashboard(props: {
     }
   }
 
-  const taxaReversao = useMemo(() => {
-    if (!m || m.total === 0) return '—';
-    return `${Math.round((m.reversao / m.total) * 100)}%`;
+  const fechados = useMemo(() => {
+    if (!m) return 0;
+    return m.reversao + m.perda;
   }, [m]);
+
+  const taxaReversao = useMemo(() => {
+    if (!m || fechados === 0) return '—';
+    return `${Math.round((m.reversao / fechados) * 100)}%`;
+  }, [m, fechados]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
@@ -97,10 +183,139 @@ export default function CancelamentosDashboard(props: {
       >
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-lg dark:text-slate-100">🚪 Dashboard de cancelamentos</h2>
-          <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="text-xs rounded-lg px-2.5 py-1.5 border border-blue-500/60 text-blue-600 dark:text-blue-300 hover:bg-blue-500/10"
+              onClick={abrirImportador}
+              title="Colar uma lista pronta e importar tudo"
+            >
+              📋 Colar lista
+            </button>
+            <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
+              ✕
+            </button>
+          </div>
         </div>
+
+        {importador && (
+          <div className="mt-3 border rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Colar lista de cancelamentos
+              </h3>
+              <button
+                className="text-slate-400 hover:text-slate-600 text-sm"
+                onClick={() => {
+                  setImportador(false);
+                  setPrevia(null);
+                  setResumo(null);
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Uma linha por cliente: <code>NOME - MOTIVO - CANCELADO</code>, <code>... - REVERTIDO</code> ou só{' '}
+              <code>NOME - MOTIVO</code> (em tratamento, ticket em aberto).
+            </p>
+            <textarea
+              className="w-full h-40 rounded-lg border bg-white/70 dark:bg-slate-800/70 p-2 text-sm font-mono"
+              placeholder={'SELVINO ALOISIO CLOSSMANN - TROCA DE ENDEREÇO - CANCELADO\nROSANE ELIA PAUSE - NÃO SABEMOS O MOTIVO'}
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+            />
+            {previa && (
+              <>
+                <div className="grid grid-cols-4 gap-2 text-center text-sm">
+                  <div className="rounded-lg bg-red-500/10 p-1.5">
+                    <div className="font-bold text-red-600 dark:text-red-400">{previa.cancelados.length}</div>
+                    <div className="text-xs text-slate-500">📉 cancelados</div>
+                  </div>
+                  <div className="rounded-lg bg-emerald-500/10 p-1.5">
+                    <div className="font-bold text-emerald-600 dark:text-emerald-400">{previa.revertidos.length}</div>
+                    <div className="text-xs text-slate-500">↩️ revertidos</div>
+                  </div>
+                  <div className="rounded-lg bg-amber-500/10 p-1.5">
+                    <div className="font-bold text-amber-600 dark:text-amber-400">{previa.tratamento.length}</div>
+                    <div className="text-xs text-slate-500">⏳ em tratamento</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-500/10 p-1.5">
+                    <div className="font-bold text-slate-600 dark:text-slate-300">{previa.totalLinhas}</div>
+                    <div className="text-xs text-slate-500">linhas</div>
+                  </div>
+                </div>
+                {previa.tratamento.length > 0 && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                      Mover os em tratamento para:
+                    </span>
+                    <select
+                      className="rounded-lg border bg-white/70 dark:bg-slate-800/70 px-2 py-1 text-sm"
+                      value={colunaTratamento}
+                      onChange={(e) => setColunaTratamento(e.target.value)}
+                    >
+                      <option value="">escolha a coluna…</option>
+                      {colunas.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {previa.ambiguos.length > 0 && (
+                  <ul className="text-xs text-orange-600 dark:text-orange-300 list-disc list-inside">
+                    {previa.ambiguos.map((x) => (
+                      <li key={x.linha}>
+                        {x.nome}: casa com vários cards ({x.candidatos.join(', ')}) — resolva no quadro
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {previa.semCard.length > 0 && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {previa.semCard.length} sem card no quadro — o import vai procurar no 360 pelo nome.
+                  </p>
+                )}
+                {previa.erros.map((e, i) => (
+                  <p key={i} className="text-xs text-red-600 dark:text-red-300">
+                    {e}
+                  </p>
+                ))}
+              </>
+            )}
+            {resumo && (
+              <div className="rounded-lg border p-2 text-sm space-y-1">
+                <p className="text-emerald-600 dark:text-emerald-400">
+                  ✅ {resumo.registrados} registrados · {resumo.movidos} movidos · {resumo.importados} criados do 360 ·{' '}
+                  {resumo.jaFechados} já na coluna
+                </p>
+                {resumo.falhas.map((f, i) => (
+                  <p key={i} className="text-xs text-red-600 dark:text-red-300">
+                    {f}
+                  </p>
+                ))}
+              </div>
+            )}
+            {erroImport && <p className="text-sm text-red-600 dark:text-red-300">{erroImport}</p>}
+            <div className="flex gap-2">
+              <button
+                className="text-xs rounded-lg px-2.5 py-1.5 border text-slate-600 dark:text-slate-300 hover:bg-slate-500/10 disabled:opacity-50"
+                onClick={analisar}
+                disabled={!texto.trim()}
+              >
+                🔍 Analisar
+              </button>
+              <button
+                className="text-xs rounded-lg px-2.5 py-1.5 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                onClick={importar}
+                disabled={!previa || importando}
+              >
+                {importando ? 'importando…' : '✅ Importar'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="mt-3 flex gap-1.5">
           {PERIODOS.map((p) => (
@@ -123,10 +338,11 @@ export default function CancelamentosDashboard(props: {
 
         {m && (
           <>
-            <div className="mt-4 grid grid-cols-4 gap-2">
-              <Numero rotulo="Cancelamentos" valor={String(m.total)} />
+            <div className="mt-4 grid grid-cols-5 gap-2">
+              <Numero rotulo="Registros" valor={String(m.total)} />
               <Numero rotulo="↩️ Reversões" valor={String(m.reversao)} destaque="text-emerald-600 dark:text-emerald-400" />
               <Numero rotulo="📉 Perdas" valor={String(m.perda)} destaque="text-red-600 dark:text-red-400" />
+              <Numero rotulo="⏳ Em tratamento" valor={String(m.tratamento)} destaque="text-amber-600 dark:text-amber-400" />
               <Numero rotulo="Taxa de reversão" valor={taxaReversao} destaque="text-indigo-600 dark:text-indigo-400" />
             </div>
 
@@ -198,6 +414,7 @@ export default function CancelamentosDashboard(props: {
                         <Legend wrapperStyle={{ fontSize: 12 }} />
                         <Bar dataKey="reversao" name="Reversão" stackId="a" fill="#10b981" />
                         <Bar dataKey="perda" name="Perda" stackId="a" fill="#ef4444" />
+                        <Bar dataKey="tratamento" name="Em tratamento" stackId="a" fill="#f59e0b" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
