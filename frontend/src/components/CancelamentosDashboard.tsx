@@ -244,23 +244,23 @@ export default function CancelamentosDashboard(props: {
               <>
                 <div className="grid grid-cols-4 gap-2 text-center text-sm">
                   <div className="rounded-lg bg-red-500/10 p-1.5">
-                    <div className="font-bold text-red-600 dark:text-red-400">{previa.cancelados.length}</div>
+                    <div className="font-bold text-red-600 dark:text-red-400">{previa.cancelados?.length ?? 0}</div>
                     <div className="text-xs text-slate-500">📉 cancelados</div>
                   </div>
                   <div className="rounded-lg bg-emerald-500/10 p-1.5">
-                    <div className="font-bold text-emerald-600 dark:text-emerald-400">{previa.revertidos.length}</div>
+                    <div className="font-bold text-emerald-600 dark:text-emerald-400">{previa.revertidos?.length ?? 0}</div>
                     <div className="text-xs text-slate-500">↩️ revertidos</div>
                   </div>
                   <div className="rounded-lg bg-amber-500/10 p-1.5">
-                    <div className="font-bold text-amber-600 dark:text-amber-400">{previa.tratamento.length}</div>
+                    <div className="font-bold text-amber-600 dark:text-amber-400">{previa.tratamento?.length ?? 0}</div>
                     <div className="text-xs text-slate-500">⏳ em tratamento</div>
                   </div>
                   <div className="rounded-lg bg-slate-500/10 p-1.5">
-                    <div className="font-bold text-slate-600 dark:text-slate-300">{previa.totalLinhas}</div>
+                    <div className="font-bold text-slate-600 dark:text-slate-300">{previa.totalLinhas ?? 0}</div>
                     <div className="text-xs text-slate-500">linhas</div>
                   </div>
                 </div>
-                {previa.tratamento.length > 0 && (
+                {(previa.tratamento?.length ?? 0) > 0 && (
                   <div className="flex items-center gap-2 text-sm">
                     <span className="text-slate-600 dark:text-slate-300 whitespace-nowrap">
                       Mover os em tratamento para:
@@ -279,17 +279,17 @@ export default function CancelamentosDashboard(props: {
                     </select>
                   </div>
                 )}
-                {previa.ambiguos.length > 0 && (
+                {(previa.ambiguos?.length ?? 0) > 0 && (
                   <ul className="text-xs text-orange-600 dark:text-orange-300 list-disc list-inside">
                     {previa.ambiguos.map((x) => (
                       <li key={x.linha}>
-                        {x.nome}: casa com vários cards ({x.candidatos.join(', ')}) — resolva no quadro
+                        {x.nome}: casa com vários cards ({(x.candidatos ?? []).join(', ')}) — resolva no quadro
                       </li>
                     ))}
                   </ul>
                 )}
                 {(() => {
-                  const todas = [...previa.cancelados, ...previa.revertidos, ...previa.tratamento];
+                  const todas = [...(previa.cancelados ?? []), ...(previa.revertidos ?? []), ...(previa.tratamento ?? [])];
                   const criar = todas.filter((x) => x.acao === 'criar').length;
                   return criar > 0 ? (
                     <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -297,12 +297,12 @@ export default function CancelamentosDashboard(props: {
                     </p>
                   ) : null;
                 })()}
-                {previa.semCard.length > 0 && (
+                {(previa.semCard?.length ?? 0) > 0 && (
                   <p className="text-xs text-orange-600 dark:text-orange-300">
                     {previa.semCard.length} não achei no 360 — conecte a sessão e importe de novo.
                   </p>
                 )}
-                {previa.erros.map((e, i) => (
+                {(previa.erros ?? []).map((e, i) => (
                   <p key={i} className="text-xs text-red-600 dark:text-red-300">
                     {e}
                   </p>
@@ -312,10 +312,10 @@ export default function CancelamentosDashboard(props: {
             {resumo && (
               <div className="rounded-lg border p-2 text-sm space-y-1">
                 <p className="text-emerald-600 dark:text-emerald-400">
-                  ✅ {resumo.registrados} registrados · {resumo.movidos} movidos · {resumo.importados} criados do 360 ·{' '}
-                  {resumo.jaFechados} já na coluna
+                  ✅ {resumo.registrados ?? 0} registrados · {resumo.movidos ?? 0} movidos · {resumo.importados ?? 0} criados do 360 ·{' '}
+                  {resumo.jaFechados ?? 0} já na coluna
                 </p>
-                {resumo.falhas.map((f, i) => (
+                {(resumo.falhas ?? []).map((f, i) => (
                   <p key={i} className="text-xs text-red-600 dark:text-red-300">
                     {f}
                   </p>
