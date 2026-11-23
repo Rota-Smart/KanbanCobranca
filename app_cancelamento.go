@@ -152,7 +152,10 @@ func (a *App) previaImportar(texto string) (*PreviaImportCancel, []service.Linha
 		return nil, nil, fmt.Errorf("banco indisponível nesta instalação")
 	}
 	linhas, erros := service.ParseListaCancelamentos(texto)
-	p := &PreviaImportCancel{Erros: erros}
+	// Slices sempre inicializados: nil viraria null no JSON e o frontend
+	// quebraria em previa.cancelados.length.
+	p := &PreviaImportCancel{Cancelados: []LinhaImportCancel{}, Revertidos: []LinhaImportCancel{},
+		Tratamento: []LinhaImportCancel{}, Ambiguos: []LinhaImportCancel{}, SemCard: []LinhaImportCancel{}, Erros: erros}
 	if len(linhas) == 0 {
 		return p, linhas, nil
 	}
