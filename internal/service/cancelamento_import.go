@@ -13,10 +13,11 @@ import (
 
 // LinhaCancelamento é uma linha da lista já interpretada (sem olhar o quadro).
 type LinhaCancelamento struct {
-	Linha     int    `json:"linha"`     // nº da linha no texto colado (1-based)
-	Nome      string `json:"nome"`      // cliente do começo da linha
-	Motivo    string `json:"motivo"`    // texto do meio (pode ter traço dentro)
-	Resultado string `json:"resultado"` // perda | reversao | em_tratamento
+	Linha      int    `json:"linha"`      // nº da linha no texto colado (1-based)
+	Nome       string `json:"nome"`       // cliente do começo da linha
+	CodService string `json:"codService"` // opcional: informado manual ou embutido
+	Motivo     string `json:"motivo"`     // texto do meio (pode ter traço dentro)
+	Resultado  string `json:"resultado"`  // perda | reversao | em_tratamento
 }
 
 // CardMatch é o resultado do casamento nome↔card: o card casado (se único) e
@@ -66,6 +67,22 @@ func ParseListaCancelamentos(texto string) ([]LinhaCancelamento, []string) {
 			resto = resto[:len(resto)-1]
 		} else {
 			l.Resultado = CancelamentoTratamento
+		}
+		// Suporte a código service explícito: NOME - [COD] - MOTIVO ou NOME - COD - MOTIVO
+		if len(resto) >= 2 {
+			primeiro := strings.TrimSpace(resto[0])
+			candCod := strings.Trim(primeiro, "[]# ")
+			ehNumero := len(candCod) > 0
+			for _, r := range candCod {
+				if r < '0' || r > '9' {
+					ehNumero = false
+					break
+				}
+			}
+			if ehNumero {
+				l.CodService = candCod
+				resto = resto[1:]
+			}
 		}
 		for j := range resto {
 			resto[j] = strings.TrimSpace(resto[j])

@@ -5,6 +5,7 @@ import {
   BarChart, Bar,
 } from 'recharts';
 import { CancelamentosDoMotivo, GetColunas, GetTickets, ImportarCancelamentos, MetricasCancelamentos, PreviaImportarCancelamentos } from '../../wailsjs/go/main/App';
+import { EventsOn } from '../../wailsjs/runtime/runtime';
 import type { Ticket } from '../wails-types';
 
 // CancelamentosDashboard: abre pelo botão 🚪 no painel 📊. Mostra o total de
@@ -116,6 +117,14 @@ export default function CancelamentosDashboard(props: {
         setTickets(idx);
       })
       .catch(() => setTickets({}));
+
+    // Mantém o dashboard atualizado em tempo real quando qualquer cancelamento é registrado/alterado
+    const off = EventsOn('cancelamentos:mudou', () => {
+      recarregar();
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
   }, [dias]);
 
   async function abrirImportador() {
@@ -138,6 +147,23 @@ export default function CancelamentosDashboard(props: {
       setPrevia((await PreviaImportarCancelamentos(texto)) as unknown as PreviaImport);
     } catch (e) {
       setErroImport(String(e));
+    }
+  }
+
+  function aplicarCodService(linhaNum: number, cod: string) {
+    if (!cod.trim()) return;
+    const linhas = texto.split('\n');
+    const idx = linhaNum - 1;
+    if (idx >= 0 && idx < linhas.length) {
+      const l = linhas[idx];
+      const partes = l.split('-');
+      if (partes.length >= 2) {
+        // Insere o código service logo após o nome: NOME - [COD] - RESTO
+        const nomeOriginal = partes[0].trim();
+        const resto = partes.slice(1).map((p) => p.trim()).join(' - ');
+        linhas[idx] = `${nomeOriginal} - ${cod.trim()} - ${resto}`;
+        setTexto(linhas.join('\n'));
+      }
     }
   }
 
@@ -298,9 +324,47 @@ export default function CancelamentosDashboard(props: {
                   ) : null;
                 })()}
                 {(previa.semCard?.length ?? 0) > 0 && (
-                  <p className="text-xs text-orange-600 dark:text-orange-300">
-                    {previa.semCard.length} não achei no 360 — conecte a sessão e importe de novo.
-                  </p>
+                  <div className="space-y-1.5 border border-orange-500/30 rounded-lg p-2.5 bg-orange-500/5">
+                    <p className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+                      {previa.semCard.length} cliente(s) não encontrados pelo nome no 360. Informe o código service:
+                    </p>
+                    <ul className="space-y-1">
+                      {previa.semCard.map((x) => (
+                        <li key={x.linha} className="flex items-center justify-between gap-2 text-xs">
+                          <span className="font-medium text-slate-700 dark:text-slate-200 truncate">
+                            {x.nome}
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <input
+                              type="text"
+                              placeholder="Cód. Service"
+                              className="w-24 px-1.5 py-0.5 rounded border text-xs bg-white/80 dark:bg-slate-800"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  aplicarCodService(x.linha, (e.target as HTMLInputElement).value);
+                                  (e.target as HTMLInputElement).value = '';
+                                }
+                              }}
+                              id={`cod-semcard-${x.linha}`}
+                            />
+                            <button
+                              type="button"
+                              className="px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-500 text-[11px]"
+                              onClick={() => {
+                                const input = document.getElementById(`cod-semcard-${x.linha}`) as HTMLInputElement;
+                                if (input && input.value.trim()) {
+                                  aplicarCodService(x.linha, input.value.trim());
+                                  input.value = '';
+                                }
+                              }}
+                            >
+                              Aplicar
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
                 {(previa.erros ?? []).map((e, i) => (
                   <p key={i} className="text-xs text-red-600 dark:text-red-300">

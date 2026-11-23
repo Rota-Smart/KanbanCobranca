@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+
 	"rota-smart/internal/db"
 	"rota-smart/internal/rota360"
 	"rota-smart/internal/service"
@@ -108,7 +110,8 @@ func (a *App) cardSemVinculoComCod(candidatos []service.CardResumo, cod string) 
 
 // ticketCancelamentoDo360 procura na fila de tickets abertos o ticket de
 // cancelamento do cliente (assunto "cancelamento"; se o cod service é
-// conhecido, exige que bata). ok=false = não achou.
+// conhecido, exige que bata). Pega SEMPRE o ticket mais recente (maior ID / CriadoEm).
+// ok=false = não achou.
 func (a *App) ticketCancelamentoDo360(ctx context.Context, nome, cod string) (rota360.Ticket360, bool) {
 	c := a.rotaAtual()
 	if c == nil {
@@ -118,15 +121,25 @@ func (a *App) ticketCancelamentoDo360(ctx context.Context, nome, cod string) (ro
 	if err != nil {
 		return rota360.Ticket360{}, false
 	}
+	var maisRecente rota360.Ticket360
+	achou := false
 	for _, t := range ts {
 		if cod != "" && t.CodigoService != "" && t.CodigoService != cod {
 			continue
 		}
 		if service.AssuntoCancelamento(t.AssuntoNome) {
-			return t, true
+			if !achou {
+				maisRecente = t
+				achou = true
+			} else {
+				// Compara por CriadoEm ou pelo número do ticket (maior número = mais novo)
+				if t.CriadoEm > maisRecente.CriadoEm || (t.CriadoEm == maisRecente.CriadoEm && t.Numero > maisRecente.Numero) {
+					maisRecente = t
+				}
+			}
 		}
 	}
-	return rota360.Ticket360{}, false
+	return maisRecente, achou
 }
 
 // previaImportar interpreta o texto e resolve cada linha pela regra do
@@ -174,8 +187,12 @@ func (a *App) previaImportar(texto string) (*PreviaImportCancel, []service.Linha
 				x.Candidatos = append(x.Candidatos, c.NomeCliente)
 			}
 			ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
-			cod, err := a.codServiceDo360(ctx, l.Nome)
-			if err != nil {
+			cod := l.CodService
+			var err error
+			if cod == "" {
+				cod, err = a.codServiceDo360(ctx, l.Nome)
+			}
+			if err != nil || cod == "" {
 				cancel()
 				p.SemCard = append(p.SemCard, x)
 				continue
@@ -225,7 +242,13 @@ func (a *App) registrarCancelamentoLinho(ticketID int64, motivo, resultado strin
 	if err != nil {
 		return err
 	}
-	return a.cancelamentos.CancelarMarcar(a.ctx, ticketID, m.ID, resultado)
+	if err := a.cancelamentos.CancelarMarcar(a.ctx, ticketID, m.ID, resultado); err != nil {
+		return err
+	}
+	if a.uiPronta {
+		runtime.EventsEmit(a.ctx, "cancelamentos:mudou", nil)
+	}
+	return nil
 }
 
 // codServiceDo360 procura o cliente pelo nome no 360 e devolve o código

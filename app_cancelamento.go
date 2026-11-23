@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+
 	"rota-smart/internal/db"
 	"rota-smart/internal/service"
 )
@@ -77,6 +79,9 @@ func (a *App) RegistrarCancelamento(ticketID int64, motivo, resultado string) er
 	}
 	if err := a.cancelamentos.CancelarMarcar(a.ctx, ticketID, m.ID, resultado); err != nil {
 		return friendly("RegistrarCancelamento", err)
+	}
+	if a.uiPronta {
+		runtime.EventsEmit(a.ctx, "cancelamentos:mudou", nil)
 	}
 	return nil
 }
