@@ -47,6 +47,11 @@ func setupLogger(dbPath string) {
 }
 
 func main() {
+	// Modo lote (sem janela): rota-importar -lista lista.txt [-coluna X]
+	if len(os.Args) > 1 && os.Args[1] == "-lista" {
+		importarLote(os.Args[1:])
+		return
+	}
 	// Remove o backup .old de uma autoatualização anterior.
 	if exe, err := os.Executable(); err == nil {
 		atualizacao.LimparVelho(exe)

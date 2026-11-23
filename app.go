@@ -181,6 +181,13 @@ func (a *App) startup(ctx context.Context) {
 	a.MonitorAtualizacao()
 	a.garantirUpgradeUltimo(a.ctx)
 	a.iniciarContaSync()
+	// Motivos duplicados (antes da chave canônica singular/caixa/acento)
+	// viram uma tag só: cancelamentos re-atribuídos, duplicadas apagadas.
+	if a.cancelamentos != nil {
+		if n, err := a.cancelamentos.DeduplicarMotivos(a.ctx); err == nil && n > 0 {
+			slog.Info("motivos de cancelamento duplicados mesclados", "qtde", n)
+		}
+	}
 }
 
 // friendly devolve erros de validação como estão; todo o resto vai para o

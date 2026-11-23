@@ -27,9 +27,11 @@ interface LinhaImport {
   nome: string;
   motivo: string;
   resultado: string;
+  acao: string;
   ticketId: number;
   codService: string;
   coluna: string;
+  ticket360: string;
   candidatos: string[];
 }
 
@@ -286,9 +288,18 @@ export default function CancelamentosDashboard(props: {
                     ))}
                   </ul>
                 )}
+                {(() => {
+                  const todas = [...previa.cancelados, ...previa.revertidos, ...previa.tratamento];
+                  const criar = todas.filter((x) => x.acao === 'criar').length;
+                  return criar > 0 ? (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {criar} vão ganhar um segundo card criado do 360 (o card atual não tem ticket de cancelamento vinculado).
+                    </p>
+                  ) : null;
+                })()}
                 {previa.semCard.length > 0 && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {previa.semCard.length} sem card no quadro — o import vai procurar no 360 pelo nome.
+                  <p className="text-xs text-orange-600 dark:text-orange-300">
+                    {previa.semCard.length} não achei no 360 — conecte a sessão e importe de novo.
                   </p>
                 )}
                 {previa.erros.map((e, i) => (

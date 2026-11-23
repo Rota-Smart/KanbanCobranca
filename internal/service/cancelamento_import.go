@@ -167,3 +167,56 @@ func ambiguo(cs []CardResumo) CardMatch {
 	}
 	return m
 }
+
+// CasarCardsPorNomeLista devolve TODOS os cards cujo nome casa com o citado
+// (contém nas duas direções, cobrindo "& CIA LTDA ME"; se nada casar, tenta
+// pedaço). Diferente do CasarCardPorNome (que exige match único), aqui quem
+// decide entre os candidatos é a regra do ticket de cancelamento.
+func CasarCardsPorNomeLista(nome string, cards []CardResumo) []CardResumo {
+	alvo := chaveNome(nome)
+	if alvo == "" {
+		return nil
+	}
+	var out []CardResumo
+	vistos := map[int64]bool{}
+	for _, c := range cards {
+		if vistos[c.ID] {
+			continue
+		}
+		n := chaveNome(c.NomeCliente)
+		if n == "" {
+			continue
+		}
+		if n == alvo || strings.Contains(n, alvo) || strings.Contains(alvo, n) {
+			vistos[c.ID] = true
+			out = append(out, c)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, c := range cards {
+		if vistos[c.ID] {
+			continue
+		}
+		n := chaveNome(c.NomeCliente)
+		if n == "" {
+			continue
+		}
+		casa := true
+		for _, tk := range strings.Fields(alvo) {
+			if len(tk) < 4 || pedaçoComum(tk) {
+				continue
+			}
+			if !strings.Contains(n, tk) {
+				casa = false
+				break
+			}
+		}
+		if casa {
+			vistos[c.ID] = true
+			out = append(out, c)
+		}
+	}
+	return out
+}

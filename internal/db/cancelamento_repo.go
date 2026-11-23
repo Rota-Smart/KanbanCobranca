@@ -58,10 +58,92 @@ func NewCancelamentoRepo(db *sql.DB) *CancelamentoRepo { return &CancelamentoRep
 
 var espacos = regexp.MustCompile(`\s+`)
 
+// replAcentosMotivo: caixa/acento não diferenciam tags ("Problema Financeiro"
+// = "problema financeiro"); mesmo mapa do service (intencao.go).
+var replAcentosMotivo = strings.NewReplacer(
+	"á", "a", "à", "a", "â", "a", "ã", "a",
+	"é", "e", "ê", "e",
+	"í", "i",
+	"ó", "o", "ô", "o", "õ", "o",
+	"ú", "u", "ü", "u",
+	"ç", "c",
+)
+
 // ChaveMotivo normaliza o nome digitado p/ comparar tags: minúsculo, sem
-// espaços duplos. "Internet   Lenta" e "internet lenta" viram a mesma tag.
+// acento, sem espaços duplos e no SINGULAR (palavra ≥4 letras terminando em
+// "s" perde o "s") — assim "Problemas Financeiros" e "Problema Financeiro"
+// viram a mesma tag ("problema financeiro").
 func ChaveMotivo(nome string) string {
-	return espacos.ReplaceAllString(strings.ToLower(strings.TrimSpace(nome)), " ")
+	texto := replAcentosMotivo.Replace(espacos.ReplaceAllString(strings.ToLower(strings.TrimSpace(nome)), " "))
+	palavras := strings.Fields(texto)
+	for i, p := range palavras {
+		if len([]rune(p)) >= 4 && strings.HasSuffix(p, "s") {
+			palavras[i] = strings.TrimSuffix(p, "s")
+		}
+	}
+	return strings.Join(palavras, " ")
+}
+
+// DeduplicarMotivos mescla tags que ficaram duplicadas antes da chave
+// canônica (singular/caixa/acento): cancelamentos passam pro motivo mais
+// antigo do grupo, a chave dele é reescrita e as duplicadas são apagadas.
+// Idempotente — roda no boot sem custo quando não há duplicadas.
+func (r *CancelamentoRepo) DeduplicarMotivos(ctx context.Context) (int, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, nome FROM motivos_cancelamento ORDER BY id`)
+	if err != nil {
+		return 0, err
+	}
+	type tag struct {
+		id    int64
+		chave string
+	}
+	defer rows.Close()
+	var todas []tag
+	for rows.Next() {
+		var id int64
+		var nome string
+		if err := rows.Scan(&id, &nome); err != nil {
+			return 0, err
+		}
+		todas = append(todas, tag{id: id, chave: ChaveMotivo(nome)})
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	keep := map[int64]string{} // id canônico -> chave canônica
+	porChave := map[string]int64{}
+	var duplicados []tag
+	for _, t := range todas {
+		if _, ok := porChave[t.chave]; ok {
+			duplicados = append(duplicados, t)
+			continue
+		}
+		porChave[t.chave] = t.id
+		keep[t.id] = t.chave
+	}
+	if len(duplicados) == 0 {
+		return 0, nil
+	}
+	for _, d := range duplicados {
+		if _, err := r.db.ExecContext(ctx,
+			`UPDATE cancelamentos SET motivo_id = ? WHERE motivo_id = ?`, porChave[d.chave], d.id); err != nil {
+			return 0, err
+		}
+	}
+	// reescreve a chave do canônico p/ futuras inserções casarem
+	for id, chave := range keep {
+		if _, err := r.db.ExecContext(ctx,
+			`UPDATE motivos_cancelamento SET nome_chave = ? WHERE id = ?`, chave, id); err != nil {
+			return 0, err
+		}
+	}
+	for _, d := range duplicados {
+		if _, err := r.db.ExecContext(ctx,
+			`DELETE FROM motivos_cancelamento WHERE id = ?`, d.id); err != nil {
+			return 0, err
+		}
+	}
+	return len(duplicados), nil
 }
 
 // MotivosListar devolve as tags em ordem alfabética (alimenta o datalist).
