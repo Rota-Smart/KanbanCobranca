@@ -84,6 +84,28 @@ func (a *App) cardComCancelamento(candidatos []service.CardResumo) (service.Card
 	return service.CardResumo{}, false
 }
 
+// cardSemVinculoComCod devolve o candidato que não tem vínculo NENHUM e cujo
+// cod service casa (ou está vazio) — card solto de import anterior.
+func (a *App) cardSemVinculoComCod(candidatos []service.CardResumo, cod string) (service.CardResumo, bool) {
+	if a.vinculos == nil {
+		return service.CardResumo{}, false
+	}
+	var achados []service.CardResumo
+	for _, c := range candidatos {
+		if cod != "" && c.CodService != "" && c.CodService != cod {
+			continue
+		}
+		vs, err := a.vinculos.List(a.ctx, c.ID)
+		if err == nil && len(vs) == 0 {
+			achados = append(achados, c)
+		}
+	}
+	if len(achados) == 1 {
+		return achados[0], true
+	}
+	return service.CardResumo{}, false
+}
+
 // ticketCancelamentoDo360 procura na fila de tickets abertos o ticket de
 // cancelamento do cliente (assunto "cancelamento"; se o cod service é
 // conhecido, exige que bata). ok=false = não achou.
@@ -156,6 +178,14 @@ func (a *App) previaImportar(texto string) (*PreviaImportCancel, []service.Linha
 				x.Ticket360Numero, x.Ticket360UUID, x.Ticket360Assunto = t360.Numero, t360.ID, t360.AssuntoNome
 			}
 			cancel()
+			// Reimport idempotente: candidato SEM vínculo nenhum é um card
+			// solto (ex.: criado por um import anterior interrompido) —
+			// reusa em vez de criar um terceiro card do mesmo cliente.
+			if reusavel, ok := a.cardSemVinculoComCod(candidatos, cod); ok {
+				x.Acao = "manter"
+				x.TicketID = reusavel.ID
+				x.Coluna = reusavel.ColunaAtual
+			}
 		}
 		switch l.Resultado {
 		case service.CancelamentoPerda:
@@ -272,6 +302,15 @@ func (a *App) ImportarCancelamentos(texto, colunaTratamento string) (*ResumoImpo
 			return
 		}
 		processados[x.TicketID] = true
+		// Card reusado (import anterior sem vínculo): garante o vínculo do
+		// ticket de cancelamento.
+		if x.Ticket360UUID != "" && a.vinculos != nil {
+			if err := a.vinculos.Upsert(a.ctx, x.TicketID, x.Ticket360UUID, x.Ticket360Numero, x.Ticket360Assunto, ""); err != nil {
+				res.Falhas = append(res.Falhas, fmt.Sprintf("linha %d (%s): não vinculei o ticket #%s: %v", x.Linha, x.Nome, x.Ticket360Numero, err))
+			} else {
+				res.Vinculados++
+			}
+		}
 		t, err := a.tickets.Get(a.ctx, x.TicketID)
 		if err != nil {
 			res.Falhas = append(res.Falhas, fmt.Sprintf("linha %d (%s): %v", x.Linha, x.Nome, err))
