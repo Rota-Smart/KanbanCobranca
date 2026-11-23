@@ -23,7 +23,7 @@ var ErrVinculoNaoEncontrado = errors.New("vínculo não encontrado")
 // List devolve os tickets 360 do card, do mais recente para o mais antigo.
 func (r *VinculoRepo) List(ctx context.Context, ticketID int64) ([]Vinculo360, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, ticket_id, ticket360_id, ticket360_numero, assunto, criado_em
+		`SELECT id, ticket_id, ticket360_id, ticket360_numero, assunto, setor, criado_em
 		 FROM tickets_vinculos WHERE ticket_id = ? ORDER BY id DESC`, ticketID)
 	if err != nil {
 		return nil, fmt.Errorf("listar vínculos: %w", err)
@@ -34,7 +34,7 @@ func (r *VinculoRepo) List(ctx context.Context, ticketID int64) ([]Vinculo360, e
 	out := []Vinculo360{}
 	for rows.Next() {
 		var v Vinculo360
-		if err := rows.Scan(&v.ID, &v.TicketID, &v.Ticket360ID, &v.Ticket360Numero, &v.Assunto, &v.CriadoEm); err != nil {
+		if err := rows.Scan(&v.ID, &v.TicketID, &v.Ticket360ID, &v.Ticket360Numero, &v.Assunto, &v.Setor, &v.CriadoEm); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -43,10 +43,10 @@ func (r *VinculoRepo) List(ctx context.Context, ticketID int64) ([]Vinculo360, e
 }
 
 // ListTodos devolve todos os vínculos do banco — alimenta o filtro de cards
-// por assunto do ticket no board, sem uma consulta por card.
+// por assunto/setor do ticket no board, sem uma consulta por card.
 func (r *VinculoRepo) ListTodos(ctx context.Context) ([]Vinculo360, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, ticket_id, ticket360_id, ticket360_numero, assunto, criado_em
+		`SELECT id, ticket_id, ticket360_id, ticket360_numero, assunto, setor, criado_em
 		 FROM tickets_vinculos`)
 	if err != nil {
 		return nil, fmt.Errorf("listar todos os vínculos: %w", err)
@@ -57,7 +57,7 @@ func (r *VinculoRepo) ListTodos(ctx context.Context) ([]Vinculo360, error) {
 	out := []Vinculo360{}
 	for rows.Next() {
 		var v Vinculo360
-		if err := rows.Scan(&v.ID, &v.TicketID, &v.Ticket360ID, &v.Ticket360Numero, &v.Assunto, &v.CriadoEm); err != nil {
+		if err := rows.Scan(&v.ID, &v.TicketID, &v.Ticket360ID, &v.Ticket360Numero, &v.Assunto, &v.Setor, &v.CriadoEm); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -65,21 +65,22 @@ func (r *VinculoRepo) ListTodos(ctx context.Context) ([]Vinculo360, error) {
 	return out, rows.Err()
 }
 
-// Upsert registra (ou atualiza o assunto/número de) um vínculo do card.
+// Upsert registra (ou atualiza o assunto/setor/número de) um vínculo do card.
 // Re-vincular o mesmo ticket a outro card move o vínculo — o ticket fica em
-// um card só.
-func (r *VinculoRepo) Upsert(ctx context.Context, ticketID int64, uuid, numero, assunto string) error {
+// um card só. Assunto/setor só substituem quando vierem preenchidos.
+func (r *VinculoRepo) Upsert(ctx context.Context, ticketID int64, uuid, numero, assunto, setor string) error {
 	if uuid == "" {
 		return fmt.Errorf("uuid do ticket vazio")
 	}
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO tickets_vinculos (ticket_id, ticket360_id, ticket360_numero, assunto)
-		 VALUES (?, ?, ?, ?)
+		`INSERT INTO tickets_vinculos (ticket_id, ticket360_id, ticket360_numero, assunto, setor)
+		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(ticket360_id) DO UPDATE SET
 		   ticket_id = excluded.ticket_id,
 		   ticket360_numero = excluded.ticket360_numero,
-		   assunto = CASE WHEN excluded.assunto != '' THEN excluded.assunto ELSE tickets_vinculos.assunto END`,
-		ticketID, uuid, numero, assunto)
+		   assunto = CASE WHEN excluded.assunto != '' THEN excluded.assunto ELSE tickets_vinculos.assunto END,
+		   setor = CASE WHEN excluded.setor != '' THEN excluded.setor ELSE tickets_vinculos.setor END`,
+		ticketID, uuid, numero, assunto, setor)
 	if err != nil {
 		return fmt.Errorf("registrar vínculo 360: %w", err)
 	}
@@ -90,9 +91,9 @@ func (r *VinculoRepo) Upsert(ctx context.Context, ticketID int64, uuid, numero, 
 func (r *VinculoRepo) Remove(ctx context.Context, id int64) (*Vinculo360, error) {
 	var v Vinculo360
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, ticket_id, ticket360_id, ticket360_numero, assunto, criado_em
+		`SELECT id, ticket_id, ticket360_id, ticket360_numero, assunto, setor, criado_em
 		 FROM tickets_vinculos WHERE id = ?`, id,
-	).Scan(&v.ID, &v.TicketID, &v.Ticket360ID, &v.Ticket360Numero, &v.Assunto, &v.CriadoEm)
+	).Scan(&v.ID, &v.TicketID, &v.Ticket360ID, &v.Ticket360Numero, &v.Assunto, &v.Setor, &v.CriadoEm)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrVinculoNaoEncontrado
 	}

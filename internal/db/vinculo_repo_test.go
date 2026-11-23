@@ -61,14 +61,14 @@ func TestVinculosUpsertListRemove(t *testing.T) {
 		t.Fatalf("lista inicial = %v, %v", vs, err)
 	}
 
-	if err := vr.Upsert(ctx, id, "uuid-1", "101", "Sem sinal"); err != nil {
+	if err := vr.Upsert(ctx, id, "uuid-1", "101", "Sem sinal", ""); err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
 	// Mesmo ticket de novo: atualiza assunto/número em vez de duplicar.
-	if err := vr.Upsert(ctx, id, "uuid-1", "101-A", "Sem sinal no quintal"); err != nil {
+	if err := vr.Upsert(ctx, id, "uuid-1", "101-A", "Sem sinal no quintal", ""); err != nil {
 		t.Fatalf("Upsert de novo: %v", err)
 	}
-	if err := vr.Upsert(ctx, id, "uuid-2", "102", "Renegociação"); err != nil {
+	if err := vr.Upsert(ctx, id, "uuid-2", "102", "Renegociação", ""); err != nil {
 		t.Fatalf("Upsert 2: %v", err)
 	}
 	vs, err = vr.List(ctx, id)
@@ -115,10 +115,10 @@ func TestVinculosListTodos(t *testing.T) {
 		t.Fatalf("lista inicial = %v, %v", vs, err)
 	}
 
-	if err := vr.Upsert(ctx, id1, "uuid-1", "101", "Sem sinal"); err != nil {
+	if err := vr.Upsert(ctx, id1, "uuid-1", "101", "Sem sinal", ""); err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
-	if err := vr.Upsert(ctx, id2, "uuid-2", "102", "Renegociação"); err != nil {
+	if err := vr.Upsert(ctx, id2, "uuid-2", "102", "Renegociação", ""); err != nil {
 		t.Fatalf("Upsert 2: %v", err)
 	}
 	vs, err = vr.ListTodos(ctx)

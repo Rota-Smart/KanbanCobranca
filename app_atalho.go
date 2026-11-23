@@ -20,8 +20,8 @@ import (
 
 	"rota-smart/internal/contasync"
 	"rota-smart/internal/hotkey"
-	"rota-smart/internal/service"
 	"rota-smart/internal/rota360"
+	"rota-smart/internal/service"
 	"rota-smart/internal/tela"
 )
 
@@ -424,7 +424,7 @@ func (a *App) detalheDoTicket(uuid string) *rota360.TicketDetalhe360 {
 		slog.Warn("detalhe do ticket do 360", "uuid", uuid, "err", err)
 		return nil
 	}
-	a.sanearAssuntoVinculo(ctx, t.ID, assuntoDoDetalhe(t))
+	a.sanearVinculo(ctx, t.ID, assuntoDoDetalhe(t), t.SetorNome)
 	return t
 }
 
@@ -432,9 +432,9 @@ func (a *App) detalheDoTicket(uuid string) *rota360.TicketDetalhe360 {
 // mas a IA recebe só o que serve para formular a resposta, dentro de um teto
 // — cada rune daqui é reenviado em toda rodada do agente (TPM 8K).
 const (
-	maxRunasDescricaoTicket  = 700
-	maxRunasInteracaoTicket  = 700
-	maxRunasResumoTicket     = 2500
+	maxRunasDescricaoTicket = 700
+	maxRunasInteracaoTicket = 700
+	maxRunasResumoTicket    = 2500
 )
 
 // resumoMensagensTicket formata o resumo do ticket para a IA: a descrição

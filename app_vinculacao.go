@@ -26,7 +26,7 @@ type CardVinculadoAgora struct {
 
 // ResultadoVinculacao resume o disparo do /vincular.
 type ResultadoVinculacao struct {
-	Varridos   int                  `json:"varridos"`   // cards sem vínculo examinados
+	Varridos   int                  `json:"varridos"` // cards sem vínculo examinados
 	Vinculados []CardVinculadoAgora `json:"vinculados"`
 	SemTicket  []string             `json:"semTicket"` // clientes sem ticket na fila aberta
 	Erros      []string             `json:"erros"`
@@ -144,11 +144,12 @@ func assuntoDoDetalhe(det *rota360.TicketDetalhe360) string {
 	return strings.TrimSpace(det.Titulo)
 }
 
-// sanearAssuntoVinculo corrige, de passada, o assunto do vínculo do ticket
-// quando foi gravado com o título (versões antigas gravavam "Em andamento").
-// Falha silenciosa: é um favor, não pode atrapalhar quem chamou.
-func (a *App) sanearAssuntoVinculo(ctx context.Context, uuid, assunto string) {
-	if a.vinculos == nil || uuid == "" || assunto == "" {
+// sanearVinculo corrige, de passada, o assunto e o setor do vínculo do
+// ticket quando foram gravados com o título (versões antigas gravavam "Em
+// andamento") ou sem setor. Falha silenciosa: é um favor, não pode atrapalhar
+// quem chamou.
+func (a *App) sanearVinculo(ctx context.Context, uuid, assunto, setor string) {
+	if a.vinculos == nil || uuid == "" || (assunto == "" && setor == "") {
 		return
 	}
 	vs, err := a.vinculos.ListTodos(ctx)
@@ -156,8 +157,8 @@ func (a *App) sanearAssuntoVinculo(ctx context.Context, uuid, assunto string) {
 		return
 	}
 	for _, v := range vs {
-		if v.Ticket360ID == uuid && v.Assunto != assunto {
-			_ = a.vinculos.Upsert(ctx, v.TicketID, uuid, v.Ticket360Numero, assunto)
+		if v.Ticket360ID == uuid && (v.Assunto != assunto && assunto != "" || v.Setor != setor && setor != "") {
+			_ = a.vinculos.Upsert(ctx, v.TicketID, uuid, v.Ticket360Numero, assunto, setor)
 		}
 	}
 }

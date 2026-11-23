@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"rota-smart/internal/db"
+	"rota-smart/internal/rota360"
 	"rota-smart/internal/service"
 )
 
 // Helpers: vínculo com assunto "Cancelamento" — o gatilho do motivo obrigatório.
 func vincularCancelamento(t *testing.T, a *App, cardID int64, assunto string) {
 	t.Helper()
-	if err := a.vinculos.Upsert(a.ctx, cardID, "uuid-cancel-"+assunto, "123", assunto); err != nil {
+	if err := a.vinculos.Upsert(a.ctx, cardID, "uuid-cancel-"+assunto, "123", assunto, ""); err != nil {
 		t.Fatalf("Upsert vínculo: %v", err)
 	}
 }
@@ -212,4 +213,42 @@ func TestCancelamentoSemWiringNaoTrava(t *testing.T) {
 		t.Fatalf("sem wiring não deveria pendar nem errar: %v err=%v", precisa, err)
 	}
 	var _ = db.MotivoCancelamento{}
+}
+
+// Upsert do vínculo: setor/assunto vazios não apagam o que já está gravado;
+// preenchidos substituem — é assim que o saneamento em massa corrige sem
+// regredir vínculos bons.
+func TestUpsertVinculoSetor(t *testing.T) {
+	a := newTestApp(t)
+	card, err := a.SaveTicket(exemploTicket())
+	if err != nil {
+		t.Fatalf("SaveTicket: %v", err)
+	}
+	if err := a.vinculos.Upsert(a.ctx, card.ID, "uuid-setor", "777", "Cancelamento", "Comercial Ijuí"); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	// Re-upsert sem assunto nem setor: nada se perde.
+	if err := a.vinculos.Upsert(a.ctx, card.ID, "uuid-setor", "777", "", ""); err != nil {
+		t.Fatalf("Upsert vazio: %v", err)
+	}
+	vs, err := a.vinculos.List(a.ctx, card.ID)
+	if err != nil || len(vs) != 1 || vs[0].Assunto != "Cancelamento" || vs[0].Setor != "Comercial Ijuí" {
+		t.Fatalf("vínculo deveria manter assunto+setor: %+v err=%v", vs, err)
+	}
+	// Setor novo substitui; assunto vazio continua preservado.
+	if err := a.vinculos.Upsert(a.ctx, card.ID, "uuid-setor", "777", "", "Cobrança Ijuí"); err != nil {
+		t.Fatalf("Upsert setor novo: %v", err)
+	}
+	vs, _ = a.vinculos.List(a.ctx, card.ID)
+	if vs[0].Setor != "Cobrança Ijuí" || vs[0].Assunto != "Cancelamento" {
+		t.Fatalf("setor deveria ter mudado e assunto permanecido: %+v", vs[0])
+	}
+}
+
+// Sem sessão do 360 o saneamento em massa responde erro claro (não mexe).
+func TestSaneaVinculos360SemSessao(t *testing.T) {
+	a := newTestApp(t)
+	if _, err := a.SaneaVinculos360(); !errors.Is(err, rota360.ErrSemSessao) {
+		t.Fatalf("deveria dar ErrSemSessao, veio %v", err)
+	}
 }

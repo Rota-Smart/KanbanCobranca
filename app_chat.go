@@ -1501,11 +1501,12 @@ func (a *App) vincularTicket360(ticketID int64, entrada string) (db.Ticket, stri
 	// gravado — falha aqui não pode virar "não consegui vincular" (o card fica
 	// vinculado e o chat acusando erro); vira aviso.
 	if a.vinculos != nil {
-		assunto := ""
+		assunto, setor := "", ""
 		if det != nil {
 			assunto = assuntoDoDetalhe(det)
+			setor = det.SetorNome
 		}
-		if err := a.vinculos.Upsert(a.ctx, t.ID, uuid, numero, assunto); err != nil {
+		if err := a.vinculos.Upsert(a.ctx, t.ID, uuid, numero, assunto, setor); err != nil {
 			slog.Warn("vínculo múltiplo não registrado", "card", t.ID, "ticket", numero, "err", err)
 			aviso = "O card foi vinculado, mas o ticket não entrou na lista de vínculos do card: " + err.Error()
 		}
@@ -1704,7 +1705,7 @@ func (a *App) agentDetalheTicket(ctx context.Context, numero string) (string, st
 	if autor == "" {
 		autor = det.ResponsavelNome
 	}
-	a.sanearAssuntoVinculo(ctx, det.ID, assuntoDoDetalhe(det))
+	a.sanearVinculo(ctx, det.ID, assuntoDoDetalhe(det), det.SetorNome)
 	sb.WriteString(resumoMensagensTicket(det.Mensagens, autor))
 	return sb.String(), fmt.Sprintf("leu o ticket #%s do 360", det.Numero), nil
 }

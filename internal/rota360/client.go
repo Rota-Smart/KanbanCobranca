@@ -372,6 +372,8 @@ type Ticket360 struct {
 	Titulo        string `json:"titulo"`
 	Status        string `json:"status"`
 	AssuntoNome   string `json:"assunto_nome"`
+	SetorNome     string `json:"setor_nome"`
+	UnidadeNome   string `json:"unidade_nome"`
 	CodigoService string `json:"codigo_service"`
 	Solicitante   string `json:"solicitante_nome"`
 	Responsavel   string `json:"responsavel_nome"`
@@ -603,11 +605,47 @@ type TicketDetalhe360 struct {
 	Solicitante     string              `json:"solicitante_nome"`
 	CategoriaNome   string              `json:"categoria_nome"`
 	AssuntoNome     string              `json:"assunto_nome"`
+	SetorNome       string              `json:"setor_nome"`
 	ResponsavelNome string              `json:"responsavel_nome"`
 	ContatoNome     string              `json:"contato_nome"`
 	ContatoTelefone string              `json:"contato_telefone"`
 	CriadoEm        string              `json:"criado_em"`
 	Mensagens       []MensagemTicket360 `json:"mensagens"`
+}
+
+// Assunto360 é uma opção de assunto do helpdesk (lista do "novo ticket"):
+// o nome alimenta o filtro de assuntos do board.
+type Assunto360 struct {
+	ID          string `json:"id"`
+	CategoriaID string `json:"categoria_id"`
+	Nome        string `json:"nome"`
+	Ativo       bool   `json:"ativo"`
+}
+
+// Grupo360 é um setor do helpdesk (grupos com fila): alimenta o filtro de
+// setor do board, igual à tela "novo ticket" do 360.
+type Grupo360 struct {
+	SetorID int64  `json:"setor_id"`
+	Nome    string `json:"nome"`
+	Ativo   bool   `json:"ativo"`
+}
+
+// AssuntosHelpdesk lista as opções de assunto do helpdesk.
+func (c *Cliente) AssuntosHelpdesk(ctx context.Context) ([]Assunto360, error) {
+	var out []Assunto360
+	if err := c.get(ctx, "/api/helpdesk/assuntos", &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GruposHelpdesk lista os setores (grupos) do helpdesk.
+func (c *Cliente) GruposHelpdesk(ctx context.Context) ([]Grupo360, error) {
+	var out []Grupo360
+	if err := c.get(ctx, "/api/helpdesk/grupos", &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // DetalheTicket busca o ticket completo (com interações) pelo uuid na URL.

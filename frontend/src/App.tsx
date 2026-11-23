@@ -63,15 +63,33 @@ function assuntosDistintos(vinculos: Vinculo360[]): string[] {
   return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
-// assuntosPorCard agrupa os vínculos por card para o filtro sem varrer a
-// lista de vínculos a cada card renderizado.
-function assuntosPorCard(vinculos: Vinculo360[]): Map<number, string[]> {
-  const mapa = new Map<number, string[]>();
+// Setores distintos dos vínculos (ex.: "Comercial Ijuí") — mesmo filtro da
+// tela "novo ticket" do 360.
+function setoresDistintos(vinculos: Vinculo360[]): string[] {
+  const set = new Set<string>();
   for (const v of vinculos) {
-    const a = (v.assunto ?? '').trim();
-    if (!a) continue;
+    const s = (v.setor ?? '').trim();
+    if (s) set.add(s);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+// Junção ordenada sem duplicar: opções oficiais do 360 + o que existe nos
+// vínculos locais (um valor antigo tem que continuar filtrável).
+function opcoesUnicas(a: string[], b: string[]): string[] {
+  const set = new Set<string>();
+  for (const x of [...a, ...b]) if (x.trim()) set.add(x.trim());
+  return [...set].sort((x, y) => x.localeCompare(y, 'pt-BR'));
+}
+
+// vinculosPorCard agrupa os vínculos por card para o filtro sem varrer a
+// lista de vínculos a cada card renderizado.
+function vinculosPorCard(vinculos: Vinculo360[]): Map<number, Vinculo360[]> {
+  const mapa = new Map<number, Vinculo360[]>();
+  for (const v of vinculos) {
+    if (!(v.assunto ?? '').trim() && !(v.setor ?? '').trim()) continue;
     const lista = mapa.get(v.ticketId) ?? [];
-    lista.push(a);
+    lista.push(v);
     mapa.set(v.ticketId, lista);
   }
   return mapa;
@@ -105,12 +123,15 @@ function selosDoTicket(t: Ticket, qtdAcordos: number, temComissao: boolean): Sel
 }
 
 // cardPassaNoFiltro: o texto casa com nome do cliente, número do ticket ou
-// assunto; o assunto selecionado tem que estar entre os vínculos do card.
-function cardPassaNoFiltro(t: Ticket, assuntos: string[], texto: string, assunto: string): boolean {
-  if (assunto && !assuntos.some((a) => a.toLowerCase() === assunto.toLowerCase())) return false;
+// assunto; o assunto/setor selecionado tem que estar entre os vínculos do card.
+function cardPassaNoFiltro(t: Ticket, vinculosDoCard: Vinculo360[], texto: string, assunto: string, setor: string): boolean {
+  const casas = (valor: string, campo: (v: Vinculo360) => string) =>
+    !valor || vinculosDoCard.some((v) => campo(v).toLowerCase() === valor.toLowerCase());
+  if (!casas(assunto, (v) => v.assunto)) return false;
+  if (!casas(setor, (v) => v.setor)) return false;
   const q = texto.trim().toLowerCase();
   if (!q) return true;
-  const alvo = [t.nomeCliente, t.ticket360Numero, ...assuntos].join('\n').toLowerCase();
+  const alvo = [t.nomeCliente, t.ticket360Numero, ...vinculosDoCard.map((v) => v.assunto)].join('\n').toLowerCase();
   return alvo.includes(q);
 }
 
@@ -298,6 +319,10 @@ export default function App() {
   const [ordenacoes, setOrdenacoes] = useState<Record<string, Ordenacao>>(ordenacoesDoStorage);
   const [filtroTexto, setFiltroTexto] = useState('');
   const [filtroAssunto, setFiltroAssunto] = useState('');
+  const [filtroSetor, setFiltroSetor] = useState('');
+  // Listas oficiais do 360 ("novo ticket"); fallback = o que existe nos vínculos.
+  const [assuntosOficiais, setAssuntosOficiais] = useState<string[]>([]);
+  const [setoresOficiais, setSetoresOficiais] = useState<string[]>([]);
   // Coluna focada pelo painel de métricas: clicar num item de "Cards por
   // coluna" mostra só aquela coluna no quadro (null = todas).
   const [colunaFocada, setColunaFocada] = useState<string | null>(null);
@@ -327,8 +352,31 @@ export default function App() {
   }
 
   const assuntosTodos = assuntosDistintos(vinculos);
-  const mapaAssuntos = assuntosPorCard(vinculos);
-  const filtroAtivo = filtroTexto.trim() !== '' || filtroAssunto !== '' || filtroSelo !== '';
+  const setoresTodos = setoresDistintos(vinculos);
+  const mapaVinculos = vinculosPorCard(vinculos);
+  const filtroAtivo =
+    filtroTexto.trim() !== '' || filtroAssunto !== '' || filtroSetor !== '' || filtroSelo !== '';
+
+  // Saneamento em massa ao abrir o app: a fila do 360 diz o assunto/setor real
+  // de cada ticket — regrava vínculos gravados com o título antigo ou sem
+  // setor e recarrega o filtro. Silencioso: sem sessão ou offline não atrapalha.
+  useEffect(() => {
+    bindings
+      .SaneaVinculos360()
+      .then(() => {
+        void carregarVinculos();
+      })
+      .catch(() => {});
+    bindings
+      .ListarAssuntos360()
+      .then((xs) => setAssuntosOficiais((xs as unknown as string[]) ?? []))
+      .catch(() => {});
+    bindings
+      .ListarSetores360()
+      .then((xs) => setSetoresOficiais((xs as unknown as string[]) ?? []))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Cards com comissão (Set para o filtro sem varrer a lista a cada card;
   // comissoesPorTicket só existe mais abaixo, depois dos handlers de comissão).
@@ -339,7 +387,7 @@ export default function App() {
       const selos = selosDoTicket(t, acordosPorTicket[t.id] ?? 0, ticketsComComissao.has(t.id));
       if (!selos.includes(filtroSelo)) return false;
     }
-    return cardPassaNoFiltro(t, mapaAssuntos.get(t.id) ?? [], filtroTexto, filtroAssunto);
+    return cardPassaNoFiltro(t, mapaVinculos.get(t.id) ?? [], filtroTexto, filtroAssunto, filtroSetor);
   }
 
   // Contagem de cards visíveis (para o rótulo do filtro).
@@ -1552,6 +1600,7 @@ ${txt.trim()}` : txt.trim());
                 onClick={() => {
                   setFiltroTexto('');
                   setFiltroAssunto('');
+                  setFiltroSetor('');
                   setFiltroSelo('');
                 }}
               >
@@ -1566,8 +1615,19 @@ ${txt.trim()}` : txt.trim());
             title="Filtrar pelo assunto dos tickets vinculados aos cards"
           >
             <option value="">Assunto: todos</option>
-            {assuntosTodos.map((a) => (
+            {opcoesUnicas(assuntosOficiais, assuntosTodos).map((a) => (
               <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+          <select
+            value={filtroSetor}
+            onChange={(e) => setFiltroSetor(e.target.value)}
+            className="text-sm rounded-xl px-3 py-1.5 max-w-[12rem] bg-white/60 dark:bg-white/10 border border-white/70 dark:border-white/10 outline-none focus:ring-2 focus:ring-indigo-400/60"
+            title="Filtrar pelo setor do helpdesk nos tickets vinculados (ex.: Comercial Ijuí)"
+          >
+            <option value="">Setor: todos</option>
+            {opcoesUnicas(setoresOficiais, setoresTodos).map((s2) => (
+              <option key={s2} value={s2}>{s2}</option>
             ))}
           </select>
           <select

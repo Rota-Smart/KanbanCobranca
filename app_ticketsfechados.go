@@ -154,6 +154,7 @@ func (a *App) VerificarTicketsFechados() (ResultadoVerificacao, error) {
 		fechado    bool
 		motivo     string
 		assuntoDet string // assunto real do 360 lido agora (para saneamento)
+		setorDet   string // setor real do 360 lido agora (para saneamento)
 		err        error
 	}
 	unicos := map[string]*veredito{}
@@ -196,6 +197,7 @@ func (a *App) VerificarTicketsFechados() (ResultadoVerificacao, error) {
 			// (vinculou com o 360 fora do ar) ou com o título antigo — sem
 			// isso a trava de cancelamento não reconheceria o ticket.
 			vd.assuntoDet = assuntoDoDetalhe(det)
+			vd.setorDet = det.SetorNome
 		}(v.Ticket360ID, vd)
 	}
 	wg.Wait()
@@ -214,8 +216,8 @@ func (a *App) VerificarTicketsFechados() (ResultadoVerificacao, error) {
 		// Saneamento em lote: o assunto fresco sobrepõe o gravado (Upsert só
 		// sobrescreve quando o novo não é vazio). Falha silenciosa: o card
 		// segue o fluxo normal com o assunto antigo.
-		if vd := unicos[v.Ticket360ID]; vd != nil && vd.assuntoDet != "" && vd.assuntoDet != v.Assunto {
-			_ = a.vinculos.Upsert(ctx, v.TicketID, v.Ticket360ID, v.Ticket360Numero, vd.assuntoDet)
+		if vd := unicos[v.Ticket360ID]; vd != nil && ((vd.assuntoDet != "" && vd.assuntoDet != v.Assunto) || (vd.setorDet != "" && vd.setorDet != v.Setor)) {
+			_ = a.vinculos.Upsert(ctx, v.TicketID, v.Ticket360ID, v.Ticket360Numero, vd.assuntoDet, vd.setorDet)
 		}
 	}
 	for cardID, vds := range porCard {
