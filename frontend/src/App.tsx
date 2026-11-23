@@ -31,6 +31,8 @@ import KanbanColumn from './components/KanbanColumn';
 import MovimentarTicketDialog from './components/MovimentarTicketDialog';
 import NegotiationModal from './components/NegotiationModal';
 import PainelMetricas from './components/PainelMetricas';
+import MotivoCancelamentoDialog from './components/MotivoCancelamentoDialog';
+import CancelamentosDashboard from './components/CancelamentosDashboard';
 import FunilEspelho from './components/FunilEspelho';
 import type { ModoCard } from './components/TicketCard';
 import VisitaModal from './components/VisitaModal';
@@ -274,6 +276,16 @@ export default function App() {
   const [contaEstado, setContaEstado] = useState('');
   const [painelAberto, setPainelAberto] = useState(false);
   const [funilAberto, setFunilAberto] = useState(false);
+  // Cancelamento obrigatório: card de cancelamento tentou fechar sem motivo —
+  // guarda o movimento pendente; o diálogo confirma e refaz o MoveTicket.
+  const [motivoPendente, setMotivoPendente] = useState<{
+    id: number;
+    coluna: string;
+    posicao: number;
+    snapshot: Board | null;
+    nome: string;
+  } | null>(null);
+  const [cancelamentosAberto, setCancelamentosAberto] = useState(false);
   // Grupo aberto do rail (submenu): 'pesquisa' | 'crm' | 'fidelidade' | null
   const [menuGrupo, setMenuGrupo] = useState<string | null>(null);
   // Tempo real: o sync emite 'conta:quadro' a cada mudança remota. Enfileirar o
@@ -617,7 +629,9 @@ export default function App() {
     try {
       const r = await bindings.VerificarTicketsFechados();
       if ((r.movidos?.length ?? 0) === 0) {
-        showToast(`✅ ${r.verificados} ticket(s) conferido(s) — nenhum card para mover.${r.erros?.length ? ' ' + r.erros[0] : ''}`, 6000);
+        const aguardando = r.aguardandoMotivo?.length ?? 0;
+        const avisoMotivo = aguardando > 0 ? ` ⚠ ${aguardando} cancelamento(s) sem motivo — feche pelo quadro.` : '';
+        showToast(`✅ ${r.verificados} ticket(s) conferido(s) — nenhum card para mover.${avisoMotivo}${r.erros?.length ? ' ' + r.erros[0] : ''}`, 6000);
       } else {
         const nomes = r.movidos.map((m) => m.cliente || `card ${m.cardId}`).join(', ');
         const falhas = r.erros?.length ? ` ⚠ ${r.erros.length} falha(s): ${r.erros[0]}` : '';
@@ -757,9 +771,10 @@ export default function App() {
     };
   }, []);
 
-  async function persistMove(id: number, coluna: string, posicao: number, snapshot: Board) {
+  async function persistMove(id: number, coluna: string, posicao: number, snapshot: Board | null) {
     try {
       await bindings.MoveTicket(id, coluna, posicao);
+      setMotivoPendente(null);
       if (coluna === colunaDisparaCobranca) {
         await prepararCobranca(id, coluna);
       }
@@ -770,15 +785,23 @@ export default function App() {
         abrirComissao(id, snapshot);
       }
     } catch (e) {
-      setBoard(snapshot); // reverte a tela se o backend falhar
-      showToast(String(e) || 'Não foi possível mover o card.');
+      const msg = String(e || '');
+      if (msg.startsWith('CANCELAMENTO_SEM_MOTIVO')) {
+        // Card de cancelamento sem motivo: o board já mostrou o card na nova
+        // coluna (otimista) — o diálogo confirma o motivo e refaz o movimento.
+        const nome = snapshot ? Object.values(snapshot).flat().find((t) => t.id === id)?.nomeCliente ?? '' : '';
+        setMotivoPendente({ id, coluna, posicao, snapshot, nome });
+        return;
+      }
+      if (snapshot) setBoard(snapshot); // reverte a tela se o backend falhar
+      showToast(msg || 'Não foi possível mover o card.');
     }
   }
 
   // abrirVisita acha o card (em qualquer coluna do snapshot) e abre o
   // diálogo de agendamento de visita.
-  function abrirVisita(id: number, fonte: Board) {
-    for (const ts of Object.values(fonte)) {
+  function abrirVisita(id: number, fonte: Board | null) {
+    for (const ts of Object.values(fonte ?? {})) {
       const t = ts.find((x) => x.id === id);
       if (t) {
         setVisitaTicket(t);
@@ -789,8 +812,8 @@ export default function App() {
 
   // abrirComissao acha o card (em qualquer coluna do snapshot) e abre o
   // diálogo de comissionamento da coluna Upgrade.
-  function abrirComissao(id: number, fonte: Board) {
-    for (const ts of Object.values(fonte)) {
+  function abrirComissao(id: number, fonte: Board | null) {
+    for (const ts of Object.values(fonte ?? {})) {
       const t = ts.find((x) => x.id === id);
       if (t) {
         setComissaoTicket(t);
@@ -953,15 +976,33 @@ colunaAtual: coluna,
   async function moverSelecionados() {
     const ids = [...selecao];
     if (!destinoMassa || ids.length === 0) return;
+    let emAndamento = ids[0];
     try {
       let pos = (board[destinoMassa] ?? []).length;
       for (const id of ids) {
+        emAndamento = id;
         await bindings.MoveTicket(id, destinoMassa, pos++);
         if (destinoMassa === colunaDisparaCobranca) await prepararCobranca(id, destinoMassa);
       }
       showToast(`${ids.length} card${ids.length > 1 ? 's' : ''} movido${ids.length > 1 ? 's' : ''} para ${destinoMassa}.`);
     } catch (e) {
-      showToast(String(e));
+      const msg = String(e || '');
+      if (msg.startsWith('CANCELAMENTO_SEM_MOTIVO')) {
+        // Um dos selecionados é cancelamento sem motivo: abre o diálogo para
+        // ele; ao confirmar, o movimento desse card é refeito sozinho.
+        const card = Object.values(board).flat().find((t) => t.id === emAndamento);
+        setMotivoPendente({
+          id: emAndamento,
+          coluna: destinoMassa,
+          posicao: (board[destinoMassa] ?? []).length,
+          snapshot: null,
+          nome: card?.nomeCliente ?? '',
+        });
+        setSelecao(new Set());
+        setDestinoMassa('');
+        return;
+      }
+      showToast(msg);
     }
     setSelecao(new Set());
     setDestinoMassa('');
@@ -2096,10 +2137,33 @@ ${txt.trim()}` : txt.trim());
       {painelAberto && (
         <PainelMetricas
           onFechar={() => setPainelAberto(false)}
+          onAbrirCancelamentos={() => {
+            setPainelAberto(false);
+            setCancelamentosAberto(true);
+          }}
           onClicarColuna={(coluna) => {
             // Métrica clicável: fecha o painel e foca a coluna no quadro.
             setColunaFocada(coluna);
             setPainelAberto(false);
+          }}
+        />
+      )}
+      {cancelamentosAberto && <CancelamentosDashboard onFechar={() => setCancelamentosAberto(false)} onAbrirCard={(t) => { setCancelamentosAberto(false); setAberto(t); }} />}
+
+      {motivoPendente && (
+        <MotivoCancelamentoDialog
+          ticketId={motivoPendente.id}
+          nomeCliente={motivoPendente.nome}
+          onConfirmado={() => {
+            const p = motivoPendente;
+            setMotivoPendente(null);
+            showToast('✅ Cancelamento registrado.');
+            void persistMove(p.id, p.coluna, p.posicao, p.snapshot);
+            void recarregarBoard();
+          }}
+          onFechar={() => {
+            if (motivoPendente.snapshot) setBoard(motivoPendente.snapshot);
+            setMotivoPendente(null);
           }}
         />
       )}

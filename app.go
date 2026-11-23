@@ -21,13 +21,14 @@ import (
 // App expõe a API para o frontend via bridge do Wails (Etapa 5).
 // Os métodos públicos são a única ponte com o React.
 type App struct {
-	ctx        context.Context
-	db         *sql.DB
-	dbPath     string // caminho do arquivo do banco; vazio em testes antigos
-	tickets    *db.TicketRepo
-	tentativas *db.TentativaRepo
-	vinculos   *db.VinculoRepo
-	cobrancas  *db.CobrancaRepo
+	ctx           context.Context
+	db            *sql.DB
+	dbPath        string // caminho do arquivo do banco; vazio em testes antigos
+	tickets       *db.TicketRepo
+	tentativas    *db.TentativaRepo
+	vinculos      *db.VinculoRepo
+	cancelamentos *db.CancelamentoRepo
+	cobrancas     *db.CobrancaRepo
 	// uiPronta: true após startup do Wails — sem isso o EventsEmit mata o
 	// processo (testes unitários emitem sem UI).
 	uiPronta  bool
@@ -52,7 +53,7 @@ type App struct {
 
 	// Pré-busca de contexto do assistente: resultado da coleta local antes
 	// de chamar a IA; o ExecutarAgente serve daqui se o modelo pedir de novo.
-	muPrebusca    sync.Mutex
+	muPrebusca sync.Mutex
 	// cache é por chatID: duas conversas em andamento não se sobrescrevem
 	cachePrebusca map[int64]map[string]string
 
@@ -123,19 +124,20 @@ func (a *App) configGet(ctx context.Context, chave string) string {
 // O ctx inicia como Background para os testes (startup troca pelo do Wails).
 func NewApp(database *sql.DB, propostas *service.PropostaService) *App {
 	return &App{
-		ctx:        context.Background(),
-		db:         database,
-		tickets:    db.NewTicketRepo(database),
-		tentativas: db.NewTentativaRepo(database),
-		vinculos:   db.NewVinculoRepo(database),
-		cobrancas:  db.NewCobrancaRepo(database),
-		colunas:    db.NewColumnRepo(database),
-		comissoes:  db.NewComissaoRepo(database),
-		chats:      db.NewChatRepo(database),
-		auditoria:  db.NewAuditoriaRepo(database),
-		padroes:    db.NewPadraoRepo(database),
-		stats:      db.NewAgenteStatsRepo(database),
-		propostas:  propostas,
+		ctx:           context.Background(),
+		db:            database,
+		tickets:       db.NewTicketRepo(database),
+		tentativas:    db.NewTentativaRepo(database),
+		vinculos:      db.NewVinculoRepo(database),
+		cancelamentos: db.NewCancelamentoRepo(database),
+		cobrancas:     db.NewCobrancaRepo(database),
+		colunas:       db.NewColumnRepo(database),
+		comissoes:     db.NewComissaoRepo(database),
+		chats:         db.NewChatRepo(database),
+		auditoria:     db.NewAuditoriaRepo(database),
+		padroes:       db.NewPadraoRepo(database),
+		stats:         db.NewAgenteStatsRepo(database),
+		propostas:     propostas,
 	}
 }
 
@@ -270,6 +272,25 @@ func (a *App) MoveTicket(id int64, coluna string, posicao int) error {
 	t, err := a.tickets.Get(a.ctx, id)
 	if err != nil {
 		return friendly("MoveTicket", err)
+	}
+	// Cancelamento obrigatório: card com ticket de assunto "Cancelamento" só
+	// entra em Ticket Fechado com motivo + resultado registrados. Sentinela
+	// volta para o frontend abrir o diálogo de motivo e refazer o movimento.
+	if coluna == ColunaTicketFechado && t.ColunaAtual != coluna {
+		precisa, err := a.cancelamentoPendente(id)
+		if err != nil {
+			return friendly("MoveTicket", err)
+		}
+		if precisa {
+			return service.ErrCancelamentoSemMotivo
+		}
+	}
+	// Card saiu de Ticket Fechado (decisão manual): o cancelamento deixa de
+	// valer — o registro sai para poder exigir motivo de novo se voltar.
+	if t.ColunaAtual == ColunaTicketFechado && coluna != ColunaTicketFechado && a.cancelamentos != nil {
+		if err := a.cancelamentos.CancelarApagar(a.ctx, id); err != nil {
+			return friendly("MoveTicket", err)
+		}
 	}
 	if err := a.tickets.Move(a.ctx, id, t.ColunaAtual, coluna, posicao); err != nil {
 		return friendly("MoveTicket", err)

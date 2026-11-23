@@ -49,6 +49,7 @@ function Numero(props: { rotulo: string; valor: string; destaque?: string }) {
 export default function PainelMetricas(props: {
   onFechar: () => void;
   onClicarColuna?: (coluna: string) => void;
+  onAbrirCancelamentos?: () => void;
 }) {
   const [m, setM] = useState<Metricas | null>(null);
   const [tempos, setTempos] = useState<TempoColuna[]>([]);
@@ -71,9 +72,20 @@ export default function PainelMetricas(props: {
       >
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-lg dark:text-slate-100">📊 Painel do quadro</h2>
-          <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            {props.onAbrirCancelamentos && (
+              <button
+                className="text-xs bg-blue-600 text-white rounded-lg px-2.5 py-1 hover:bg-blue-500"
+                title="Dashboard de cancelamentos"
+                onClick={props.onAbrirCancelamentos}
+              >
+                🚪 Cancelamentos
+              </button>
+            )}
+            <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
+              ✕
+            </button>
+          </div>
         </div>
 
         {erro && <p className="mt-4 text-sm text-red-600 dark:text-red-300">{erro}</p>}

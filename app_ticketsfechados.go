@@ -31,8 +31,11 @@ type ResultadoVerificacao struct {
 	Movidos     []CardFechado `json:"movidos"`
 	Ficaram     int           `json:"ficaram"`   // cards com ticket ainda aberto
 	Ignorados   int           `json:"ignorados"` // já fechados antes ou na coluna — a verificação não desfaz o que o usuário moveu
-	Erros       []string      `json:"erros"`
-	Coluna      string        `json:"coluna"`
+	// Cards de cancelamento cujo ticket fechou, mas falta o motivo obrigatório:
+	// ficam na coluna atual; o usuário resolve pelo quadro (dialogo de motivo).
+	AguardandoMotivo []CardFechado `json:"aguardandoMotivo"`
+	Erros            []string      `json:"erros"`
+	Coluna           string        `json:"coluna"`
 }
 
 // cardsQueNaoMexer junta os cards que a verificação de fechados não pode
@@ -96,7 +99,7 @@ func (a *App) VerificarTicketsFechados() (ResultadoVerificacao, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
 	defer cancel()
 
-	res := ResultadoVerificacao{Movidos: []CardFechado{}, Erros: []string{}, Coluna: ColunaTicketFechado}
+	res := ResultadoVerificacao{Movidos: []CardFechado{}, AguardandoMotivo: []CardFechado{}, Erros: []string{}, Coluna: ColunaTicketFechado}
 
 	// Garante a coluna de destino (board é dinâmico); o Upgrade permanece
 	// a última coluna mesmo se a Ticket Fechado for criada depois dele.
@@ -233,6 +236,23 @@ func (a *App) VerificarTicketsFechados() (ResultadoVerificacao, error) {
 			}
 		}
 		if algumFechado && todosFechados {
+			// Cancelamento obrigatório: a verificação é automática e não tem
+			// como escolher motivo — card de cancelamento sem motivo fica na
+			// coluna para o usuário fechar à mão pelo quadro.
+			precisa, err := a.cancelamentoPendente(cardID)
+			if err != nil {
+				res.Erros = append(res.Erros, fmt.Sprintf("card %d: falhou ao conferir cancelamento (%v)", cardID, err))
+				continue
+			}
+			if precisa {
+				res.AguardandoMotivo = append(res.AguardandoMotivo, CardFechado{
+					CardID:       cardID,
+					Cliente:      tickets[cardID],
+					TicketNumero: numeros[cardID],
+					Motivo:       motivo,
+				})
+				continue
+			}
 			num := numeros[cardID]
 			if err := a.MoveTicket(cardID, ColunaTicketFechado, a.contagemColuna(ColunaTicketFechado)); err != nil {
 				res.Erros = append(res.Erros, fmt.Sprintf("card %d: falhou ao mover para %s (%v)", cardID, ColunaTicketFechado, err))

@@ -88,6 +88,7 @@ var ErrosDeValidacao = []error{
 	ErrDataInvalida,
 	ErrHoraInvalida,
 	ErrPosicaoInvalida,
+	ErrCancelamentoSemMotivo,
 	db.ErrTicketNaoEncontrado,
 	db.ErrCobrancaNaoEncontrada,
 	rota360.ErrSemSessao,
