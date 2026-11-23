@@ -30,9 +30,8 @@ import Configuracoes from './components/Configuracoes';
 import KanbanColumn from './components/KanbanColumn';
 import MovimentarTicketDialog from './components/MovimentarTicketDialog';
 import NegotiationModal from './components/NegotiationModal';
-import PainelMetricas from './components/PainelMetricas';
+import DashboardPainel from './components/DashboardPainel';
 import MotivoCancelamentoDialog from './components/MotivoCancelamentoDialog';
-import CancelamentosDashboard from './components/CancelamentosDashboard';
 import FunilEspelho from './components/FunilEspelho';
 import type { ModoCard } from './components/TicketCard';
 import VisitaModal from './components/VisitaModal';
@@ -306,7 +305,6 @@ export default function App() {
     snapshot: Board | null;
     nome: string;
   } | null>(null);
-  const [cancelamentosAberto, setCancelamentosAberto] = useState(false);
   // Grupo aberto do rail (submenu): 'pesquisa' | 'crm' | 'fidelidade' | null
   const [menuGrupo, setMenuGrupo] = useState<string | null>(null);
   // Tempo real: o sync emite 'conta:quadro' a cada mudança remota. Enfileirar o
@@ -2195,20 +2193,19 @@ ${txt.trim()}` : txt.trim());
 
       {configAberta && <Configuracoes onFechar={() => setConfigAberta(false)} onToast={showToast} />}
       {painelAberto && (
-        <PainelMetricas
+        <DashboardPainel
           onFechar={() => setPainelAberto(false)}
-          onAbrirCancelamentos={() => {
-            setPainelAberto(false);
-            setCancelamentosAberto(true);
-          }}
           onClicarColuna={(coluna) => {
             // Métrica clicável: fecha o painel e foca a coluna no quadro.
             setColunaFocada(coluna);
             setPainelAberto(false);
           }}
+          onAbrirCard={(t) => {
+            setPainelAberto(false);
+            setAberto(t);
+          }}
         />
       )}
-      {cancelamentosAberto && <CancelamentosDashboard onFechar={() => setCancelamentosAberto(false)} onAbrirCard={(t) => { setCancelamentosAberto(false); setAberto(t); }} />}
 
       {motivoPendente && (
         <MotivoCancelamentoDialog

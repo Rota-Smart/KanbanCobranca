@@ -80,8 +80,9 @@ function Numero(props: { rotulo: string; valor: string; destaque?: string }) {
 }
 
 export default function CancelamentosDashboard(props: {
-  onFechar: () => void;
+  onFechar?: () => void;
   onAbrirCard?: (t: Ticket) => void;
+  embutido?: boolean;
 }) {
   const [dias, setDias] = useState(30);
   const [m, setM] = useState<Metricas | null>(null);
@@ -175,27 +176,40 @@ export default function CancelamentosDashboard(props: {
     return `${Math.round((m.reversao / fechados) * 100)}%`;
   }, [m, fechados]);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
-      <div
-        className="painel-modal rounded-3xl w-[46rem] max-w-[95vw] max-h-[90vh] overflow-y-auto p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
+  // Com embutido=true, o modal e o título ficam por conta do DashboardPainel
+  // (que alterna entre o painel do quadro e este); aqui sobra só o conteúdo,
+  // com o botão do importador em toolbar própria.
+  const cabecalho = props.embutido ? (
+    <div className="flex items-center justify-end">
+      <button
+        className="text-xs rounded-lg px-2.5 py-1.5 border border-blue-500/60 text-blue-600 dark:text-blue-300 hover:bg-blue-500/10"
+        onClick={abrirImportador}
+        title="Colar uma lista pronta e importar tudo"
       >
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-lg dark:text-slate-100">🚪 Dashboard de cancelamentos</h2>
-          <div className="flex items-center gap-2">
-            <button
-              className="text-xs rounded-lg px-2.5 py-1.5 border border-blue-500/60 text-blue-600 dark:text-blue-300 hover:bg-blue-500/10"
-              onClick={abrirImportador}
-              title="Colar uma lista pronta e importar tudo"
-            >
-              📋 Colar lista
-            </button>
-            <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
-              ✕
-            </button>
-          </div>
-        </div>
+        📋 Colar lista
+      </button>
+    </div>
+  ) : (
+    <div className="flex items-center justify-between">
+      <h2 className="font-semibold text-lg dark:text-slate-100">🚪 Dashboard de cancelamentos</h2>
+      <div className="flex items-center gap-2">
+        <button
+          className="text-xs rounded-lg px-2.5 py-1.5 border border-blue-500/60 text-blue-600 dark:text-blue-300 hover:bg-blue-500/10"
+          onClick={abrirImportador}
+          title="Colar uma lista pronta e importar tudo"
+        >
+          📋 Colar lista
+        </button>
+        <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+
+  const conteudo = (
+    <>
+        {cabecalho}
 
         {importador && (
           <div className="mt-3 border rounded-xl p-3 space-y-2">
@@ -442,6 +456,18 @@ export default function CancelamentosDashboard(props: {
             )}
           </>
         )}
+    </>
+  );
+
+  if (props.embutido) return conteudo;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
+      <div
+        className="painel-modal rounded-3xl w-[46rem] max-w-[95vw] max-h-[90vh] overflow-y-auto p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {conteudo}
       </div>
     </div>
   );

@@ -46,10 +46,13 @@ function Numero(props: { rotulo: string; valor: string; destaque?: string }) {
 // PainelMetricas: resumo do quadro em números — cards por coluna, entradas e
 // fechados da semana, tempo médio até o fechamento, acordos ativos e visitas.
 // Clicar num item de "Cards por coluna" fecha o painel e foca a coluna no quadro.
+// Com embutido=true, renderiza só o conteúdo (o modal e o título ficam por
+// conta do DashboardPainel, que alterna entre este painel e o de cancelamentos).
 export default function PainelMetricas(props: {
-  onFechar: () => void;
+  onFechar?: () => void;
   onClicarColuna?: (coluna: string) => void;
   onAbrirCancelamentos?: () => void;
+  embutido?: boolean;
 }) {
   const [m, setM] = useState<Metricas | null>(null);
   const [tempos, setTempos] = useState<TempoColuna[]>([]);
@@ -64,30 +67,8 @@ export default function PainelMetricas(props: {
       .catch(() => setTempos([]));
   }, []);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
-      <div
-        className="painel-modal rounded-3xl w-[32rem] max-w-full max-h-[85vh] overflow-y-auto p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-lg dark:text-slate-100">📊 Painel do quadro</h2>
-          <div className="flex items-center gap-2">
-            {props.onAbrirCancelamentos && (
-              <button
-                className="text-xs bg-blue-600 text-white rounded-lg px-2.5 py-1 hover:bg-blue-500"
-                title="Dashboard de cancelamentos"
-                onClick={props.onAbrirCancelamentos}
-              >
-                🚪 Cancelamentos
-              </button>
-            )}
-            <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
-              ✕
-            </button>
-          </div>
-        </div>
-
+  const conteudo = (
+    <>
         {erro && <p className="mt-4 text-sm text-red-600 dark:text-red-300">{erro}</p>}
         {!m && !erro && <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">carregando…</p>}
 
@@ -148,6 +129,24 @@ export default function PainelMetricas(props: {
             </section>
           </>
         )}
+    </>
+  );
+
+  if (props.embutido) return conteudo;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
+      <div
+        className="painel-modal rounded-3xl w-[32rem] max-w-full max-h-[85vh] overflow-y-auto p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-lg dark:text-slate-100">📊 Painel do quadro</h2>
+          <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
+            ✕
+          </button>
+        </div>
+        {conteudo}
       </div>
     </div>
   );
