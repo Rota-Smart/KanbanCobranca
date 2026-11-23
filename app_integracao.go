@@ -89,6 +89,9 @@ func (a *App) Rota360Status() Rota360Status {
 		a.muRota.Lock()
 		a.rota = c
 		a.muRota.Unlock()
+		// Sessão nova detectada sem clique: oferece à conta do site (só sai
+		// do app quando o cookie mudou — see compartilharSessaoConta).
+		a.compartilharSessaoConta(cookie.Nome + "=" + cookie.Valor)
 		return Rota360Status{Conectado: true, Origem: "chrome"}
 	}
 	if podeBuscarSessao(intervaloBuscaSessao) {
@@ -109,6 +112,16 @@ func (a *App) Rota360Status() Rota360Status {
 // / evento "rota360:conectado" — a chamada volta na hora.
 func (a *App) ConectarRota360() (Rota360Status, error) {
 	if st := a.Rota360Status(); st.Conectado {
+		// Já conectado: ainda assim oferece a sessão local à conta do site —
+		// o cookie guardado lá pode ter vencido antes do nosso (só sai do app
+		// quando o valor mudou, então isso não martela a API).
+		if c := a.rotaAtual(); c != nil {
+			if ck := c.CookieSalva(); ck != nil {
+				a.compartilharSessaoConta(ck.Nome + "=" + ck.Valor)
+			} else if txt := a.configGet(a.ctx, cfgRotaCookie); txt != "" {
+				a.compartilharSessaoConta(txt)
+			}
+		}
 		return st, nil
 	}
 	a.muConectando.Lock()
@@ -158,11 +171,7 @@ func (a *App) ConectarRota360() (Rota360Status, error) {
 			}
 			// Compartilha a sessão nova com a conta do site (site e outros
 			// PCs passam a usá-la). Melhor esforço, em background.
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-				defer cancel()
-				enviarSessaoConta(ctx, cookieTxt)
-			}()
+			a.compartilharSessaoConta(cookieTxt)
 		}
 		runtime.EventsEmit(a.ctx, evRotaConectado,
 			Rota360Status{Conectado: true, Origem: origem})
@@ -181,11 +190,7 @@ func (a *App) DefinirCookieRota360(cookieTxt string) (Rota360Status, error) {
 	a.definirRota(a.clienteRota(c), "manual", cookieTxt)
 	recusasSeguidas.Store(0) // cookie novo colado à mão: recomeça o contador
 	// Compartilha com a conta do site. Melhor esforço, em background.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		defer cancel()
-		enviarSessaoConta(ctx, cookieTxt)
-	}()
+	a.compartilharSessaoConta(cookieTxt)
 	return Rota360Status{Conectado: true, Origem: "manual"}, nil
 }
 

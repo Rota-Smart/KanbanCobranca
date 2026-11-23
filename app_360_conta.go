@@ -104,9 +104,32 @@ func enviarSessaoConta(ctx context.Context, cookie string) {
 }
 
 // recusasSeguidas conta recusas do 360 em sequência: 1 = cookie local morto
-// (hora de buscar o da conta); 2 = o da conta também está morto — para de
-// tentar sozinho e pede reconexão ao usuário.
+// (hora de buscar o da conta); 2 = o da conta também está morto — o app para
+// de tentar na hora e pede reconexão ao usuário, mas o manterSessao360 segue
+// re-checando a conta a cada 5 min (login novo no site recupera o app sozinho).
 var recusasSeguidas atomic.Int32
+
+// sessaoEnviada guarda o último cookie compartilhado com a conta — evita
+// reenviar o mesmo valor toda vez que a detecção do Chrome roda.
+var sessaoEnviada atomic.Value // string
+
+// compartilharSessaoConta envia o cookie local à conta do site em background,
+// só quando ele mudou desde o último envio (o backend confirma no 360 antes
+// de gravar, então cookie vencido nunca substitui um válido).
+func (a *App) compartilharSessaoConta(cookieTxt string) {
+	if cookieTxt == "" {
+		return
+	}
+	if anterior, _ := sessaoEnviada.Load().(string); anterior == cookieTxt {
+		return
+	}
+	sessaoEnviada.Store(cookieTxt)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		enviarSessaoConta(ctx, cookieTxt)
+	}()
+}
 
 // clienteRota cria o cliente do 360 com o gancho de sessão recusada — toda
 // sessão usada pelo app passa por aqui.
@@ -153,6 +176,7 @@ func (a *App) adotarSessaoRemota(cookieTxt string) error {
 		return err
 	}
 	a.definirRota(a.clienteRota(c), "conta", cookieTxt)
+	recusasSeguidas.Store(0) // sessão nova adotada: recomeça o contador
 	slog.Info("sessão do 360 vinda da conta do site")
 	if a.uiPronta {
 		runtime.EventsEmit(a.ctx, evRotaConectado,
@@ -171,7 +195,7 @@ func (a *App) manterSessao360() {
 		a.muRota.Lock()
 		tem := a.rota != nil
 		a.muRota.Unlock()
-		if tem || recusasSeguidas.Load() > 1 || !podeBuscarSessao(intervaloBuscaSessaoBg) {
+		if tem || !podeBuscarSessao(intervaloBuscaSessaoBg) {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
