@@ -601,6 +601,34 @@ export default function App() {
     };
   }, [colunas]);
 
+  // Vigia do funil do CRM (app_crmwatch.go): o backend avisa quando criou ou
+  // moveu um card; o foco da janela antecipa a conferência (app minimizado).
+  useEffect(() => {
+    const off = EventsOn('crm:funil-acoes', (d: { resumo?: string }) => {
+      if (d?.resumo) showToast(`🎯 CRM: ${d.resumo}`, 8000);
+      void recarregarBoard();
+    });
+    const noFoco = () => {
+      bindings
+        .VerificarFunilCRM()
+        .then((resumo) => {
+          if (resumo) showToast(`🎯 CRM: ${resumo}`, 8000);
+        })
+        .catch(() => {});
+    };
+    const naVisibilidade = () => {
+      if (document.visibilityState === 'visible') noFoco();
+    };
+    window.addEventListener('focus', noFoco);
+    document.addEventListener('visibilitychange', naVisibilidade);
+    return () => {
+      off();
+      window.removeEventListener('focus', noFoco);
+      document.removeEventListener('visibilitychange', naVisibilidade);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function showToast(msg: string, ms = 4000) {
     setToast(msg);
     setTimeout(() => setToast(''), ms);

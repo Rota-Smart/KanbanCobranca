@@ -161,7 +161,7 @@ func TestMetricasCancelamentos(t *testing.T) {
 	if err := a.RegistrarCancelamento(c3.ID, "internet lenta", service.CancelamentoPerda); err != nil {
 		t.Fatalf("registrar c3: %v", err)
 	}
-	m, err := a.MetricasCancelamentos(30)
+	m, err := a.MetricasCancelamentos(30, false)
 	if err != nil {
 		t.Fatalf("MetricasCancelamentos: %v", err)
 	}

@@ -124,7 +124,7 @@ func TestImportarListaCancelamentos(t *testing.T) {
 			}
 		}
 	}
-	m, err := a.MetricasCancelamentos(0)
+	m, err := a.MetricasCancelamentos(0, true)
 	if err != nil || m.Total != 4 || m.Tratamento != 2 {
 		t.Fatalf("métricas: %+v err=%v", m, err)
 	}

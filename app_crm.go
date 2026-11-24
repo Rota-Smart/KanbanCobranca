@@ -244,7 +244,7 @@ func (a *App) CrmImportarVisitas() (string, error) {
 		}
 		cardID := item.CardID
 		if cardID == 0 {
-			card, err := a.criarCardDoCRM(item)
+			card, err := a.criarCardDoCRM(item, ColunaVisitaAgendada)
 			if err != nil {
 				return resumoParcial(criados, atualizados, emDia, item.Cliente, err)
 			}
@@ -290,9 +290,10 @@ func (a *App) cardDaNegociacao(n rota360.NegociacaoCRM) *db.Ticket {
 	return nil
 }
 
-// criarCardDoCRM cria um card novo no kanban para a visita do CRM (cliente
-// sem card), com nome/código/endereço/telefone do card do funil.
-func (a *App) criarCardDoCRM(item CrmVisitaItem) (int64, error) {
+// criarCardDoCRM cria um card novo no kanban para o item do CRM (cliente
+// sem card), com nome/código/endereço/telefone do card do funil, na coluna
+// pedida.
+func (a *App) criarCardDoCRM(item CrmVisitaItem, coluna string) (int64, error) {
 	// funil só traz o nome "23808 - LUIS IZOMAR...": código service separa
 	cod := ""
 	nome := item.Cliente
@@ -300,14 +301,14 @@ func (a *App) criarCardDoCRM(item CrmVisitaItem) (int64, error) {
 		cod = strings.TrimSpace(item.Cliente[:i])
 		nome = strings.TrimSpace(item.Cliente[i+3:])
 	}
-	if !a.colunaValida(ColunaVisitaAgendada) {
-		return 0, fmt.Errorf("coluna %s não existe no quadro", ColunaVisitaAgendada)
+	if !a.colunaValida(coluna) {
+		return 0, fmt.Errorf("coluna %s não existe no quadro", coluna)
 	}
 	t := db.Ticket{
 		NomeCliente: nome,
 		TipoTicket:  "Outro",
 		CodService:  cod,
-		ColunaAtual: ColunaVisitaAgendada,
+		ColunaAtual: coluna,
 	}
 	if len(t.NomeCliente) > service.MaxNomeCliente {
 		t.NomeCliente = t.NomeCliente[:service.MaxNomeCliente]

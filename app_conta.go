@@ -42,6 +42,7 @@ func (a *App) iniciarContaSync() {
 	go a.loopContaSync()
 	go a.ouvirNuvem()
 	go a.manterSessao360()
+	a.iniciarCrmWatch()
 }
 
 // ouvirNuvem mantém aberto o fluxo /eventos da API: a cada aviso de que algo
@@ -69,6 +70,9 @@ func (a *App) ouvirNuvem() {
 					for ler.Scan() {
 						if strings.HasPrefix(ler.Text(), "data:") {
 							a.acordar()
+							// o site avisou algo (ex.: poke do kanban) —
+							// antecipa a conferência do funil do CRM
+							a.acordarCRMWatch()
 						}
 					}
 				}
