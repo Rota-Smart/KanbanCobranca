@@ -4,15 +4,16 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   BarChart, Bar,
 } from 'recharts';
-import { CancelamentosDoMotivo, GetColunas, GetTickets, ImportarCancelamentos, MetricasCancelamentos, PreviaImportarCancelamentos } from '../../wailsjs/go/main/App';
+import {
+  CancelamentosDoMotivo,
+  GetColunas,
+  GetTickets,
+  ImportarCancelamentos,
+  MetricasCancelamentos,
+  PreviaImportarCancelamentos,
+} from '../../wailsjs/go/main/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import type { Ticket } from '../wails-types';
-
-// CancelamentosDashboard: abre pelo botão 🚪 no painel 📊. Mostra o total de
-// cancelamentos (últimos 7/30/90 dias ou todos), quantos viraram reversão,
-// perda ou seguem em tratamento e a quebra por motivo — pizza clicável, linha
-// por dia e barras por motivo. O botão 📋 cola uma lista pronta
-// ("NOME - MOTIVO - CANCELADO") e importa tudo de uma vez.
 
 interface Metricas {
   total: number;
@@ -62,21 +63,43 @@ interface Cancelamento {
   criadoEm: string;
 }
 
-const CORES = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#0ea5e9', '#a855f7', '#f97316', '#14b8a6'];
+const CORES = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
 
 const PERIODOS: { rotulo: string; dias: number }[] = [
-  { rotulo: '7 dias', dias: 7 },
-  { rotulo: '30 dias', dias: 30 },
-  { rotulo: '90 dias', dias: 90 },
-  { rotulo: 'Tudo', dias: 0 },
+  { rotulo: '7 Dias', dias: 7 },
+  { rotulo: '30 Dias', dias: 30 },
+  { rotulo: '90 Dias', dias: 90 },
+  { rotulo: 'Todo Histórico', dias: 0 },
 ];
 
-function Numero(props: { rotulo: string; valor: string; destaque?: string }) {
+interface KpiCardProps {
+  titulo: string;
+  valor: string;
+  subtitulo?: string;
+  icone: string;
+  destaque?: string;
+}
+
+function KpiCard({ titulo, valor, subtitulo, icone, destaque }: KpiCardProps) {
   return (
-    <div className="rounded-2xl bg-white/60 dark:bg-white/10 border border-white/70 dark:border-white/10 p-3">
-      <div className="text-xs text-slate-500 dark:text-slate-400">{props.rotulo}</div>
-      <div className={`text-2xl font-bold mt-0.5 ${props.destaque || 'text-slate-800 dark:text-white'}`}>
-        {props.valor}
+    <div className="relative overflow-hidden rounded-2xl p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg border border-white/60 dark:border-white/10 bg-white/70 dark:bg-slate-800/60">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
+            {titulo}
+          </p>
+          <p className={`text-2xl font-black tracking-tight mt-1 truncate ${destaque || 'text-slate-800 dark:text-white'}`}>
+            {valor}
+          </p>
+          {subtitulo && (
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 truncate">
+              {subtitulo}
+            </p>
+          )}
+        </div>
+        <div className="w-10 h-10 rounded-xl bg-white/80 dark:bg-white/10 shadow-sm flex items-center justify-center text-lg shrink-0">
+          {icone}
+        </div>
       </div>
     </div>
   );
@@ -118,7 +141,6 @@ export default function CancelamentosDashboard(props: {
       })
       .catch(() => setTickets({}));
 
-    // Mantém o dashboard atualizado em tempo real quando qualquer cancelamento é registrado/alterado
     const off = EventsOn('cancelamentos:mudou', () => {
       recarregar();
     });
@@ -158,7 +180,6 @@ export default function CancelamentosDashboard(props: {
       const l = linhas[idx];
       const partes = l.split('-');
       if (partes.length >= 2) {
-        // Insere o código service logo após o nome: NOME - [COD] - RESTO
         const nomeOriginal = partes[0].trim();
         const resto = partes.slice(1).map((p) => p.trim()).join(' - ');
         linhas[idx] = `${nomeOriginal} - ${cod.trim()} - ${resto}`;
@@ -204,216 +225,18 @@ export default function CancelamentosDashboard(props: {
     return `${Math.round((m.reversao / fechados) * 100)}%`;
   }, [m, fechados]);
 
-  // Com embutido=true, o modal e o título ficam por conta do DashboardPainel
-  // (que alterna entre o painel do quadro e este); aqui sobra só o conteúdo,
-  // com o botão do importador em toolbar própria.
-  const cabecalho = props.embutido ? (
-    <div className="flex items-center justify-end">
-      <button
-        className="text-xs rounded-lg px-2.5 py-1.5 border border-blue-500/60 text-blue-600 dark:text-blue-300 hover:bg-blue-500/10"
-        onClick={abrirImportador}
-        title="Colar uma lista pronta e importar tudo"
-      >
-        📋 Colar lista
-      </button>
-    </div>
-  ) : (
-    <div className="flex items-center justify-between">
-      <h2 className="font-semibold text-lg dark:text-slate-100">🚪 Dashboard de cancelamentos</h2>
-      <div className="flex items-center gap-2">
-        <button
-          className="text-xs rounded-lg px-2.5 py-1.5 border border-blue-500/60 text-blue-600 dark:text-blue-300 hover:bg-blue-500/10"
-          onClick={abrirImportador}
-          title="Colar uma lista pronta e importar tudo"
-        >
-          📋 Colar lista
-        </button>
-        <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
-          ✕
-        </button>
-      </div>
-    </div>
-  );
-
   const conteudo = (
-    <>
-        {cabecalho}
-
-        {importador && (
-          <div className="mt-3 border rounded-xl p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                Colar lista de cancelamentos
-              </h3>
-              <button
-                className="text-slate-400 hover:text-slate-600 text-sm"
-                onClick={() => {
-                  setImportador(false);
-                  setPrevia(null);
-                  setResumo(null);
-                }}
-              >
-                ✕
-              </button>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Uma linha por cliente: <code>NOME - MOTIVO - CANCELADO</code>, <code>... - REVERTIDO</code> ou só{' '}
-              <code>NOME - MOTIVO</code> (em tratamento, ticket em aberto).
-            </p>
-            <textarea
-              className="w-full h-40 rounded-lg border bg-white/70 dark:bg-slate-800/70 p-2 text-sm font-mono"
-              placeholder={'SELVINO ALOISIO CLOSSMANN - TROCA DE ENDEREÇO - CANCELADO\nROSANE ELIA PAUSE - NÃO SABEMOS O MOTIVO'}
-              value={texto}
-              onChange={(e) => setTexto(e.target.value)}
-            />
-            {previa && (
-              <>
-                <div className="grid grid-cols-4 gap-2 text-center text-sm">
-                  <div className="rounded-lg bg-red-500/10 p-1.5">
-                    <div className="font-bold text-red-600 dark:text-red-400">{previa.cancelados?.length ?? 0}</div>
-                    <div className="text-xs text-slate-500">📉 cancelados</div>
-                  </div>
-                  <div className="rounded-lg bg-emerald-500/10 p-1.5">
-                    <div className="font-bold text-emerald-600 dark:text-emerald-400">{previa.revertidos?.length ?? 0}</div>
-                    <div className="text-xs text-slate-500">↩️ revertidos</div>
-                  </div>
-                  <div className="rounded-lg bg-amber-500/10 p-1.5">
-                    <div className="font-bold text-amber-600 dark:text-amber-400">{previa.tratamento?.length ?? 0}</div>
-                    <div className="text-xs text-slate-500">⏳ em tratamento</div>
-                  </div>
-                  <div className="rounded-lg bg-slate-500/10 p-1.5">
-                    <div className="font-bold text-slate-600 dark:text-slate-300">{previa.totalLinhas ?? 0}</div>
-                    <div className="text-xs text-slate-500">linhas</div>
-                  </div>
-                </div>
-                {(previa.tratamento?.length ?? 0) > 0 && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                      Mover os em tratamento para:
-                    </span>
-                    <select
-                      className="rounded-lg border bg-white/70 dark:bg-slate-800/70 px-2 py-1 text-sm"
-                      value={colunaTratamento}
-                      onChange={(e) => setColunaTratamento(e.target.value)}
-                    >
-                      <option value="">escolha a coluna…</option>
-                      {colunas.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {(previa.ambiguos?.length ?? 0) > 0 && (
-                  <ul className="text-xs text-orange-600 dark:text-orange-300 list-disc list-inside">
-                    {previa.ambiguos.map((x) => (
-                      <li key={x.linha}>
-                        {x.nome}: casa com vários cards ({(x.candidatos ?? []).join(', ')}) — resolva no quadro
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {(() => {
-                  const todas = [...(previa.cancelados ?? []), ...(previa.revertidos ?? []), ...(previa.tratamento ?? [])];
-                  const criar = todas.filter((x) => x.acao === 'criar').length;
-                  return criar > 0 ? (
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {criar} vão ganhar um segundo card criado do 360 (o card atual não tem ticket de cancelamento vinculado).
-                    </p>
-                  ) : null;
-                })()}
-                {(previa.semCard?.length ?? 0) > 0 && (
-                  <div className="space-y-1.5 border border-orange-500/30 rounded-lg p-2.5 bg-orange-500/5">
-                    <p className="text-xs font-semibold text-orange-600 dark:text-orange-400">
-                      {previa.semCard.length} cliente(s) não encontrados pelo nome no 360. Informe o código service:
-                    </p>
-                    <ul className="space-y-1">
-                      {previa.semCard.map((x) => (
-                        <li key={x.linha} className="flex items-center justify-between gap-2 text-xs">
-                          <span className="font-medium text-slate-700 dark:text-slate-200 truncate">
-                            {x.nome}
-                          </span>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <input
-                              type="text"
-                              placeholder="Cód. Service"
-                              className="w-24 px-1.5 py-0.5 rounded border text-xs bg-white/80 dark:bg-slate-800"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  aplicarCodService(x.linha, (e.target as HTMLInputElement).value);
-                                  (e.target as HTMLInputElement).value = '';
-                                }
-                              }}
-                              id={`cod-semcard-${x.linha}`}
-                            />
-                            <button
-                              type="button"
-                              className="px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-500 text-[11px]"
-                              onClick={() => {
-                                const input = document.getElementById(`cod-semcard-${x.linha}`) as HTMLInputElement;
-                                if (input && input.value.trim()) {
-                                  aplicarCodService(x.linha, input.value.trim());
-                                  input.value = '';
-                                }
-                              }}
-                            >
-                              Aplicar
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {(previa.erros ?? []).map((e, i) => (
-                  <p key={i} className="text-xs text-red-600 dark:text-red-300">
-                    {e}
-                  </p>
-                ))}
-              </>
-            )}
-            {resumo && (
-              <div className="rounded-lg border p-2 text-sm space-y-1">
-                <p className="text-emerald-600 dark:text-emerald-400">
-                  ✅ {resumo.registrados ?? 0} registrados · {resumo.movidos ?? 0} movidos · {resumo.importados ?? 0} criados do 360 ·{' '}
-                  {resumo.jaFechados ?? 0} já na coluna
-                </p>
-                {(resumo.falhas ?? []).map((f, i) => (
-                  <p key={i} className="text-xs text-red-600 dark:text-red-300">
-                    {f}
-                  </p>
-                ))}
-              </div>
-            )}
-            {erroImport && <p className="text-sm text-red-600 dark:text-red-300">{erroImport}</p>}
-            <div className="flex gap-2">
-              <button
-                className="text-xs rounded-lg px-2.5 py-1.5 border text-slate-600 dark:text-slate-300 hover:bg-slate-500/10 disabled:opacity-50"
-                onClick={analisar}
-                disabled={!texto.trim()}
-              >
-                🔍 Analisar
-              </button>
-              <button
-                className="text-xs rounded-lg px-2.5 py-1.5 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                onClick={importar}
-                disabled={!previa || importando}
-              >
-                {importando ? 'importando…' : '✅ Importar'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="mt-3 flex gap-1.5">
+    <div className="space-y-5">
+      {/* Barra de Filtro de Período e Ação de Importar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-200/50 dark:border-slate-700/50">
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-500/10 dark:bg-white/5">
           {PERIODOS.map((p) => (
             <button
               key={p.dias}
-              className={`text-xs rounded-lg px-2.5 py-1 border transition ${
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
                 dias === p.dias
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-500/10'
+                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
               onClick={() => setDias(p.dias)}
             >
@@ -421,117 +244,333 @@ export default function CancelamentosDashboard(props: {
             </button>
           ))}
         </div>
+        <div className="flex items-center gap-2">
+          <button
+            className="text-xs font-semibold rounded-xl px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow hover:shadow-md transition flex items-center gap-1.5"
+            onClick={abrirImportador}
+            title="Colar uma lista pronta e importar para o sistema e nuvem"
+          >
+            <span>📋</span> Colar Lista de Cancelamentos
+          </button>
+        </div>
+      </div>
 
-        {erro && <p className="mt-4 text-sm text-red-600 dark:text-red-300">{erro}</p>}
-        {!m && !erro && <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">carregando…</p>}
+      {/* Painel do Importador / Análise */}
+      {importador && (
+        <div className="p-4 rounded-2xl border border-indigo-500/20 bg-indigo-500/5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <span>📋</span> Importador Inteligente de Cancelamentos
+            </h3>
+            <button
+              className="text-slate-400 hover:text-slate-600 text-sm p-1"
+              onClick={() => {
+                setImportador(false);
+                setPrevia(null);
+                setResumo(null);
+              }}
+            >
+              ✕
+            </button>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Formato: <code>NOME - MOTIVO - CANCELADO</code> (perda), <code>... - REVERTIDO</code> (reversão) ou só{' '}
+            <code>NOME - MOTIVO</code> (em tratamento com ticket em aberto).
+          </p>
+          <textarea
+            className="w-full h-36 rounded-xl border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-850 p-2.5 text-xs font-mono focus:ring-2 focus:ring-indigo-400 outline-none"
+            placeholder={'CLIENTE EXEMPLO - TROCA DE ENDERECO - CANCELADO\nOUTRO CLIENTE - PREÇO'}
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+          />
 
-        {m && (
-          <>
-            <div className="mt-4 grid grid-cols-5 gap-2">
-              <Numero rotulo="Registros" valor={String(m.total)} />
-              <Numero rotulo="↩️ Reversões" valor={String(m.reversao)} destaque="text-emerald-600 dark:text-emerald-400" />
-              <Numero rotulo="📉 Perdas" valor={String(m.perda)} destaque="text-red-600 dark:text-red-400" />
-              <Numero rotulo="⏳ Em tratamento" valor={String(m.tratamento)} destaque="text-amber-600 dark:text-amber-400" />
-              <Numero rotulo="Taxa de reversão" valor={taxaReversao} destaque="text-indigo-600 dark:text-indigo-400" />
+          {previa && (
+            <div className="space-y-3 pt-2">
+              <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                <div className="rounded-xl bg-red-500/10 p-2 border border-red-500/20">
+                  <div className="text-lg font-black text-red-600 dark:text-red-400">{previa.cancelados?.length ?? 0}</div>
+                  <div className="text-[10px] text-slate-500">📉 Cancelados</div>
+                </div>
+                <div className="rounded-xl bg-emerald-500/10 p-2 border border-emerald-500/20">
+                  <div className="text-lg font-black text-emerald-600 dark:text-emerald-400">{previa.revertidos?.length ?? 0}</div>
+                  <div className="text-[10px] text-slate-500">↩️ Revertidos</div>
+                </div>
+                <div className="rounded-xl bg-amber-500/10 p-2 border border-amber-500/20">
+                  <div className="text-lg font-black text-amber-600 dark:text-amber-400">{previa.tratamento?.length ?? 0}</div>
+                  <div className="text-[10px] text-slate-500">⏳ Em tratamento</div>
+                </div>
+                <div className="rounded-xl bg-slate-500/10 p-2 border border-slate-500/20">
+                  <div className="text-lg font-black text-slate-700 dark:text-slate-300">{previa.totalLinhas ?? 0}</div>
+                  <div className="text-[10px] text-slate-500">Total Linhas</div>
+                </div>
+              </div>
+
+              {(previa.tratamento?.length ?? 0) > 0 && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-600 dark:text-slate-300 font-medium">
+                    Coluna de destino dos "Em tratamento":
+                  </span>
+                  <select
+                    className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs outline-none"
+                    value={colunaTratamento}
+                    onChange={(e) => setColunaTratamento(e.target.value)}
+                  >
+                    <option value="">Escolha a coluna…</option>
+                    {colunas.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {(previa.semCard?.length ?? 0) > 0 && (
+                <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-2">
+                  <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                    ⚠️ {previa.semCard.length} cliente(s) não foram localizados pelo nome no 360. Forneça o código service:
+                  </p>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {previa.semCard.map((x) => (
+                      <div key={x.linha} className="flex items-center justify-between gap-2 text-xs bg-white/60 dark:bg-slate-800/60 p-1.5 rounded-lg">
+                        <span className="font-semibold text-slate-700 dark:text-slate-200 truncate">
+                          {x.nome}
+                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <input
+                            type="text"
+                            placeholder="Cód. Service"
+                            className="w-24 px-2 py-0.5 rounded border text-xs bg-white dark:bg-slate-900"
+                            id={`cod-semcard-${x.linha}`}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                aplicarCodService(x.linha, (e.target as HTMLInputElement).value);
+                                (e.target as HTMLInputElement).value = '';
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="px-2.5 py-0.5 rounded bg-indigo-600 text-white hover:bg-indigo-500 text-[11px] font-medium"
+                            onClick={() => {
+                              const input = document.getElementById(`cod-semcard-${x.linha}`) as HTMLInputElement;
+                              if (input && input.value.trim()) {
+                                aplicarCodService(x.linha, input.value.trim());
+                                input.value = '';
+                              }
+                            }}
+                          >
+                            OK
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
+          )}
 
-            {m.total === 0 ? (
-              <p className="mt-6 text-sm text-slate-500 dark:text-slate-400 text-center">
-                Nenhum cancelamento registrado no período — feche um card de cancelamento para começar a contar.
-              </p>
-            ) : (
-              <>
-                <section className="mt-4 border rounded-lg p-3">
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Motivos (clique para ver os cards)</h3>
-                  <div className="mt-2 h-56">
+          {resumo && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-300">
+              ✅ {resumo.registrados ?? 0} registrados · {resumo.movidos ?? 0} movidos · {resumo.importados ?? 0} criados do 360 · {resumo.jaFechados ?? 0} já na coluna.
+            </div>
+          )}
+
+          {erroImport && (
+            <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400">
+              {erroImport}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              className="text-xs font-semibold rounded-xl px-3 py-1.5 border border-slate-300 dark:border-slate-700 hover:bg-slate-500/10 text-slate-700 dark:text-slate-200 disabled:opacity-50"
+              onClick={analisar}
+              disabled={!texto.trim()}
+            >
+              🔍 Analisar Prévia
+            </button>
+            <button
+              className="text-xs font-semibold rounded-xl px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white shadow disabled:opacity-50"
+              onClick={importar}
+              disabled={!previa || importando}
+            >
+              {importando ? 'Sincronizando…' : '✅ Gravar e Sincronizar'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {erro && (
+        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-sm">
+          {erro}
+        </div>
+      )}
+      {!m && !erro && (
+        <div className="flex items-center justify-center py-12 text-slate-400">
+          <span className="animate-pulse">Carregando indicadores de cancelamento…</span>
+        </div>
+      )}
+
+      {m && (
+        <>
+          {/* KPIs Executivos */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <KpiCard
+              titulo="Total Analisado"
+              valor={String(m.total)}
+              subtitulo="Demandas de cancelamento"
+              icone="🚪"
+            />
+            <KpiCard
+              titulo="Reversões"
+              valor={String(m.reversao)}
+              subtitulo="Clientes mantidos"
+              icone="↩️"
+              destaque="text-emerald-600 dark:text-emerald-400"
+            />
+            <KpiCard
+              titulo="Perdas"
+              valor={String(m.perda)}
+              subtitulo="Contratos cancelados"
+              icone="📉"
+              destaque="text-red-600 dark:text-red-400"
+            />
+            <KpiCard
+              titulo="Em Tratamento"
+              valor={String(m.tratamento)}
+              subtitulo="Negociações abertas"
+              icone="⏳"
+              destaque="text-amber-600 dark:text-amber-400"
+            />
+            <KpiCard
+              titulo="Taxa de Reversão"
+              valor={taxaReversao}
+              subtitulo="Eficácia de retenção"
+              icone="🎯"
+              destaque="text-indigo-600 dark:text-indigo-400"
+            />
+          </div>
+
+          {m.total === 0 ? (
+            <div className="py-12 text-center text-slate-400">
+              Nenhum cancelamento registrado no período. Importe uma lista ou encerre um card de cancelamento.
+            </div>
+          ) : (
+            <>
+              {/* Gráficos Interativos Power BI */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Donut Chart com Drill-down */}
+                <div className="rounded-2xl p-4 bg-white/70 dark:bg-slate-800/60 border border-white/60 dark:border-white/10 shadow-sm flex flex-col">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-700/50">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                      <span>🍩</span> Composição por Motivo
+                    </h3>
+                    <span className="text-[10px] text-slate-400">Clique na fatia para detalhar</span>
+                  </div>
+                  <div className="mt-2 h-60">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
                           data={m.porMotivo}
                           dataKey="total"
                           nameKey="motivo"
-                          innerRadius={50}
-                          outerRadius={80}
-                          paddingAngle={2}
+                          innerRadius={55}
+                          outerRadius={85}
+                          paddingAngle={3}
                           onClick={(data: { name?: unknown }) => clicarMotivo(String(data?.name ?? ''))}
-                          className="cursor-pointer"
+                          className="cursor-pointer focus:outline-none"
                         >
                           {m.porMotivo.map((_, i) => (
                             <Cell key={i} fill={CORES[i % CORES.length]} />
                           ))}
                         </Pie>
                         <Tooltip />
-                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
                   {motivoAberto && (
-                    <div className="mt-2 max-h-40 overflow-y-auto border-t pt-2">
+                    <div className="mt-3 p-2.5 rounded-xl bg-slate-500/10 dark:bg-white/5 border border-slate-200/50 dark:border-slate-700/50 max-h-40 overflow-y-auto">
+                      <div className="flex items-center justify-between mb-1 text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                        <span>Clientes: {motivoAberto}</span>
+                        <span className="text-[10px] text-slate-400">{detalhe.length} ocorrência(s)</span>
+                      </div>
                       {detalhe.map((c) => {
                         const t = tickets[c.ticketId];
                         return (
                           <button
                             key={c.id}
-                            className="w-full flex items-center justify-between text-sm rounded px-1.5 py-0.5 hover:bg-slate-500/10 dark:hover:bg-white/10"
+                            className="w-full flex items-center justify-between text-xs rounded-lg px-2 py-1 hover:bg-slate-500/10 transition"
                             onClick={() => t && props.onAbrirCard?.(t)}
-                            title={t ? 'Abrir o card' : ''}
+                            title={t ? 'Abrir card no quadro' : ''}
                           >
-                            <span className="truncate text-slate-600 dark:text-slate-300">{t?.nomeCliente ?? `card ${c.ticketId}`}</span>
-                            <span className={c.resultado === 'reversao' ? 'text-emerald-600' : 'text-red-500'}>
-                              {c.resultado === 'reversao' ? '↩️ reversão' : '📉 perda'} ·{' '}
-                              {new Date(c.criadoEm).toLocaleDateString('pt-BR')}
+                            <span className="truncate font-medium text-slate-700 dark:text-slate-300">
+                              {t?.nomeCliente ?? `Card #${c.ticketId}`}
+                            </span>
+                            <span className={`text-[11px] font-semibold ${c.resultado === 'reversao' ? 'text-emerald-600' : 'text-red-500'}`}>
+                              {c.resultado === 'reversao' ? '↩️ Reversão' : '📉 Perda'}
                             </span>
                           </button>
                         );
                       })}
-                      {detalhe.length === 0 && (
-                        <p className="text-xs text-slate-400">carregando…</p>
-                      )}
                     </div>
                   )}
-                </section>
+                </div>
 
-                <section className="mt-3 border rounded-lg p-3">
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Reversão × perda por motivo</h3>
-                  <div className="mt-2 h-56">
+                {/* Gráfico de Barras Segmentadas */}
+                <div className="rounded-2xl p-4 bg-white/70 dark:bg-slate-800/60 border border-white/60 dark:border-white/10 shadow-sm flex flex-col">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-700/50">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                      <span>📊</span> Reversão × Perda por Motivo
+                    </h3>
+                    <span className="text-[10px] text-slate-400">Segmentação direta</span>
+                  </div>
+                  <div className="mt-2 h-60">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={m.porMotivo} layout="vertical" margin={{ left: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                        <XAxis type="number" allowDecimals={false} fontSize={11} />
-                        <YAxis type="category" dataKey="motivo" width={120} fontSize={11} />
+                      <BarChart data={m.porMotivo} layout="vertical" margin={{ left: 10, right: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                        <XAxis type="number" allowDecimals={false} fontSize={10} />
+                        <YAxis type="category" dataKey="motivo" width={110} fontSize={10} tick={{ fill: '#888' }} />
                         <Tooltip />
-                        <Legend wrapperStyle={{ fontSize: 12 }} />
-                        <Bar dataKey="reversao" name="Reversão" stackId="a" fill="#10b981" />
-                        <Bar dataKey="perda" name="Perda" stackId="a" fill="#ef4444" />
-                        <Bar dataKey="tratamento" name="Em tratamento" stackId="a" fill="#f59e0b" />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="reversao" name="Reversão" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
+                        <Bar dataKey="perda" name="Perda" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} />
+                        <Bar dataKey="tratamento" name="Em tratamento" stackId="a" fill="#f59e0b" radius={[0, 4, 4, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
-                </section>
+                </div>
+              </div>
 
-                {m.serie.length > 1 && (
-                  <section className="mt-3 border rounded-lg p-3">
-                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Cancelamentos por dia</h3>
-                    <div className="mt-2 h-56">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={m.serie} margin={{ left: -10 }}>
-                          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                          <XAxis dataKey="dia" fontSize={11} />
-                          <YAxis allowDecimals={false} fontSize={11} />
-                          <Tooltip />
-                          <Legend wrapperStyle={{ fontSize: 12 }} />
-                          <Line type="monotone" dataKey="reversao" name="Reversão" stroke="#10b981" strokeWidth={2} />
-                          <Line type="monotone" dataKey="perda" name="Perda" stroke="#ef4444" strokeWidth={2} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </section>
-                )}
-              </>
-            )}
-          </>
-        )}
-    </>
+              {/* Tendência Diária (Série Temporal) */}
+              {m.serie.length > 1 && (
+                <div className="rounded-2xl p-4 bg-white/70 dark:bg-slate-800/60 border border-white/60 dark:border-white/10 shadow-sm">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-700/50">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                      <span>📈</span> Evolução Temporal dos Cancelamentos
+                    </h3>
+                    <span className="text-[10px] text-slate-400">Tendência diária</span>
+                  </div>
+                  <div className="mt-2 h-56">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={m.serie} margin={{ left: -10, right: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                        <XAxis dataKey="dia" fontSize={10} tick={{ fill: '#888' }} />
+                        <YAxis allowDecimals={false} fontSize={10} tick={{ fill: '#888' }} />
+                        <Tooltip />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Line type="monotone" dataKey="reversao" name="Reversão" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} />
+                        <Line type="monotone" dataKey="perda" name="Perda" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
   );
 
   if (props.embutido) return conteudo;
@@ -539,9 +578,17 @@ export default function CancelamentosDashboard(props: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
       <div
-        className="painel-modal rounded-3xl w-[46rem] max-w-[95vw] max-h-[90vh] overflow-y-auto p-5 shadow-xl"
+        className="painel-modal rounded-3xl w-[58rem] max-w-[96vw] max-h-[90vh] overflow-y-auto p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-200/50 dark:border-slate-700/50">
+          <h2 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+            <span>🚪</span> Dashboard Executivo de Cancelamentos
+          </h2>
+          <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg" onClick={props.onFechar}>
+            ✕
+          </button>
+        </div>
         {conteudo}
       </div>
     </div>

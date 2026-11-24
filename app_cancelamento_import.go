@@ -9,15 +9,20 @@ package main
 //   - sem card nenhum → importa do 360 e vincula, igual acima.
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"rota-smart/internal/contasync"
 	"rota-smart/internal/db"
 	"rota-smart/internal/rota360"
 	"rota-smart/internal/service"
@@ -395,6 +400,36 @@ func (a *App) ImportarCancelamentos(texto, colunaTratamento string) (*ResumoImpo
 	executar(p.Cancelados)
 	executar(p.Revertidos)
 	executar(p.Tratamento)
+
+	// Sincroniza em background com o backend da nuvem (Render/Supabase) para o dashboard do site não ficar zerado.
+	go func() {
+		tok, _ := lerTokenConta()
+		if tok == "" {
+			return
+		}
+		corpo, err := json.Marshal(map[string]string{
+			"texto":             texto,
+			"coluna_tratamento": colunaTratamento,
+		})
+		if err != nil {
+			return
+		}
+		ctxHttp, cancelHttp := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancelHttp()
+		req, err := http.NewRequestWithContext(ctxHttp, http.MethodPost, contasync.URLPadrao+"/cancelamentos/importar", bytes.NewReader(corpo))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			slog.Warn("sincronizar cancelamentos com site", "err", err)
+			return
+		}
+		_ = resp.Body.Close()
+	}()
+
 	return res, nil
 }
 

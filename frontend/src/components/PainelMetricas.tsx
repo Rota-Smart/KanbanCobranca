@@ -20,7 +20,6 @@ export interface TempoColuna {
   cards: number;
 }
 
-// "3d 4h", "5h 12min" ou "32min" — tempo médio de permanência na coluna.
 export function formatarTempo(segundos: number): string {
   if (!segundos || segundos < 60) return '—';
   const d = Math.floor(segundos / 86400);
@@ -31,23 +30,44 @@ export function formatarTempo(segundos: number): string {
   return `${min}min`;
 }
 
-// Bloco grande de número do painel.
-function Numero(props: { rotulo: string; valor: string; destaque?: string }) {
+interface KpiCardProps {
+  titulo: string;
+  valor: string;
+  subtitulo?: string;
+  icone: string;
+  destaque?: string;
+  gradiente?: string;
+}
+
+function KpiCard({ titulo, valor, subtitulo, icone, destaque, gradiente }: KpiCardProps) {
   return (
-    <div className="rounded-2xl bg-white/60 dark:bg-white/10 border border-white/70 dark:border-white/10 p-3">
-      <div className="text-xs text-slate-500 dark:text-slate-400">{props.rotulo}</div>
-      <div className={`text-2xl font-bold mt-0.5 ${props.destaque || 'text-slate-800 dark:text-white'}`}>
-        {props.valor}
+    <div
+      className={`relative overflow-hidden rounded-2xl p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg border border-white/60 dark:border-white/10 ${
+        gradiente || 'bg-white/70 dark:bg-slate-800/60'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 truncate">
+            {titulo}
+          </p>
+          <p className={`text-2xl font-black tracking-tight mt-1 truncate ${destaque || 'text-slate-800 dark:text-white'}`}>
+            {valor}
+          </p>
+          {subtitulo && (
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 truncate">
+              {subtitulo}
+            </p>
+          )}
+        </div>
+        <div className="w-10 h-10 rounded-xl bg-white/80 dark:bg-white/10 shadow-sm flex items-center justify-center text-lg shrink-0">
+          {icone}
+        </div>
       </div>
     </div>
   );
 }
 
-// PainelMetricas: resumo do quadro em números — cards por coluna, entradas e
-// fechados da semana, tempo médio até o fechamento, acordos ativos e visitas.
-// Clicar num item de "Cards por coluna" fecha o painel e foca a coluna no quadro.
-// Com embutido=true, renderiza só o conteúdo (o modal e o título ficam por
-// conta do DashboardPainel, que alterna entre este painel e o de cancelamentos).
 export default function PainelMetricas(props: {
   onFechar?: () => void;
   onClicarColuna?: (coluna: string) => void;
@@ -67,69 +87,174 @@ export default function PainelMetricas(props: {
       .catch(() => setTempos([]));
   }, []);
 
+  const totalCards = m?.totalCards || 1;
+  const maxTempo = Math.max(...tempos.map((t) => t.mediaSegundos), 1);
+
   const conteudo = (
-    <>
-        {erro && <p className="mt-4 text-sm text-red-600 dark:text-red-300">{erro}</p>}
-        {!m && !erro && <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">carregando…</p>}
+    <div className="space-y-5">
+      {erro && (
+        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-sm">
+          {erro}
+        </div>
+      )}
+      {!m && !erro && (
+        <div className="flex items-center justify-center py-12 text-slate-400">
+          <span className="animate-pulse">Carregando métricas executivas…</span>
+        </div>
+      )}
 
-        {m && (
-          <>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <Numero rotulo="Cards no quadro" valor={String(m.totalCards)} />
-              <Numero rotulo="Entradas nos últimos 7 dias" valor={String(m.entradasSemana)} />
-              <Numero rotulo="Fechados nos últimos 7 dias" valor={String(m.fechadosSemana)} destaque="text-emerald-600 dark:text-emerald-400" />
-              <Numero
-                rotulo="Tempo médio até fechar (30 dias)"
-                valor={m.tempoMedioDias > 0 ? `${m.tempoMedioDias.toFixed(1)} dias` : '—'}
-              />
-              <Numero rotulo="Visitas agendadas" valor={String(m.visitasAgendadas)} />
-              <Numero rotulo="Visitas hoje" valor={String(m.visitasHoje)} destaque="text-indigo-600 dark:text-indigo-400" />
-              <Numero rotulo="Acordos ativos" valor={String(m.cobrancasAtivas)} />
-              <Numero rotulo="Valor em acordos" valor={formatCents(m.valorEmAbertoCents)} destaque="text-amber-600 dark:text-amber-400" />
-            </div>
+      {m && (
+        <>
+          {/* Grade de KPIs Estilo Power BI */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KpiCard
+              titulo="Total no Quadro"
+              valor={String(m.totalCards)}
+              subtitulo="Cards em fluxo"
+              icone="📋"
+            />
+            <KpiCard
+              titulo="Entradas 7d"
+              valor={String(m.entradasSemana)}
+              subtitulo="Novas demandas"
+              icone="📥"
+              destaque="text-sky-600 dark:text-sky-400"
+            />
+            <KpiCard
+              titulo="Fechados 7d"
+              valor={String(m.fechadosSemana)}
+              subtitulo="Resolvidos na semana"
+              icone="✅"
+              destaque="text-emerald-600 dark:text-emerald-400"
+            />
+            <KpiCard
+              titulo="Tempo Médio"
+              valor={m.tempoMedioDias > 0 ? `${m.tempoMedioDias.toFixed(1)}d` : '—'}
+              subtitulo="Ciclo de resolução (30d)"
+              icone="⏱️"
+            />
+            <KpiCard
+              titulo="Visitas Agendadas"
+              valor={String(m.visitasAgendadas)}
+              subtitulo="Compromissos futuros"
+              icone="📅"
+            />
+            <KpiCard
+              titulo="Visitas Hoje"
+              valor={String(m.visitasHoje)}
+              subtitulo="Atendimentos do dia"
+              icone="🚀"
+              destaque="text-indigo-600 dark:text-indigo-400"
+            />
+            <KpiCard
+              titulo="Acordos Ativos"
+              valor={String(m.cobrancasAtivas)}
+              subtitulo="Negociações em vigor"
+              icone="🤝"
+            />
+            <KpiCard
+              titulo="Valor Negociado"
+              valor={formatCents(m.valorEmAbertoCents)}
+              subtitulo="Volume total sob acordo"
+              icone="💰"
+              destaque="text-amber-600 dark:text-amber-400"
+            />
+          </div>
 
-            <section className="mt-4 border rounded-lg p-3">
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Cards por coluna</h3>
-              <ul className="mt-2 space-y-1">
-                {m.porColuna.map((c) => (
-                  <li key={c.coluna}>
+          {/* Seção Gráfica e Distribuição */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Cards por Coluna (Barras de Distribuição) */}
+            <div className="rounded-2xl p-4 bg-white/70 dark:bg-slate-800/60 border border-white/60 dark:border-white/10 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-700/50">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                  <span>📊</span> Distribuição por Coluna
+                </h3>
+                <span className="text-[10px] text-slate-400">Clique para filtrar</span>
+              </div>
+              <div className="mt-3 space-y-2 flex-1 overflow-y-auto max-h-60 pr-1">
+                {m.porColuna.map((c) => {
+                  const pct = Math.round((c.total / totalCards) * 100);
+                  return (
                     <button
-                      className="w-full flex items-center justify-between text-sm rounded-lg px-1.5 -mx-1.5 py-0.5 hover:bg-slate-500/10 dark:hover:bg-white/10 cursor-pointer transition"
-                      title={`Mostrar só a coluna ${c.coluna}`}
+                      key={c.coluna}
+                      className="w-full text-left group p-1.5 rounded-xl hover:bg-slate-500/10 transition"
+                      title={`Filtrar somente a coluna "${c.coluna}"`}
                       onClick={() => props.onClicarColuna?.(c.coluna)}
                     >
-                      <span className="text-slate-600 dark:text-slate-300 truncate">{c.coluna}</span>
-                      <span className="font-semibold text-slate-800 dark:text-white">{c.total}</span>
+                      <div className="flex justify-between items-center text-xs mb-1">
+                        <span className="font-semibold text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition truncate">
+                          {c.coluna}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400">{pct}%</span>
+                          <span className="font-bold text-slate-900 dark:text-white px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-[11px]">
+                            {c.total}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700/60 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-sky-400 transition-all duration-500"
+                          style={{ width: `${Math.max(pct, 3)}%` }}
+                        />
+                      </div>
                     </button>
-                  </li>
-                ))}
+                  );
+                })}
                 {m.porColuna.length === 0 && (
-                  <li className="text-sm text-slate-500 dark:text-slate-400">quadro vazio</li>
+                  <p className="text-center py-6 text-xs text-slate-400">Quadro sem cards</p>
                 )}
-              </ul>
-            </section>
+              </div>
+            </div>
 
-            <section className="mt-3 border rounded-lg p-3">
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">⏱️ Tempo médio por coluna</h3>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">onde os cards passam mais tempo (gargalos)</p>
-              <ul className="mt-2 space-y-1">
-                {tempos.map((t) => (
-                  <li key={t.coluna} className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600 dark:text-slate-300 truncate">{t.coluna}</span>
-                    <span className="text-slate-800 dark:text-white">
-                      <span className="font-semibold">{formatarTempo(t.mediaSegundos)}</span>
-                      <span className="text-xs text-slate-400 dark:text-slate-500 ml-2">{t.cards} cards</span>
-                    </span>
-                  </li>
-                ))}
+            {/* Tempo Médio por Coluna (Identificação de Gargalos) */}
+            <div className="rounded-2xl p-4 bg-white/70 dark:bg-slate-800/60 border border-white/60 dark:border-white/10 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200/50 dark:border-slate-700/50">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                  <span>⏱️</span> Gargalos e Tempo Médio
+                </h3>
+                <span className="text-[10px] text-slate-400">Permanência média</span>
+              </div>
+              <div className="mt-3 space-y-2 flex-1 overflow-y-auto max-h-60 pr-1">
+                {tempos.map((t) => {
+                  const pct = Math.round((t.mediaSegundos / maxTempo) * 100);
+                  const isGargalo = pct > 70 && t.mediaSegundos > 86400;
+                  return (
+                    <div key={t.coluna} className="p-1.5 rounded-xl">
+                      <div className="flex justify-between items-center text-xs mb-1">
+                        <span className="font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1.5">
+                          {isGargalo && <span title="Coluna com tempo elevado de permanência">🔥</span>}
+                          {t.coluna}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400">{t.cards} cards</span>
+                          <span className={`font-bold text-[11px] ${isGargalo ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-white'}`}>
+                            {formatarTempo(t.mediaSegundos)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700/60 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            isGargalo
+                              ? 'bg-gradient-to-r from-amber-500 to-red-500'
+                              : 'bg-gradient-to-r from-sky-400 to-indigo-500'
+                          }`}
+                          style={{ width: `${Math.max(pct, 4)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
                 {tempos.length === 0 && (
-                  <li className="text-sm text-slate-500 dark:text-slate-400">sem dados ainda</li>
+                  <p className="text-center py-6 text-xs text-slate-400">Sem histórico de tempo ainda</p>
                 )}
-              </ul>
-            </section>
-          </>
-        )}
-    </>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 
   if (props.embutido) return conteudo;
@@ -137,12 +262,14 @@ export default function PainelMetricas(props: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
       <div
-        className="painel-modal rounded-3xl w-[32rem] max-w-full max-h-[85vh] overflow-y-auto p-5 shadow-xl"
+        className="painel-modal rounded-3xl w-[58rem] max-w-[96vw] max-h-[90vh] overflow-y-auto p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-lg dark:text-slate-100">📊 Painel do quadro</h2>
-          <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600" onClick={props.onFechar}>
+        <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-200/50 dark:border-slate-700/50">
+          <h2 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+            <span>📊</span> Painel Executivo do Quadro
+          </h2>
+          <button aria-label="Fechar" className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg" onClick={props.onFechar}>
             ✕
           </button>
         </div>

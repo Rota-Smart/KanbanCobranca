@@ -30,7 +30,7 @@ export default function DashboardPainel(props: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={props.onFechar}>
       <div
-        className="painel-modal rounded-3xl w-[46rem] max-w-[95vw] max-h-[90vh] overflow-y-auto p-5 shadow-xl"
+        className="painel-modal rounded-3xl w-[58rem] max-w-[96vw] max-h-[92vh] overflow-y-auto p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3">

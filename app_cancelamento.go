@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"rota-smart/internal/contasync"
 	"rota-smart/internal/db"
 	"rota-smart/internal/service"
 )
@@ -83,6 +86,44 @@ func (a *App) RegistrarCancelamento(ticketID int64, motivo, resultado string) er
 	if a.uiPronta {
 		runtime.EventsEmit(a.ctx, "cancelamentos:mudou", nil)
 	}
+	// Sincroniza marcação de motivo de cancelamento com o site em background
+	go func() {
+		tok, _ := lerTokenConta()
+		if tok == "" {
+			return
+		}
+		t, err := a.tickets.Get(context.Background(), ticketID)
+		if err != nil || t == nil || t.NomeCliente == "" {
+			return
+		}
+		// Formata linha para a API do site registrar o cancelamento do card
+		resTrecho := " - REVERTIDO"
+		if resultado == service.CancelamentoPerda {
+			resTrecho = " - CANCELADO"
+		} else if resultado == service.CancelamentoTratamento {
+			resTrecho = ""
+		}
+		texto := fmt.Sprintf("%s - %s%s", t.NomeCliente, motivo, resTrecho)
+		corpo, err := json.Marshal(map[string]string{
+			"texto":             texto,
+			"coluna_tratamento": t.ColunaAtual,
+		})
+		if err != nil {
+			return
+		}
+		ctxHttp, cancelHttp := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancelHttp()
+		req, err := http.NewRequestWithContext(ctxHttp, http.MethodPost, contasync.URLPadrao+"/cancelamentos/importar", strings.NewReader(string(corpo)))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
 	return nil
 }
 
@@ -111,6 +152,20 @@ func (a *App) CancelamentosDoMotivo(motivo string) ([]db.Cancelamento, error) {
 	cs, err := a.cancelamentos.CancelamentosDoMotivo(ctx, db.ChaveMotivo(motivo))
 	if err != nil {
 		return nil, friendly("CancelamentosDoMotivo", err)
+	}
+	return cs, nil
+}
+
+// CancelamentosTodos devolve todos os registros de cancelamento para o quadro (filtros e badges).
+func (a *App) CancelamentosTodos() ([]db.Cancelamento, error) {
+	if a.cancelamentos == nil {
+		return []db.Cancelamento{}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cs, err := a.cancelamentos.CancelarTodos(ctx)
+	if err != nil {
+		return nil, friendly("CancelamentosTodos", err)
 	}
 	return cs, nil
 }

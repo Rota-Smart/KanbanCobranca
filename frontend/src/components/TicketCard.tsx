@@ -3,7 +3,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as bindings from '../../wailsjs/go/main/App';
-import type { Comissao, TentativaContato, Ticket } from '../wails-types';
+import type { Cancelamento, Comissao, TentativaContato, Ticket } from '../wails-types';
 import { formatCents } from '../money';
 
 // Cores por tipo: faixa lateral + avatar, estilo card de pedido (delivery).
@@ -170,6 +170,8 @@ interface Props {
   comissao?: Comissao | null;
   onReceberComissao?: (ticket: Ticket) => void;
   onEditarComissao?: (ticket: Ticket) => void;
+  /** Cancelamento vinculado ao card (exibe badge com motivo e status). */
+  cancelamento?: Cancelamento | null;
   /** Seleção múltipla: card marcado, modo seleção ativo e alternância. */
   selecionado?: boolean;
   emSelecao?: boolean;
@@ -201,7 +203,7 @@ function CheckSelecao({ ticket, selecionado, onAlternar }: { ticket: Ticket; sel
 
 // Card estilo app de delivery: avatar com iniciais, faixa colorida do tipo,
 // código do pedido, endereço/telefone e badge de acordos.
-export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir, onAgendarVisita, comissao, onReceberComissao, onEditarComissao, selecionado = false, emSelecao = false, onAlternarSelecao }: Props) {
+export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir, onAgendarVisita, comissao, onReceberComissao, onEditarComissao, cancelamento, selecionado = false, emSelecao = false, onAlternarSelecao }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
   const [menu, setMenu] = useState<{ right: number; top: number } | null>(null);
   const [erroVisita, setErroVisita] = useState('');
@@ -644,6 +646,15 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
         : `Comissão a receber: ${formatCents(comissao.comissaoCents)}`,
     });
   }
+  if (cancelamento) {
+    const rotuloRes = cancelamento.resultado === 'perda' ? 'Perda' : cancelamento.resultado === 'reversao' ? 'Reversão' : 'Em tratamento';
+    const iconeRes = cancelamento.resultado === 'perda' ? '📉' : cancelamento.resultado === 'reversao' ? '↩️' : '⏳';
+    selosMin.push({
+      key: 'cancelamento',
+      icone: `${iconeRes}🚪`,
+      titulo: `Cancelamento (${rotuloRes}): ${cancelamento.motivo}`,
+    });
+  }
   const selosResumo: SeloItem[] = [];
   if (ticket.ticket360Numero) {
     selosResumo.push({
@@ -722,6 +733,33 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
         >
           {comissao.recebido ? '✅ Recebida' : `💰 ${formatCents(comissao.comissaoCents)}`}
         </button>
+      ),
+    });
+  }
+  if (cancelamento) {
+    const isPerda = cancelamento.resultado === 'perda';
+    const isRev = cancelamento.resultado === 'reversao';
+    const rotuloRes = isPerda ? 'Perda' : isRev ? 'Reversão' : 'Em tratamento';
+    const iconeRes = isPerda ? '📉' : isRev ? '↩️' : '⏳';
+    const corBadge = isPerda
+      ? 'bg-red-100/90 text-red-800 dark:bg-red-500/20 dark:text-red-200 border border-red-200/50 dark:border-red-500/30'
+      : isRev
+      ? 'bg-emerald-100/90 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200 border border-emerald-200/50 dark:border-emerald-500/30'
+      : 'bg-amber-100/90 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200 border border-amber-200/50 dark:border-amber-500/30';
+
+    selosResumo.push({
+      key: 'cancelamento',
+      icone: `${iconeRes}🚪`,
+      titulo: `Cancelamento [${rotuloRes}]: ${cancelamento.motivo}`,
+      node: (
+        <span
+          className={`text-[11px] px-2 py-0.5 rounded-full font-medium inline-flex items-center gap-1 max-w-[14rem] truncate ${corBadge}`}
+          title={`Cancelamento [${rotuloRes}]: ${cancelamento.motivo}`}
+        >
+          <span>{iconeRes}</span>
+          <span className="font-semibold shrink-0">[{rotuloRes}]</span>
+          <span className="truncate">{cancelamento.motivo}</span>
+        </span>
       ),
     });
   }

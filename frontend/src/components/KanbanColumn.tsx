@@ -1,7 +1,7 @@
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useState } from 'react';
-import type { Comissao, Ticket } from '../wails-types';
+import type { Cancelamento, Comissao, Ticket } from '../wails-types';
 import TicketCard, { type ModoCard } from './TicketCard';
 
 // Ponto colorido da coluna, estilo ClickUp (uma cor por status).
@@ -56,6 +56,7 @@ interface Props {
   comissoes?: Record<number, Comissao>;
   onReceberComissao?: (ticket: Ticket) => void;
   onEditarComissao?: (ticket: Ticket) => void;
+  cancelamentosPorTicket?: Record<number, Cancelamento>;
   onNovoCard: (coluna: string, nome: string, tipo: string) => void;
   onBuscar360: (coluna: string) => void;
   onRenomear: (antigo: string, novo: string) => void;
@@ -91,7 +92,7 @@ function BotaoModo({ ativo, titulo, children, onClick }: { ativo: boolean; titul
   );
 }
 
-export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual', ordenacaoDesc = false, onOrdenacao, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onAgendarVisita, comissoes, onReceberComissao, onEditarComissao, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca, contagem, rodape, selecionado, emSelecao, onAlternarSelecao }: Props) {
+export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual', ordenacaoDesc = false, onOrdenacao, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onAgendarVisita, comissoes, onReceberComissao, onEditarComissao, cancelamentosPorTicket, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca, contagem, rodape, selecionado, emSelecao, onAlternarSelecao }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna });
   const [recolhida, setRecolhida] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
@@ -275,6 +276,7 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
               comissao={comissoes?.[t.id]}
               onReceberComissao={onReceberComissao}
               onEditarComissao={onEditarComissao}
+              cancelamento={cancelamentosPorTicket?.[t.id]}
               selecionado={selecionado?.(t)}
               emSelecao={emSelecao}
               onAlternarSelecao={onAlternarSelecao}

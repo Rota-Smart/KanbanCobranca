@@ -21,7 +21,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as bindings from '../wailsjs/go/main/App';
 import { main } from '../wailsjs/go/models';
 import { EventsOn } from '../wailsjs/runtime/runtime';
-import type { Comissao, ResultadoCobranca, Ticket, Vinculo360 } from './wails-types';
+import type { Cancelamento, Comissao, ResultadoCobranca, Ticket, Vinculo360 } from './wails-types';
 import BuscarCliente360Dialog from './components/BuscarCliente360Dialog';
 import BuscarTickets360Dialog from './components/BuscarTickets360Dialog';
 import FidelidadeDashboard from './components/FidelidadeDashboard';
@@ -104,13 +104,17 @@ const selosConhecidos = [
   { chave: 'visita', rotulo: '📅 Visita' },
   { chave: 'acordo', rotulo: '🤝 Acordo/renegociação' },
   { chave: 'comissao', rotulo: '💰 Comissão' },
+  { chave: 'cancelamento_todos', rotulo: '🚪 Cancelamento: Todos' },
+  { chave: 'cancelamento_perda', rotulo: '📉 Cancelamento: Perda' },
+  { chave: 'cancelamento_reversao', rotulo: '↩️ Cancelamento: Reversão' },
+  { chave: 'cancelamento_tratamento', rotulo: '⏳ Cancelamento: Em tratamento' },
 ] as const;
 
 type SeloChave = (typeof selosConhecidos)[number]['chave'];
 
 // selosDoTicket devolve as chaves dos selos que o card tem, olhando só campos
-// do ticket; qtdAcordos e temComissao vêm dos mapas do App (acordos eUpgrade).
-function selosDoTicket(t: Ticket, qtdAcordos: number, temComissao: boolean): SeloChave[] {
+// do ticket; qtdAcordos, temComissao e cancelamento vêm dos mapas do App.
+function selosDoTicket(t: Ticket, qtdAcordos: number, temComissao: boolean, cancelamento?: Cancelamento): SeloChave[] {
   const selos: SeloChave[] = [];
   if (t.ticket360Numero) selos.push('ticket360');
   if (t.observacoes?.trim()) selos.push('obs');
@@ -118,6 +122,12 @@ function selosDoTicket(t: Ticket, qtdAcordos: number, temComissao: boolean): Sel
   if (t.visitaData) selos.push('visita');
   if (qtdAcordos > 0) selos.push('acordo');
   if (temComissao) selos.push('comissao');
+  if (cancelamento) {
+    selos.push('cancelamento_todos');
+    if (cancelamento.resultado === 'perda') selos.push('cancelamento_perda');
+    else if (cancelamento.resultado === 'reversao') selos.push('cancelamento_reversao');
+    else if (cancelamento.resultado === 'em_tratamento') selos.push('cancelamento_tratamento');
+  }
   return selos;
 }
 
@@ -330,6 +340,20 @@ export default function App() {
   const [historicoAberto, setHistoricoAberto] = useState(false);
   const [selecao, setSelecao] = useState<Set<number>>(new Set());
   const [destinoMassa, setDestinoMassa] = useState('');
+  const [cancelamentosPorTicket, setCancelamentosPorTicket] = useState<Record<number, Cancelamento>>({});
+
+  async function carregarCancelamentos() {
+    try {
+      const lista = (await bindings.CancelamentosTodos()) ?? [];
+      const mapa: Record<number, Cancelamento> = {};
+      for (const c of lista) {
+        if (c.ticketId) mapa[c.ticketId] = c;
+      }
+      setCancelamentosPorTicket(mapa);
+    } catch {
+      // sem cancelamentos
+    }
+  }
 
   async function carregarHistoricoFechados() {
     try {
@@ -373,6 +397,13 @@ export default function App() {
       .ListarSetores360()
       .then((xs) => setSetoresOficiais((xs as unknown as string[]) ?? []))
       .catch(() => {});
+    void carregarCancelamentos();
+    const offCancel = EventsOn('cancelamentos:mudou', () => {
+      void carregarCancelamentos();
+    });
+    return () => {
+      offCancel();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -382,7 +413,7 @@ export default function App() {
 
   function cardVisivel(t: Ticket): boolean {
     if (filtroSelo) {
-      const selos = selosDoTicket(t, acordosPorTicket[t.id] ?? 0, ticketsComComissao.has(t.id));
+      const selos = selosDoTicket(t, acordosPorTicket[t.id] ?? 0, ticketsComComissao.has(t.id), cancelamentosPorTicket[t.id]);
       if (!selos.includes(filtroSelo)) return false;
     }
     return cardPassaNoFiltro(t, mapaVinculos.get(t.id) ?? [], filtroTexto, filtroAssunto, filtroSetor);
@@ -1890,6 +1921,7 @@ ${txt.trim()}` : txt.trim());
                     comissoes={comissoesPorTicket}
                     onReceberComissao={receberComissao}
                     onEditarComissao={(t) => setComissaoTicket(t)}
+                    cancelamentosPorTicket={cancelamentosPorTicket}
                     selecionado={(t) => selecao.has(t.id)}
                     emSelecao={selecao.size > 0}
                     onAlternarSelecao={alternarSelecao}

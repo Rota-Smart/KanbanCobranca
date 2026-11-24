@@ -227,6 +227,27 @@ func (r *CancelamentoRepo) CancelarDoTicket(ctx context.Context, ticketID int64)
 	return &c, nil
 }
 
+// CancelarTodos devolve todos os registros de cancelamento para alimentar o filtro do quadro e badges.
+func (r *CancelamentoRepo) CancelarTodos(ctx context.Context) ([]Cancelamento, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT c.id, c.ticket_id, m.nome, c.resultado, c.criado_em
+		 FROM cancelamentos c JOIN motivos_cancelamento m ON m.id = c.motivo_id
+		 ORDER BY c.id DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("listar todos cancelamentos: %w", err)
+	}
+	defer rows.Close()
+	out := []Cancelamento{}
+	for rows.Next() {
+		var c Cancelamento
+		if err := rows.Scan(&c.ID, &c.TicketID, &c.Motivo, &c.Resultado, &c.CriadoEm); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // CancelarApagar remove o registro — o card saiu de "Ticket Fechado".
 func (r *CancelamentoRepo) CancelarApagar(ctx context.Context, ticketID int64) error {
 	if _, err := r.db.ExecContext(ctx, `DELETE FROM cancelamentos WHERE ticket_id = ?`, ticketID); err != nil {
