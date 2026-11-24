@@ -91,10 +91,6 @@ func (a *App) RegistrarCancelamento(ticketID int64, motivo, resultado string) er
 	}
 	// Sincroniza marcação de motivo de cancelamento com o site em background
 	go func() {
-		tok, _ := lerTokenConta()
-		if tok == "" {
-			return
-		}
 		t, err := a.tickets.Get(context.Background(), ticketID)
 		if err != nil || t == nil || t.NomeCliente == "" {
 			return
@@ -107,25 +103,7 @@ func (a *App) RegistrarCancelamento(ticketID int64, motivo, resultado string) er
 			resTrecho = ""
 		}
 		texto := fmt.Sprintf("%s - %s%s", t.NomeCliente, motivo, resTrecho)
-		corpo, err := json.Marshal(map[string]string{
-			"texto":             texto,
-			"coluna_tratamento": t.ColunaAtual,
-		})
-		if err != nil {
-			return
-		}
-		ctxHttp, cancelHttp := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancelHttp()
-		req, err := http.NewRequestWithContext(ctxHttp, http.MethodPost, contasync.URLPadrao+"/cancelamentos/importar", strings.NewReader(string(corpo)))
-		if err != nil {
-			return
-		}
-		req.Header.Set("Authorization", "Bearer "+tok)
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err == nil {
-			_ = resp.Body.Close()
-		}
+		a.sincronizarImportSite(texto, t.ColunaAtual)
 	}()
 	return nil
 }
