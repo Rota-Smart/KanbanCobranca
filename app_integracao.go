@@ -81,6 +81,13 @@ func (a *App) definirRota(c *rota360.Cliente, origem, cookieBruto string) {
 // do site (o login feito lá serve para o app pareado).
 func (a *App) Rota360Status() Rota360Status {
 	if c := a.rotaAtual(); c != nil && c.Autenticado() {
+		// Sessão salva também é oferecida à conta do site (é o caminho que o
+		// app pega ao reiniciar) — sem isso, reiniciar não sincroniza o token
+		// e o usuário precisava Desconectar→Conectar. O backend valida o
+		// cookie contra o 360 antes de gravar e o envio deduplica por valor.
+		if ck := c.CookieSalva(); ck != nil {
+			a.compartilharSessaoConta(ck.Nome + "=" + ck.Valor)
+		}
 		return Rota360Status{Conectado: true, Origem: "sessão salva"}
 	}
 	if cookie, err := rota360.DetectaCookieChrome(); err == nil {
