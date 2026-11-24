@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { GetMetricas, TempoPorColuna } from '../../wailsjs/go/main/App';
+import { GetMetricas, GetMetricasNuvem, TempoPorColuna } from '../../wailsjs/go/main/App';
 import { formatCents } from '../money';
 
 export interface Metricas {
@@ -79,9 +79,15 @@ export default function PainelMetricas(props: {
   const [erro, setErro] = useState('');
 
   useEffect(() => {
-    GetMetricas()
+    // Nuvem primeiro: os mesmos números do site (mesmo banco e fórmula).
+    // Sem nuvem/conta, cai para o cálculo local.
+    GetMetricasNuvem()
       .then((d) => setM(d as unknown as Metricas))
-      .catch((e) => setErro(String(e)));
+      .catch(() =>
+        GetMetricas()
+          .then((d) => setM(d as unknown as Metricas))
+          .catch((e) => setErro(String(e))),
+      );
     TempoPorColuna()
       .then((d) => setTempos((d as unknown as TempoColuna[]) || []))
       .catch(() => setTempos([]));
