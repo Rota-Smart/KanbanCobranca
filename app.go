@@ -189,12 +189,26 @@ func (a *App) startup(ctx context.Context) {
 		}
 		// Histórico de cancelamentos só existia no banco local: sobe tudo à
 		// nuvem (upsert idempotente) para o dashboard do site não nascer zerado.
+		// Cancelamentos cujo ticket ainda não sincronizou falham de primeira —
+		// re-tenta por até 1h até a fila de sync drenar.
 		go func() {
-			if !dormir(a.ctx, 15*time.Second) {
-				return
-			}
-			if _, err := a.SincronizarCancelamentosNuvem(); err != nil {
-				slog.Warn("sync cancelamentos para a nuvem", "err", err)
+			for tentativa := 0; tentativa < 12; tentativa++ {
+				pausa := 5 * time.Minute
+				if tentativa == 0 {
+					pausa = 15 * time.Second // primeira tentativa logo no boot
+				}
+				if !dormir(a.ctx, pausa) {
+					return
+				}
+				registrados, falhas, err := a.SincronizarCancelamentosNuvem()
+				if err != nil {
+					slog.Warn("sync cancelamentos para a nuvem", "err", err)
+					continue
+				}
+				if falhas == 0 {
+					return
+				}
+				slog.Info("cancelamentos pendentes na nuvem; re-tentando", "registrados", registrados, "falhas", falhas)
 			}
 		}()
 	}

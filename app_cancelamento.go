@@ -186,22 +186,22 @@ type itemSyncCancel struct {
 // site (upsert idempotente por ticket). O histórico só existia no banco
 // local — sem isso o dashboard do site nasce zerado. Devolve quantos
 // registros a nuvem aceitou.
-func (a *App) SincronizarCancelamentosNuvem() (int, error) {
+func (a *App) SincronizarCancelamentosNuvem() (int, int, error) {
 	if a.cancelamentos == nil {
-		return 0, fmt.Errorf("banco indisponível nesta instalação")
+		return 0, 0, fmt.Errorf("banco indisponível nesta instalação")
 	}
 	tok, _ := lerTokenConta()
 	if tok == "" {
-		return 0, fmt.Errorf("conta não pareada")
+		return 0, 0, fmt.Errorf("conta não pareada")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cs, err := a.cancelamentos.CancelarTodos(ctx)
 	if err != nil {
-		return 0, friendly("SincronizarCancelamentosNuvem", err)
+		return 0, 0, friendly("SincronizarCancelamentosNuvem", err)
 	}
 	if len(cs) == 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 	itens := make([]itemSyncCancel, 0, len(cs))
 	for _, c := range cs {
@@ -209,28 +209,31 @@ func (a *App) SincronizarCancelamentosNuvem() (int, error) {
 	}
 	corpo, err := json.Marshal(map[string]any{"itens": itens})
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, contasync.URLPadrao+"/cancelamentos/sincronizar", bytes.NewReader(corpo))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	req.Header.Set("Authorization", "Bearer "+tok)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("a nuvem respondeu HTTP %d para /cancelamentos/sincronizar", resp.StatusCode)
+		return 0, 0, fmt.Errorf("a nuvem respondeu HTTP %d para /cancelamentos/sincronizar", resp.StatusCode)
 	}
 	var res struct {
 		Registrados int `json:"registrados"`
+		Falhas      int `json:"falhas"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&res); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	slog.Info("cancelamentos sincronizados com a nuvem", "total", res.Registrados)
-	return res.Registrados, nil
+	// Falhas = cancelamento cujo ticket ainda não chegou à nuvem (a fila de
+	// sync continua rodando); sobem na próxima tentativa.
+	slog.Info("cancelamentos sincronizados com a nuvem", "total", res.Registrados, "falhas", res.Falhas)
+	return res.Registrados, res.Falhas, nil
 }
