@@ -175,7 +175,7 @@ func TestMetricasCancelamentos(t *testing.T) {
 		t.Fatal("série por dia não deveria vir vazia")
 	}
 	// Clique no motivo devolve só os cards dele.
-	cs, err := a.CancelamentosDoMotivo("Preço")
+	cs, err := a.CancelamentosDoMotivo("Preço", true)
 	if err != nil || len(cs) != 2 {
 		t.Fatalf("CancelamentosDoMotivo: %v (%+v)", err, cs)
 	}

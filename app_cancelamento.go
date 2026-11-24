@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -128,14 +131,15 @@ func (a *App) RegistrarCancelamento(ticketID int64, motivo, resultado string) er
 }
 
 // MetricasCancelamentos alimenta o dashboard de cancelamentos (últimos dias;
-// 0 = todos).
-func (a *App) MetricasCancelamentos(dias int) (*db.MetricasCancelamento, error) {
+// 0 = todos). Sem incluirTratamento só entram os finalizados (reversão/perda) —
+// mesmo padrão do painel do site.
+func (a *App) MetricasCancelamentos(dias int, incluirTratamento bool) (*db.MetricasCancelamento, error) {
 	if a.cancelamentos == nil {
 		return nil, fmt.Errorf("banco indisponível nesta instalação")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	m, err := a.cancelamentos.Metricas(ctx, dias)
+	m, err := a.cancelamentos.Metricas(ctx, dias, incluirTratamento)
 	if err != nil {
 		return nil, friendly("MetricasCancelamentos", err)
 	}
@@ -143,13 +147,14 @@ func (a *App) MetricasCancelamentos(dias int) (*db.MetricasCancelamento, error) 
 }
 
 // CancelamentosDoMotivo devolve os cards de uma tag do gráfico (clique).
-func (a *App) CancelamentosDoMotivo(motivo string) ([]db.Cancelamento, error) {
+// Sem incluirTratamento só entram os finalizados (reversão/perda).
+func (a *App) CancelamentosDoMotivo(motivo string, incluirTratamento bool) ([]db.Cancelamento, error) {
 	if a.cancelamentos == nil {
 		return nil, fmt.Errorf("banco indisponível nesta instalação")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cs, err := a.cancelamentos.CancelamentosDoMotivo(ctx, db.ChaveMotivo(motivo))
+	cs, err := a.cancelamentos.CancelamentosDoMotivo(ctx, db.ChaveMotivo(motivo), incluirTratamento)
 	if err != nil {
 		return nil, friendly("CancelamentosDoMotivo", err)
 	}
@@ -168,4 +173,64 @@ func (a *App) CancelamentosTodos() ([]db.Cancelamento, error) {
 		return nil, friendly("CancelamentosTodos", err)
 	}
 	return cs, nil
+}
+
+// itemSyncCancel é um cancelamento local pronto para subir à nuvem.
+type itemSyncCancel struct {
+	TicketID  int64  `json:"ticket_id"`
+	Motivo    string `json:"motivo"`
+	Resultado string `json:"resultado"`
+}
+
+// SincronizarCancelamentosNuvem sobe TODOS os cancelamentos locais para o
+// site (upsert idempotente por ticket). O histórico só existia no banco
+// local — sem isso o dashboard do site nasce zerado. Devolve quantos
+// registros a nuvem aceitou.
+func (a *App) SincronizarCancelamentosNuvem() (int, error) {
+	if a.cancelamentos == nil {
+		return 0, fmt.Errorf("banco indisponível nesta instalação")
+	}
+	tok, _ := lerTokenConta()
+	if tok == "" {
+		return 0, fmt.Errorf("conta não pareada")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cs, err := a.cancelamentos.CancelarTodos(ctx)
+	if err != nil {
+		return 0, friendly("SincronizarCancelamentosNuvem", err)
+	}
+	if len(cs) == 0 {
+		return 0, nil
+	}
+	itens := make([]itemSyncCancel, 0, len(cs))
+	for _, c := range cs {
+		itens = append(itens, itemSyncCancel{TicketID: c.TicketID, Motivo: c.Motivo, Resultado: c.Resultado})
+	}
+	corpo, err := json.Marshal(map[string]any{"itens": itens})
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, contasync.URLPadrao+"/cancelamentos/sincronizar", bytes.NewReader(corpo))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("a nuvem respondeu HTTP %d para /cancelamentos/sincronizar", resp.StatusCode)
+	}
+	var res struct {
+		Registrados int `json:"registrados"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&res); err != nil {
+		return 0, err
+	}
+	slog.Info("cancelamentos sincronizados com a nuvem", "total", res.Registrados)
+	return res.Registrados, nil
 }

@@ -49,7 +49,7 @@ func TestRegistrarListaCancelamentos(t *testing.T) {
 	// Re-registro (linha repetida do mesmo cliente) atualiza, não duplica.
 	grava(ids[3], "Problemas financeiros", "em_tratamento")
 
-	m, err := r.Metricas(ctx, 0)
+	m, err := r.Metricas(ctx, 0, true)
 	if err != nil {
 		t.Fatalf("metricas: %v", err)
 	}

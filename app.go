@@ -187,6 +187,16 @@ func (a *App) startup(ctx context.Context) {
 		if n, err := a.cancelamentos.DeduplicarMotivos(a.ctx); err == nil && n > 0 {
 			slog.Info("motivos de cancelamento duplicados mesclados", "qtde", n)
 		}
+		// Histórico de cancelamentos só existia no banco local: sobe tudo à
+		// nuvem (upsert idempotente) para o dashboard do site não nascer zerado.
+		go func() {
+			if !dormir(a.ctx, 15*time.Second) {
+				return
+			}
+			if _, err := a.SincronizarCancelamentosNuvem(); err != nil {
+				slog.Warn("sync cancelamentos para a nuvem", "err", err)
+			}
+		}()
 	}
 }
 

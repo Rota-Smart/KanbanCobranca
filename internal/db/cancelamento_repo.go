@@ -257,8 +257,9 @@ func (r *CancelamentoRepo) CancelarApagar(ctx context.Context, ticketID int64) e
 }
 
 // Metricas agrega os cancelamentos dos últimos dias (0 = todos), com série
-// por dia no fuso local e quebra por motivo.
-func (r *CancelamentoRepo) Metricas(ctx context.Context, dias int) (*MetricasCancelamento, error) {
+// por dia no fuso local e quebra por motivo. Sem incluirTratamento só entram
+// os finalizados (reversão/perda) — mesmo comportamento do painel do site.
+func (r *CancelamentoRepo) Metricas(ctx context.Context, dias int, incluirTratamento bool) (*MetricasCancelamento, error) {
 	m := &MetricasCancelamento{PorMotivo: []MetricaMotivo{}, Serie: []PontoSerie{}}
 	filtro := ""
 	args := []any{}
@@ -266,12 +267,19 @@ func (r *CancelamentoRepo) Metricas(ctx context.Context, dias int) (*MetricasCan
 		filtro = ` WHERE c.criado_em >= strftime('%Y-%m-%dT%H:%M:%SZ','now',?)`
 		args = append(args, fmt.Sprintf("-%d days", dias))
 	}
+	extra := ""
+	if !incluirTratamento {
+		if filtro == "" {
+			filtro = " WHERE 1=1"
+		}
+		extra = " AND c.resultado <> 'em_tratamento'"
+	}
 	err := r.db.QueryRowContext(ctx,
 		`SELECT count(*),
 		        COALESCE(SUM(CASE WHEN resultado='reversao' THEN 1 ELSE 0 END),0),
 		        COALESCE(SUM(CASE WHEN resultado='perda' THEN 1 ELSE 0 END),0),
 		        COALESCE(SUM(CASE WHEN resultado='em_tratamento' THEN 1 ELSE 0 END),0)
-		 FROM cancelamentos c`+filtro, args...,
+		 FROM cancelamentos c`+filtro+extra, args...,
 	).Scan(&m.Total, &m.Reversao, &m.Perda, &m.Tratamento)
 	if err != nil {
 		return nil, fmt.Errorf("métricas de cancelamento: %w", err)
@@ -282,7 +290,7 @@ func (r *CancelamentoRepo) Metricas(ctx context.Context, dias int) (*MetricasCan
 		        COALESCE(SUM(CASE WHEN c.resultado='reversao' THEN 1 ELSE 0 END),0),
 		        COALESCE(SUM(CASE WHEN c.resultado='perda' THEN 1 ELSE 0 END),0),
 		        COALESCE(SUM(CASE WHEN c.resultado='em_tratamento' THEN 1 ELSE 0 END),0)
-		 FROM cancelamentos c JOIN motivos_cancelamento m ON m.id = c.motivo_id`+filtro+`
+		 FROM cancelamentos c JOIN motivos_cancelamento m ON m.id = c.motivo_id`+filtro+extra+`
 		 GROUP BY m.id ORDER BY count(*) DESC, m.nome`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("cancelamentos por motivo: %w", err)
@@ -303,7 +311,7 @@ func (r *CancelamentoRepo) Metricas(ctx context.Context, dias int) (*MetricasCan
 		`SELECT date(c.criado_em, 'localtime') AS dia,
 		        COALESCE(SUM(CASE WHEN c.resultado='reversao' THEN 1 ELSE 0 END),0),
 		        COALESCE(SUM(CASE WHEN c.resultado='perda' THEN 1 ELSE 0 END),0)
-		 FROM cancelamentos c`+filtro+`
+		 FROM cancelamentos c`+filtro+extra+`
 		 GROUP BY dia ORDER BY dia`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("série de cancelamentos: %w", err)
@@ -320,11 +328,16 @@ func (r *CancelamentoRepo) Metricas(ctx context.Context, dias int) (*MetricasCan
 }
 
 // CancelamentosDoMotivo lista os cancelamentos de uma tag (clique no gráfico).
-func (r *CancelamentoRepo) CancelamentosDoMotivo(ctx context.Context, nomeChave string) ([]Cancelamento, error) {
+// Sem incluirTratamento só entram os finalizados (reversão/perda).
+func (r *CancelamentoRepo) CancelamentosDoMotivo(ctx context.Context, nomeChave string, incluirTratamento bool) ([]Cancelamento, error) {
+	extra := ""
+	if !incluirTratamento {
+		extra = " AND c.resultado <> 'em_tratamento'"
+	}
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT c.id, c.ticket_id, m.nome, c.resultado, c.criado_em
 		 FROM cancelamentos c JOIN motivos_cancelamento m ON m.id = c.motivo_id
-		 WHERE m.nome_chave = ? ORDER BY c.criado_em DESC`, nomeChave)
+		 WHERE m.nome_chave = ?`+extra+` ORDER BY c.criado_em DESC`, nomeChave)
 	if err != nil {
 		return nil, fmt.Errorf("cancelamentos do motivo %s: %w", nomeChave, err)
 	}

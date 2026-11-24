@@ -111,6 +111,8 @@ export default function CancelamentosDashboard(props: {
   embutido?: boolean;
 }) {
   const [dias, setDias] = useState(30);
+  // Desligado = só finalizados (reversão/perda); ligado inclui em tratamento.
+  const [todos, setTodos] = useState(false);
   const [m, setM] = useState<Metricas | null>(null);
   const [erro, setErro] = useState('');
   const [motivoAberto, setMotivoAberto] = useState<string | null>(null);
@@ -126,7 +128,7 @@ export default function CancelamentosDashboard(props: {
   const [erroImport, setErroImport] = useState('');
 
   function recarregar() {
-    MetricasCancelamentos(dias)
+    MetricasCancelamentos(dias, todos)
       .then((d) => setM(d as unknown as Metricas))
       .catch((e) => setErro(String(e)));
   }
@@ -144,10 +146,11 @@ export default function CancelamentosDashboard(props: {
     const off = EventsOn('cancelamentos:mudou', () => {
       recarregar();
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => {
       if (typeof off === 'function') off();
     };
-  }, [dias]);
+  }, [dias, todos]);
 
   async function abrirImportador() {
     setImportador(true);
@@ -203,16 +206,18 @@ export default function CancelamentosDashboard(props: {
     }
   }
 
+  useEffect(() => {
+    if (!motivoAberto) return setDetalhe([]);
+    CancelamentosDoMotivo(motivoAberto, todos)
+      .then((cs) => setDetalhe((cs as unknown as Cancelamento[]) || []))
+      .catch(() => setDetalhe([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [motivoAberto, todos]);
+
   async function clicarMotivo(nome: string) {
     const nomeAberto = motivoAberto === nome ? null : nome;
     setMotivoAberto(nomeAberto);
     if (!nomeAberto) return setDetalhe([]);
-    try {
-      const cs = await CancelamentosDoMotivo(nomeAberto);
-      setDetalhe((cs as unknown as Cancelamento[]) || []);
-    } catch {
-      setDetalhe([]);
-    }
   }
 
   const fechados = useMemo(() => {
@@ -245,6 +250,30 @@ export default function CancelamentosDashboard(props: {
           ))}
         </div>
         <div className="flex items-center gap-2">
+          <button
+            className={`flex items-center gap-2 text-xs font-medium rounded-xl px-3 py-2 border transition ${
+              todos
+                ? 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300'
+                : 'bg-slate-500/10 border-transparent text-slate-600 dark:text-slate-300 hover:bg-slate-500/20'
+            }`}
+            onClick={() => setTodos((t) => !t)}
+            title={
+              todos
+                ? 'Mostrando todos, inclusive quem ainda está em tratativa'
+                : 'Mostrando só os finalizados (reversão/perda)'
+            }
+          >
+            <span
+              className="relative inline-block rounded-full transition"
+              style={{ height: 18, width: 32, background: todos ? '#f59e0b' : 'rgba(148,163,184,.6)' }}
+            >
+              <span
+                className="absolute rounded-full bg-white shadow transition-all"
+                style={{ height: 14, width: 14, top: 2, left: 2, transform: todos ? 'translateX(14px)' : 'translateX(0)' }}
+              />
+            </span>
+            Incluir em tratamento
+          </button>
           <button
             className="text-xs font-semibold rounded-xl px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow hover:shadow-md transition flex items-center gap-1.5"
             onClick={abrirImportador}
