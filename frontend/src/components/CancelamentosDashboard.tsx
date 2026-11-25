@@ -65,6 +65,12 @@ interface Cancelamento {
 
 const CORES = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
 
+// Nomes longos de motivo comprimem os gráficos (a legenda/eixo come o espaço
+// da pizza e das barras): encurta nos rótulos; o nome completo fica no tooltip.
+function encurtaNome(nome: string, max = 18): string {
+  return nome.length > max ? `${nome.slice(0, max - 1)}…` : nome;
+}
+
 const PERIODOS: { rotulo: string; dias: number }[] = [
   { rotulo: '7 Dias', dias: 7 },
   { rotulo: '30 Dias', dias: 30 },
@@ -226,6 +232,11 @@ export default function CancelamentosDashboard(props: {
     setMotivoAberto(nomeAberto);
     if (!nomeAberto) return setDetalhe([]);
   }
+
+  const barraEncurtada = useMemo(
+    () => (m?.porMotivo ?? []).map((x) => ({ ...x, motivo: encurtaNome(x.motivo, 20) })),
+    [m],
+  );
 
   const fechados = useMemo(() => {
     if (!m) return 0;
@@ -521,7 +532,7 @@ export default function CancelamentosDashboard(props: {
                     </h3>
                     <span className="text-[10px] text-slate-400">Clique na fatia para detalhar</span>
                   </div>
-                  <div className="mt-2 h-60">
+                  <div className="mt-2 h-72">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
@@ -539,7 +550,13 @@ export default function CancelamentosDashboard(props: {
                           ))}
                         </Pie>
                         <Tooltip />
-                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Legend
+                          wrapperStyle={{ fontSize: 11, maxWidth: '45%' }}
+                          formatter={(valor) => {
+                            const nome = String(valor ?? '');
+                            return <span title={nome}>{encurtaNome(nome)}</span>;
+                          }}
+                        />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -579,12 +596,19 @@ export default function CancelamentosDashboard(props: {
                     </h3>
                     <span className="text-[10px] text-slate-400">Segmentação direta</span>
                   </div>
-                  <div className="mt-2 h-60">
+                  <div className="mt-2 h-72">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={m.porMotivo} layout="vertical" margin={{ left: 10, right: 10 }}>
+                      <BarChart data={barraEncurtada} layout="vertical" margin={{ left: 10, right: 10 }}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                         <XAxis type="number" allowDecimals={false} fontSize={10} />
-                        <YAxis type="category" dataKey="motivo" width={110} fontSize={10} tick={{ fill: '#888' }} />
+                        <YAxis
+                          type="category"
+                          dataKey="motivo"
+                          width={150}
+                          fontSize={10}
+                          tick={{ fill: '#888' }}
+                          tickFormatter={(v: unknown) => encurtaNome(String(v ?? ''))}
+                        />
                         <Tooltip />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
                         <Bar dataKey="reversao" name="Reversão" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
