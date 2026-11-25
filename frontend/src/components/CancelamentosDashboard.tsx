@@ -234,7 +234,7 @@ export default function CancelamentosDashboard(props: {
   }
 
   const barraEncurtada = useMemo(
-    () => (m?.porMotivo ?? []).map((x) => ({ ...x, motivo: encurtaNome(x.motivo, 20) })),
+    () => (m?.porMotivo ?? []).map((x) => ({ ...x, motivo: encurtaNome(x.motivo, 30) })),
     [m],
   );
 
@@ -532,33 +532,54 @@ export default function CancelamentosDashboard(props: {
                     </h3>
                     <span className="text-[10px] text-slate-400">Clique na fatia para detalhar</span>
                   </div>
-                  <div className="mt-2 h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={m.porMotivo}
-                          dataKey="total"
-                          nameKey="motivo"
-                          innerRadius={55}
-                          outerRadius={85}
-                          paddingAngle={3}
-                          onClick={(data: { name?: unknown }) => clicarMotivo(String(data?.name ?? ''))}
-                          className="cursor-pointer focus:outline-none"
-                        >
-                          {m.porMotivo.map((_, i) => (
-                            <Cell key={i} fill={CORES[i % CORES.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend
-                          wrapperStyle={{ fontSize: 11, maxWidth: '45%' }}
-                          formatter={(valor) => {
-                            const nome = String(valor ?? '');
-                            return <span title={nome}>{encurtaNome(nome)}</span>;
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
+                  {/* Pizza em tamanho fixo; a legenda é HTML próprio ao lado
+                      (nomes completos, com scroll) — a Legend do recharts
+                      esmagava o desenho conforme o tamanho dos nomes. */}
+                  <div className="mt-2 flex gap-3">
+                    <div className="h-60 w-1/2 min-w-0 shrink-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={m.porMotivo}
+                            dataKey="total"
+                            nameKey="motivo"
+                            innerRadius={50}
+                            outerRadius={80}
+                            paddingAngle={3}
+                            onClick={(data: { name?: unknown }) => clicarMotivo(String(data?.name ?? ''))}
+                            className="cursor-pointer focus:outline-none"
+                          >
+                            {m.porMotivo.map((_, i) => (
+                              <Cell key={i} fill={CORES[i % CORES.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <ul className="flex-1 min-w-0 max-h-60 overflow-y-auto space-y-0.5 text-[11px] pr-1">
+                      {(m?.porMotivo ?? []).length === 0 && (
+                        <li className="py-4 text-center text-slate-400">Sem motivos no período.</li>
+                      )}
+                      {(m?.porMotivo ?? []).map((x, i) => (
+                        <li key={x.motivo}>
+                          <button
+                            className={`w-full flex items-start gap-2 text-left rounded-lg px-1.5 py-1 transition hover:bg-indigo-500/10 ${
+                              motivoAberto && motivoAberto !== x.motivo ? 'opacity-50' : ''
+                            }`}
+                            onClick={() => clicarMotivo(x.motivo)}
+                            title={x.motivo}
+                          >
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5"
+                              style={{ background: CORES[i % CORES.length] }}
+                            />
+                            <span className="min-w-0 break-words text-slate-700 dark:text-slate-200">{x.motivo}</span>
+                            <span className="ml-auto pl-1 text-slate-400 shrink-0 font-semibold">{x.total}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                   {motivoAberto && (
                     <div className="mt-3 p-2.5 rounded-xl bg-slate-500/10 dark:bg-white/5 border border-slate-200/50 dark:border-slate-700/50 max-h-40 overflow-y-auto">
@@ -598,16 +619,17 @@ export default function CancelamentosDashboard(props: {
                   </div>
                   <div className="mt-2 h-72">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={barraEncurtada} layout="vertical" margin={{ left: 10, right: 10 }}>
+                      <BarChart data={barraEncurtada} layout="vertical" margin={{ left: 10, right: 10 }} barCategoryGap="25%">
                         <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                         <XAxis type="number" allowDecimals={false} fontSize={10} />
                         <YAxis
                           type="category"
                           dataKey="motivo"
-                          width={150}
+                          width={200}
+                          interval={0}
                           fontSize={10}
                           tick={{ fill: '#888' }}
-                          tickFormatter={(v: unknown) => encurtaNome(String(v ?? ''))}
+                          tickFormatter={(v: unknown) => encurtaNome(String(v ?? ''), 30)}
                         />
                         <Tooltip />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
