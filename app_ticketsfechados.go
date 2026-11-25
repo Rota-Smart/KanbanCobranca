@@ -16,6 +16,15 @@ import (
 // ColunaTicketFechado é o destino dos cards cujos tickets do 360 fecharam.
 const ColunaTicketFechado = "Ticket Fechado"
 
+// ColunaConcluido é a outra coluna de encerramento do quadro padrão.
+const ColunaConcluido = "Concluido"
+
+// ehColunaFechamento diz se a coluna encerra o card. A trava de cancelamento
+// vale para todas elas — não só para a Ticket Fechado.
+func ehColunaFechamento(col string) bool {
+	return col == ColunaTicketFechado || col == ColunaConcluido
+}
+
 // CardFechado é um card movido pela verificação, com o porquê.
 type CardFechado struct {
 	CardID       int64  `json:"cardId"`

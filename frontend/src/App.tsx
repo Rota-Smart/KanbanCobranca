@@ -315,6 +315,9 @@ export default function App() {
     snapshot: Board | null;
     nome: string;
   } | null>(null);
+  // Fila do botão de fechados: cancelamentos sem motivo esperando o diálogo
+  // (um de cada vez; confirmar um abre o próximo).
+  const [filaMotivos, setFilaMotivos] = useState<{ id: number; nome: string }[]>([]);
   // Grupo aberto do rail (submenu): 'pesquisa' | 'crm' | 'fidelidade' | null
   const [menuGrupo, setMenuGrupo] = useState<string | null>(null);
   // Tempo real: o sync emite 'conta:quadro' a cada mudança remota. Enfileirar o
@@ -733,15 +736,29 @@ export default function App() {
     showToast('🔍 Conferindo tickets no 360…');
     try {
       const r = await bindings.VerificarTicketsFechados();
+      const aguardando = r.aguardandoMotivo?.length ?? 0;
+      const avisoMotivo = aguardando > 0 ? ` ⚠ ${aguardando} cancelamento(s) sem motivo.` : '';
       if ((r.movidos?.length ?? 0) === 0) {
-        const aguardando = r.aguardandoMotivo?.length ?? 0;
-        const avisoMotivo = aguardando > 0 ? ` ⚠ ${aguardando} cancelamento(s) sem motivo — feche pelo quadro.` : '';
         showToast(`✅ ${r.verificados} ticket(s) conferido(s) — nenhum card para mover.${avisoMotivo}${r.erros?.length ? ' ' + r.erros[0] : ''}`, 6000);
       } else {
         const nomes = r.movidos.map((m) => m.cliente || `card ${m.cardId}`).join(', ');
         const falhas = r.erros?.length ? ` ⚠ ${r.erros.length} falha(s): ${r.erros[0]}` : '';
-        showToast(`✅ ${r.movidos.length} card(s) movido(s) para ${r.coluna}: ${nomes}${falhas}`, 8000);
+        showToast(`✅ ${r.movidos.length} card(s) movido(s) para ${r.coluna}: ${nomes}${avisoMotivo}${falhas}`, 8000);
         await recarregarBoard();
+      }
+      // Cancelamentos sem motivo: abre o diálogo na sequência para cada um —
+      // ao confirmar, o movimento para a coluna de fechados é feito aí.
+      if (aguardando > 0) {
+        const nomeDe = (m: { cardId: number; cliente?: string }) => m.cliente || `card ${m.cardId}`;
+        const [primeiro, ...resto] = r.aguardandoMotivo;
+        setFilaMotivos(resto.map((m) => ({ id: m.cardId, nome: nomeDe(m) })));
+        setMotivoPendente({
+          id: primeiro.cardId,
+          coluna: colunaTicketFechado,
+          posicao: (board[colunaTicketFechado] ?? []).length,
+          snapshot: null,
+          nome: nomeDe(primeiro),
+        });
       }
     } catch (e) {
       showToast('⚠ Falha ao verificar tickets: ' + String(e), 6000);
@@ -2273,14 +2290,30 @@ ${txt.trim()}` : txt.trim());
           nomeCliente={motivoPendente.nome}
           onConfirmado={() => {
             const p = motivoPendente;
-            setMotivoPendente(null);
             showToast('✅ Cancelamento registrado.');
             void persistMove(p.id, p.coluna, p.posicao, p.snapshot);
+            // Fila do botão de fechados: confirmou um, abre o próximo.
+            const [proximo, ...resto] = filaMotivos;
+            if (proximo) {
+              setFilaMotivos(resto);
+              setMotivoPendente({
+                id: proximo.id,
+                coluna: colunaTicketFechado,
+                posicao: (board[colunaTicketFechado] ?? []).length,
+                snapshot: null,
+                nome: proximo.nome,
+              });
+            } else {
+              setMotivoPendente(null);
+              setFilaMotivos([]);
+            }
             void recarregarBoard();
           }}
           onFechar={() => {
             if (motivoPendente.snapshot) setBoard(motivoPendente.snapshot);
+            else showToast('⚠ Cancelamento continua sem motivo — o card fica onde está.', 5000);
             setMotivoPendente(null);
+            setFilaMotivos([]);
           }}
         />
       )}

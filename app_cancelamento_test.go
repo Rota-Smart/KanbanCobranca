@@ -98,6 +98,60 @@ func TestMotivoChaveNormalizada(t *testing.T) {
 	}
 }
 
+// A trava também vale para a coluna Concluido — qualquer porta de
+// fechamento exige o motivo do cancelamento.
+func TestCancelamentoTravaNaConcluido(t *testing.T) {
+	a := newTestApp(t) // Concluido já vem no quadro padrão
+	card, err := a.SaveTicket(exemploTicket())
+	if err != nil {
+		t.Fatalf("SaveTicket: %v", err)
+	}
+	vincularCancelamento(t, a, card.ID, "Cancelamento")
+	if err := a.MoveTicket(card.ID, ColunaConcluido, 0); !errors.Is(err, service.ErrCancelamentoSemMotivo) {
+		t.Fatalf("mover p/ Concluido sem motivo deveria barrar, veio %v", err)
+	}
+	if err := a.RegistrarCancelamento(card.ID, "preço", service.CancelamentoPerda); err != nil {
+		t.Fatalf("RegistrarCancelamento: %v", err)
+	}
+	if err := a.MoveTicket(card.ID, ColunaConcluido, 0); err != nil {
+		t.Fatalf("após registrar deveria mover: %v", err)
+	}
+}
+
+// Registro em em_tratamento não fecha o cancelamento: o fechamento do card
+// pergunta de novo. Registro com reversão/perda (inclusive importado) é a
+// resposta final e o card fecha sem popup.
+func TestImportadoFinalNaoRepergunta(t *testing.T) {
+	a := newTestApp(t)
+	if _, err := a.colunas.Add(a.ctx, ColunaTicketFechado); err != nil {
+		t.Fatalf("criar coluna: %v", err)
+	}
+	// em_tratamento (como vem da lista colada/importada) trava.
+	emTrat, err := a.SaveTicket(exemploTicket())
+	if err != nil {
+		t.Fatalf("SaveTicket: %v", err)
+	}
+	vincularCancelamento(t, a, emTrat.ID, "Cancelamento")
+	if err := a.RegistrarCancelamento(emTrat.ID, "em conversa", service.CancelamentoTratamento); err != nil {
+		t.Fatalf("registrar tratamento: %v", err)
+	}
+	if err := a.MoveTicket(emTrat.ID, ColunaTicketFechado, 0); !errors.Is(err, service.ErrCancelamentoSemMotivo) {
+		t.Fatalf("em_tratamento deveria travar o fechamento, veio %v", err)
+	}
+	// reversão/perda gravados (importação) passam direto.
+	final, err := a.SaveTicket(exemploTicket())
+	if err != nil {
+		t.Fatalf("SaveTicket: %v", err)
+	}
+	vincularCancelamento(t, a, final.ID, "cancelamento de plano")
+	if err := a.RegistrarCancelamento(final.ID, "voltou pelo preço", service.CancelamentoReversao); err != nil {
+		t.Fatalf("registrar reversão: %v", err)
+	}
+	if err := a.MoveTicket(final.ID, ColunaTicketFechado, 0); err != nil {
+		t.Fatalf("importado com reversão deveria fechar sem perguntar: %v", err)
+	}
+}
+
 // Card de cancelamento que volta do Ticket Fechado perde o registro — se
 // fechar de novo, pede motivo outra vez.
 func TestSairDeFechadosApagaCancelamento(t *testing.T) {

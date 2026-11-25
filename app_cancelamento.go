@@ -23,7 +23,7 @@ import (
 // e verificação automática passam todos pelo mesmo lugar).
 
 // cancelamentoPendente diz se o card tem ticket de assunto "Cancelamento"
-// sem motivo registrado — só ele bloqueia o fechamento.
+// sem resposta final (reversão/perda) — só ele bloqueia o fechamento.
 func (a *App) cancelamentoPendente(ticketID int64) (bool, error) {
 	if a.vinculos == nil || a.cancelamentos == nil {
 		return false, nil // wiring ausente (testes antigos): não trava
@@ -46,7 +46,13 @@ func (a *App) cancelamentoPendente(ticketID int64) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return c == nil, nil
+	// Registro com reversão ou perda é a resposta final — inclusive os que
+	// vieram da importação. em_tratamento (ou sem registro) não fecha: o
+	// fechamento do card precisa perguntar de novo.
+	if c == nil {
+		return true, nil
+	}
+	return c.Resultado != service.CancelamentoReversao && c.Resultado != service.CancelamentoPerda, nil
 }
 
 // ListarMotivosCancelamento alimenta o datalist do diálogo de motivo.

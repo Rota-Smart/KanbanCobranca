@@ -305,9 +305,10 @@ func (a *App) MoveTicket(id int64, coluna string, posicao int) error {
 		return friendly("MoveTicket", err)
 	}
 	// Cancelamento obrigatório: card com ticket de assunto "Cancelamento" só
-	// entra em Ticket Fechado com motivo + resultado registrados. Sentinela
-	// volta para o frontend abrir o diálogo de motivo e refazer o movimento.
-	if coluna == ColunaTicketFechado && t.ColunaAtual != coluna {
+	// entra numa coluna de fechamento (Ticket Fechado / Concluido) com motivo
+	// + resultado registrados. Sentinela volta para o frontend abrir o diálogo
+	// de motivo e refazer o movimento.
+	if ehColunaFechamento(coluna) && t.ColunaAtual != coluna {
 		precisa, err := a.cancelamentoPendente(id)
 		if err != nil {
 			return friendly("MoveTicket", err)
@@ -318,6 +319,8 @@ func (a *App) MoveTicket(id int64, coluna string, posicao int) error {
 	}
 	// Card saiu de Ticket Fechado (decisão manual): o cancelamento deixa de
 	// valer — o registro sai para poder exigir motivo de novo se voltar.
+	// Sair da Concluido não apaga: quem veio de lá com motivo importado
+	// mantém a resposta final.
 	if t.ColunaAtual == ColunaTicketFechado && coluna != ColunaTicketFechado && a.cancelamentos != nil {
 		if err := a.cancelamentos.CancelarApagar(a.ctx, id); err != nil {
 			return friendly("MoveTicket", err)
