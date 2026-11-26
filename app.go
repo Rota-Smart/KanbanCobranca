@@ -57,6 +57,12 @@ type App struct {
 	// cache é por chatID: duas conversas em andamento não se sobrescrevem
 	cachePrebusca map[int64]map[string]string
 
+	// Cancelamentos confirmados nesta sessão (popup de motivo respondido):
+	// todo card com vínculo de cancelamento pergunta ao fechar, mas depois de
+	// responder o movimento passa. Apaga quando o card sai do Ticket Fechado.
+	cancelMu        sync.Mutex
+	cancelConfirmas map[int64]bool
+
 	// Cancelamento dos pedidos ao assistente: enquanto a IA responde, os
 	// CancelFunc da conversa ficam aqui (pode haver mais de um pedido
 	// simultâneo: a IA longa + um comando local rápido). O ⏹ do chat chama
@@ -322,6 +328,7 @@ func (a *App) MoveTicket(id int64, coluna string, posicao int) error {
 	// Sair da Concluido não apaga: quem veio de lá com motivo importado
 	// mantém a resposta final.
 	if t.ColunaAtual == ColunaTicketFechado && coluna != ColunaTicketFechado && a.cancelamentos != nil {
+		a.cancelarEsquecer(id)
 		if err := a.cancelamentos.CancelarApagar(a.ctx, id); err != nil {
 			return friendly("MoveTicket", err)
 		}

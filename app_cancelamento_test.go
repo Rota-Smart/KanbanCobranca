@@ -118,37 +118,57 @@ func TestCancelamentoTravaNaConcluido(t *testing.T) {
 	}
 }
 
-// Registro em em_tratamento não fecha o cancelamento: o fechamento do card
-// pergunta de novo. Registro com reversão/perda (inclusive importado) é a
-// resposta final e o card fecha sem popup.
+// Todo card com vínculo de cancelamento pergunta ao fechar, MESMO com
+// registro final (reversão/perda, inclusive importado): o usuário confirma
+// resultado e motivo na hora do fechamento. Respondido o popup, o movimento
+// passa nesta sessão; saindo do Ticket Fechado, pergunta outra vez.
 func TestImportadoFinalNaoRepergunta(t *testing.T) {
 	a := newTestApp(t)
 	if _, err := a.colunas.Add(a.ctx, ColunaTicketFechado); err != nil {
 		t.Fatalf("criar coluna: %v", err)
 	}
-	// em_tratamento (como vem da lista colada/importada) trava.
+	// Registro em_tratamento (como vem da lista colada/importada) não isenta:
+	// gravado direto no banco (sem marcar a sessão), o popup abre na
+	// tentativa de fechamento.
 	emTrat, err := a.SaveTicket(exemploTicket())
 	if err != nil {
 		t.Fatalf("SaveTicket: %v", err)
 	}
 	vincularCancelamento(t, a, emTrat.ID, "Cancelamento")
-	if err := a.RegistrarCancelamento(emTrat.ID, "em conversa", service.CancelamentoTratamento); err != nil {
-		t.Fatalf("registrar tratamento: %v", err)
+	m, err := a.cancelamentos.MotivoCriarSeNaoExiste(a.ctx, "em conversa")
+	if err != nil {
+		t.Fatalf("criar motivo: %v", err)
+	}
+	if err := a.cancelamentos.CancelarMarcar(a.ctx, emTrat.ID, m.ID, service.CancelamentoTratamento); err != nil {
+		t.Fatalf("gravar registro: %v", err)
 	}
 	if err := a.MoveTicket(emTrat.ID, ColunaTicketFechado, 0); !errors.Is(err, service.ErrCancelamentoSemMotivo) {
-		t.Fatalf("em_tratamento deveria travar o fechamento, veio %v", err)
+		t.Fatalf("card de cancelamento deveria travar o fechamento mesmo com registro, veio %v", err)
 	}
-	// reversão/perda gravados (importação) passam direto.
+	// Respondido o popup (registrar de novo), o movimento passa na sessão.
+	if err := a.RegistrarCancelamento(emTrat.ID, "em conversa", service.CancelamentoPerda); err != nil {
+		t.Fatalf("responder popup: %v", err)
+	}
+	if err := a.MoveTicket(emTrat.ID, ColunaTicketFechado, 0); err != nil {
+		t.Fatalf("após responder o popup deveria mover: %v", err)
+	}
+	// Registro reversão/perda (importação) também não isenta o popup.
 	final, err := a.SaveTicket(exemploTicket())
 	if err != nil {
 		t.Fatalf("SaveTicket: %v", err)
 	}
 	vincularCancelamento(t, a, final.ID, "cancelamento de plano")
-	if err := a.RegistrarCancelamento(final.ID, "voltou pelo preço", service.CancelamentoReversao); err != nil {
-		t.Fatalf("registrar reversão: %v", err)
+	if err := a.cancelamentos.CancelarMarcar(a.ctx, final.ID, m.ID, service.CancelamentoReversao); err != nil {
+		t.Fatalf("gravar registro: %v", err)
+	}
+	if err := a.MoveTicket(final.ID, ColunaTicketFechado, 0); !errors.Is(err, service.ErrCancelamentoSemMotivo) {
+		t.Fatalf("importado com reversão deveria travar e perguntar, veio %v", err)
+	}
+	if err := a.RegistrarCancelamento(final.ID, "voltou pelo preço", service.CancelamentoPerda); err != nil {
+		t.Fatalf("responder popup: %v", err)
 	}
 	if err := a.MoveTicket(final.ID, ColunaTicketFechado, 0); err != nil {
-		t.Fatalf("importado com reversão deveria fechar sem perguntar: %v", err)
+		t.Fatalf("após responder o popup deveria mover: %v", err)
 	}
 }
 

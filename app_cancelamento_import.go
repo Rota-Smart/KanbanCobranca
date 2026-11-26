@@ -245,6 +245,9 @@ func (a *App) registrarCancelamentoLinho(ticketID int64, motivo, resultado strin
 	if err := a.cancelamentos.CancelarMarcar(a.ctx, ticketID, m.ID, resultado); err != nil {
 		return err
 	}
+	// Registro gravado: libera o movimento de fechamento desta sessão (a
+	// importação move o card na sequência, sem popup).
+	a.cancelarConfirmar(ticketID)
 	if a.uiPronta {
 		runtime.EventsEmit(a.ctx, "cancelamentos:mudou", nil)
 	}

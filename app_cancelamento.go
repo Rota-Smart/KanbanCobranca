@@ -22,37 +22,45 @@ import (
 // A trava em si vive no MoveTicket (assim botão de ações, arrastar, chat, IA
 // e verificação automática passam todos pelo mesmo lugar).
 
-// cancelamentoPendente diz se o card tem ticket de assunto "Cancelamento"
-// sem resposta final (reversão/perda) — só ele bloqueia o fechamento.
+// cancelamentoPendente diz se o card tem ticket de assunto "Cancelamento" —
+// ele SEMPRE bloqueia o fechamento (mesmo com registro de reversão/perda ou
+// vindo da importação): o popup de motivo abre a cada fechamento. Depois de
+// responder na sessão, o movimento passa (cancelConfirmas).
 func (a *App) cancelamentoPendente(ticketID int64) (bool, error) {
-	if a.vinculos == nil || a.cancelamentos == nil {
+	if a.vinculos == nil {
 		return false, nil // wiring ausente (testes antigos): não trava
 	}
 	vs, err := a.vinculos.List(a.ctx, ticketID)
 	if err != nil {
 		return false, err
 	}
-	temCancelamento := false
 	for _, v := range vs {
 		if service.AssuntoCancelamento(v.Assunto) {
-			temCancelamento = true
-			break
+			a.cancelMu.Lock()
+			defer a.cancelMu.Unlock()
+			return !a.cancelConfirmas[ticketID], nil
 		}
 	}
-	if !temCancelamento {
-		return false, nil
+	return false, nil
+}
+
+// cancelarConfirmar marca o card como respondido nesta sessão; o próximo
+// MoveTicket para coluna de fechamento passa.
+func (a *App) cancelarConfirmar(ticketID int64) {
+	a.cancelMu.Lock()
+	defer a.cancelMu.Unlock()
+	if a.cancelConfirmas == nil {
+		a.cancelConfirmas = make(map[int64]bool)
 	}
-	c, err := a.cancelamentos.CancelarDoTicket(a.ctx, ticketID)
-	if err != nil {
-		return false, err
-	}
-	// Registro com reversão ou perda é a resposta final — inclusive os que
-	// vieram da importação. em_tratamento (ou sem registro) não fecha: o
-	// fechamento do card precisa perguntar de novo.
-	if c == nil {
-		return true, nil
-	}
-	return c.Resultado != service.CancelamentoReversao && c.Resultado != service.CancelamentoPerda, nil
+	a.cancelConfirmas[ticketID] = true
+}
+
+// cancelarEsquecer tira a marca de confirmado (card saiu do Ticket Fechado:
+// se fechar de novo, pergunta outra vez).
+func (a *App) cancelarEsquecer(ticketID int64) {
+	a.cancelMu.Lock()
+	defer a.cancelMu.Unlock()
+	delete(a.cancelConfirmas, ticketID)
 }
 
 // ListarMotivosCancelamento alimenta o datalist do diálogo de motivo.
@@ -92,6 +100,8 @@ func (a *App) RegistrarCancelamento(ticketID int64, motivo, resultado string) er
 	if err := a.cancelamentos.CancelarMarcar(a.ctx, ticketID, m.ID, resultado); err != nil {
 		return friendly("RegistrarCancelamento", err)
 	}
+	// Popup respondido: libera o movimento de fechamento desta sessão.
+	a.cancelarConfirmar(ticketID)
 	if a.uiPronta {
 		runtime.EventsEmit(a.ctx, "cancelamentos:mudou", nil)
 	}
