@@ -105,21 +105,32 @@ func (a *App) RegistrarCancelamento(ticketID int64, motivo, resultado string) er
 	if a.uiPronta {
 		runtime.EventsEmit(a.ctx, "cancelamentos:mudou", nil)
 	}
-	// Sincroniza marcação de motivo de cancelamento com o site em background
+	// Sincroniza o cancelamento com o site em background: sobe direto por ID
+	// do ticket (upsert idempotente, mesmo caminho do boot). O reenvio por
+	// lista de texto dependia do site já conhecer o vínculo do ticket para
+	// casar pelo nome — sem o vínculo a linha caia em falha silenciosa e o
+	// dashboard do site ficava sem o cancelamento.
 	go func() {
-		t, err := a.tickets.Get(context.Background(), ticketID)
-		if err != nil || t == nil || t.NomeCliente == "" {
+		tok, _ := lerTokenConta()
+		if !a.uiPronta || tok == "" {
 			return
 		}
-		// Formata linha para a API do site registrar o cancelamento do card
-		resTrecho := " - REVERTIDO"
-		if resultado == service.CancelamentoPerda {
-			resTrecho = " - CANCELADO"
-		} else if resultado == service.CancelamentoTratamento {
-			resTrecho = ""
+		for tentativa := 0; tentativa < 10; tentativa++ {
+			if tentativa > 0 && !dormir(a.ctx, 30*time.Second) {
+				return
+			}
+			registrados, falhas, err := a.SincronizarCancelamentosNuvem()
+			if err != nil {
+				slog.Warn("sync cancelamento para a nuvem", "err", err)
+				continue
+			}
+			if falhas == 0 {
+				slog.Info("cancelamento sincronizado com a nuvem", "registrados", registrados)
+				return
+			}
+			// Card ainda não chegou à nuvem (contasync roda em ~20s): re-tenta.
 		}
-		texto := fmt.Sprintf("%s - %s%s", t.NomeCliente, motivo, resTrecho)
-		a.sincronizarImportSite(texto, t.ColunaAtual)
+		slog.Warn("cancelamento não subiu inteiro para a nuvem após re-tentativas")
 	}()
 	return nil
 }
