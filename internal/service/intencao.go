@@ -800,3 +800,96 @@ func ParseIntencaoAgendar(msg string) (IntencaoAgendar, bool) {
 	}
 	return in, true
 }
+
+// ---- "registre tentativa (de contato)" solto (backend-only) ----
+
+// IntencaoTentativa é o "registre (uma) tentativa (de contato) (do cliente
+// X) (por telefone)" solto: Alvo vazio = cliente em discussão no chat;
+// Canal e Nota são opcionais e viram o registro da tentativa (mesmo destino
+// da tool tentativa_contato).
+type IntencaoTentativa struct {
+	Alvo  string
+	Canal string
+	Nota  string
+}
+
+// reTentativaSolto casa o início: verbo registrar/anotar/marcar + a palavra
+// "tentativa" em qualquer ponto da frase (exige "tentativa" pra não roubar
+// "marque a visita como realizada" do /realizada).
+var reTentativaSolto = regexp.MustCompile(
+	`(?i)^(?:me\s+)?(?:registr|anot|mar[ck]|marq)\w*\b.*?\btentativ\w*\b\s*(?:de\s+)?(?:contato)?\b[:.]?\s*(.*)$`)
+
+// reCanalTentativa acha o canal citado ("por telefone", "via whatsapp").
+var reCanalTentativa = regexp.MustCompile(
+	`(?i)\b(?:por|via|pelo|pela|no)\s+(?:o\s+|a\s+)?(telefone|celular|ligação|ligacao|what'?s?app|zap|e-?mail)\b`)
+
+// sepNotaTentativa acha o início da nota livre no resto ("obs: …", "nota:
+// …", "dizendo que …" ou tudo depois de " - " / "," / ";").
+var sepNotaTentativa = regexp.MustCompile(`(?i)(?:obs(?:ervação)?:\s*|nota:\s*|dizendo\s+(?:que|o|a)\s+)`)
+
+// cortarNotaTentativa separa a nota (depois do separador ou da 1.ª vírgula/
+// ponto-e-vírgula/" - ") do resto que identifica o cliente.
+func cortarNotaTentativa(resto string) (alvo, nota string) {
+	if strings.HasPrefix(resto, "- ") { // o " - " à esquerda sobreviveu à borda
+		return "", limparBordas(resto[1:])
+	}
+	if loc := sepNotaTentativa.FindStringIndex(resto); loc != nil {
+		return limparBordas(resto[:loc[0]]), limparBordas(resto[loc[1]:])
+	}
+	if i := strings.Index(resto, " - "); i >= 0 {
+		return limparBordas(resto[:i]), limparBordas(resto[i+3:])
+	}
+	if i := strings.IndexAny(resto, ",;"); i >= 0 {
+		return limparBordas(resto[:i]), limparBordas(resto[i+1:])
+	}
+	return limparBordas(resto), ""
+}
+
+// reAlvoTentativa tira da frente o dono da tentativa ("do (o|a) (cliente)",
+// "para o cliente", "no card do", "do card 12345").
+var reAlvoTentativa = regexp.MustCompile(
+	`(?i)^(?:(?:do|da|dos|das|para|pro|p/|no|na|em)\s+(?:o|a|os|as|um|uma)?\s*(?:(?:cliente|card)\s+)?)(.+)$`)
+
+// NormalizarCanalTentativa uniformiza o canal citado no texto.
+func NormalizarCanalTentativa(canal string) string {
+	c := strings.ToLower(strings.TrimSpace(canal))
+	switch {
+	case strings.HasPrefix(c, "what") || c == "zap":
+		return "WhatsApp"
+	case strings.HasPrefix(c, "e-") || c == "email":
+		return "E-mail"
+	case c == "ligacao":
+		return "Ligação"
+	}
+	if c == "" {
+		return ""
+	}
+	return strings.ToUpper(c[:1]) + c[1:]
+}
+
+// ParseIntencaoTentativa devolve alvo, canal e nota do "registre tentativa
+// de contato" solto. ok=false quando a mensagem não é dele (cai no agente
+// normal, que trata caso por caso).
+func ParseIntencaoTentativa(msg string) (IntencaoTentativa, bool) {
+	msg = strings.TrimSpace(msg)
+	// "/tentativa (João) (por telefone)" vira "registre tentativa …" antes
+	// do casamento — o atalho de barra segue o mesmo caminho do texto solto.
+	if campos := strings.Fields(msg); len(campos) > 0 && strings.EqualFold(campos[0], "/tentativa") {
+		msg = strings.TrimSpace("registre tentativa " + strings.Join(campos[1:], " "))
+	}
+	m := reTentativaSolto.FindStringSubmatch(msg)
+	if m == nil {
+		return IntencaoTentativa{}, false
+	}
+	in := IntencaoTentativa{}
+	resto := m[1] // cru: limparBordas comeria o "-" que abre a nota ("… - sem sinal")
+	if loc := reCanalTentativa.FindStringSubmatchIndex(resto); loc != nil {
+		in.Canal = NormalizarCanalTentativa(resto[loc[2]:loc[3]])
+		resto = limparBordas(resto[:loc[0]] + " " + resto[loc[1]:])
+	}
+	in.Alvo, in.Nota = cortarNotaTentativa(resto)
+	if a := reAlvoTentativa.FindStringSubmatch(in.Alvo); a != nil {
+		in.Alvo = limparBordas(a[1])
+	}
+	return in, true
+}

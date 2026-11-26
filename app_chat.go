@@ -402,6 +402,7 @@ func (a *App) comandoLocal(mensagem string, chatID int64) (string, *service.Chat
 		{"realizada", a.executarComandoRealizada},
 		{"abrir", a.executarIntencaoAbrir},
 		{"agende", a.executarIntencaoAgendar},
+		{"tentativa", a.executarIntencaoTentativa},
 		{"intencao_local", a.executarIntencaoLocal},
 	}
 	for _, c := range casos {
@@ -2282,6 +2283,62 @@ func (a *App) executarIntencaoAgendar(mensagem string, chatID int64) (*service.C
 		}
 	}
 	return a.agendarVisitaDoChat(res, card.ID, in.Quando), true
+}
+
+// executarIntencaoTentativa roda o "registre tentativa de contato" do chat
+// (sem IA): com cliente no comando registra nele; sem cliente, no cliente em
+// discussão no chat. Canal ("por telefone") e nota ("obs: não atendeu") são
+// opcionais. ok=false quando não é o comando — aí a mensagem segue pro
+// agente (que tem variações fora dos padrões locais).
+func (a *App) executarIntencaoTentativa(mensagem string, chatID int64) (*service.ChatResultado, bool) {
+	in, ok := service.ParseIntencaoTentativa(mensagem)
+	if !ok {
+		return nil, false
+	}
+	alvo := in.Alvo
+	if alvo == "" || service.EhAlvoDeContexto(alvo) {
+		card, cod, achou := a.cardDoContextoChat(chatID)
+		if !achou {
+			if cod != "" {
+				return respostaContextoSemCard(cod, "card para registrar a tentativa de contato"), true
+			}
+			return &service.ChatResultado{
+				Resposta: "Não identifiquei o cliente em discussão nesta conversa. Diga: registre tentativa de contato do <cliente> (ou cite o código service antes).",
+				Acoes:    []service.AcaoDoAgente{},
+			}, true
+		}
+		alvo = card.NomeCliente
+	}
+	ts, err := a.tickets.List(a.ctx)
+	if err != nil {
+		return &service.ChatResultado{Resposta: "Não consegui listar os cards: " + err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	cards := make([]service.CardResumo, 0, len(ts))
+	for _, t := range ts {
+		cards = append(cards, service.CardResumo{ID: t.ID, NomeCliente: t.NomeCliente, CodService: t.CodService, ColunaAtual: t.ColunaAtual})
+	}
+	card, err := service.ResolverCard(alvo, cards)
+	if err != nil {
+		return &service.ChatResultado{Resposta: err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	t, err := a.RegistrarTentativaContato(card.ID, in.Canal, in.Nota)
+	if err != nil {
+		return &service.ChatResultado{Resposta: "⚠ " + err.Error(), Acoes: []service.AcaoDoAgente{}}, true
+	}
+	detalhe := ""
+	if in.Canal != "" {
+		detalhe += " via " + in.Canal
+	}
+	resposta := fmt.Sprintf("📞 Tentativa de contato%s registrada no card %d (%s). Total: %d tentativa(s); última em %s.",
+		detalhe, t.ID, t.NomeCliente, t.Tentativas, t.UltimaTentativa)
+	if in.Nota != "" {
+		resposta += "\n📝 " + in.Nota
+	}
+	return &service.ChatResultado{
+		Resposta: resposta,
+		Acoes: []service.AcaoDoAgente{{Ferramenta: "tentativa_contato",
+			Resumo: fmt.Sprintf("registrou tentativa de contato de %s (total %d) via comando local", t.NomeCliente, t.Tentativas)}},
+	}, true
 }
 
 // executarIntencaoLocal reconhece comandos rígidos de card no texto e os

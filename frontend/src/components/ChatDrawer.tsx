@@ -34,6 +34,7 @@ const comandosBarra: { cmd: string; exemplo: string }[] = [
   { cmd: '/apagar', exemplo: '/apagar' },
   { cmd: '/vincular', exemplo: '/vincular' },
   { cmd: '/realizada', exemplo: '/realizada' },
+  { cmd: '/tentativa', exemplo: '/tentativa (ou "registre tentativa de contato por telefone")' },
 ];
 
 // Sugestões clicáveis (estilo outros assistentes de IA): aparecem com o
