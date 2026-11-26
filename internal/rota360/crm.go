@@ -112,14 +112,14 @@ type NegociacaoCRM struct {
 	ExigeAcao      *struct {
 		Motivos []string `json:"motivos"`
 	} `json:"exige_acao"`
-	Esfriando       bool    `json:"esfriando"`
-	PausadaEm       *string `json:"pausada_em"`
-	RetornoEm       *string `json:"retorno_em"`
-	ProximaTarefa   *string `json:"proxima_tarefa"`
-	FechamentoPrev  *string `json:"fechamento_previsto"`
-	AtualizadoEm    string  `json:"atualizado_em"`
-	AtividadeUltima *string `json:"ultima_atividade_em"`
-	Visita          *VisitaCRM `json:"visita"`
+	Esfriando       bool         `json:"esfriando"`
+	PausadaEm       FlexTexto    `json:"pausada_em"`
+	RetornoEm       FlexTexto    `json:"retorno_em"`
+	ProximaTarefa   FlexTexto    `json:"proxima_tarefa"`
+	FechamentoPrev  FlexTexto    `json:"fechamento_previsto"`
+	AtualizadoEm    string       `json:"atualizado_em"`
+	AtividadeUltima FlexTexto    `json:"ultima_atividade_em"`
+	Visita          *VisitaCRM   `json:"visita"`
 }
 
 // EnderecoTexto monta o endereço do card em uma linha (para o kanban).

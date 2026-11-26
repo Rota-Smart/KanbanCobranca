@@ -268,6 +268,22 @@ func (f *FlexInt) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// FlexTexto aceita texto ou qualquer outro JSON (objeto, número, lista).
+// O 360 mudou proxima_tarefa de texto para objeto (26/11/2026) e um campo só
+// recusava o decode do funil inteiro; campos soltos que o app não usa devem
+// degradar para vazio em vez de derrubar a resposta.
+type FlexTexto string
+
+func (f *FlexTexto) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*f = FlexTexto(s)
+		return nil
+	}
+	*f = "" // objeto/estrutura nova do 360: ignora sem quebrar o decode
+	return nil
+}
+
 // Produto360 é um produto/linha de contrato do cliente.
 type Produto360 struct {
 	CodProduto           int64     `json:"codProduto"`

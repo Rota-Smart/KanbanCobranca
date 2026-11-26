@@ -125,3 +125,21 @@ func TestMoverNegociacao(t *testing.T) {
 		t.Fatal("id vazio deveria falhar")
 	}
 }
+
+func TestNegociacoesCamposTolerantes(t *testing.T) {
+	// o 360 passou a mandar objetos onde antes era texto (proxima_tarefa,
+	// 26/11/2026) — um campo assim não pode recusar o decode do funil inteiro
+	c, _ := servidorFalso(t, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"itens":[{"id":"n1","titulo":"Card","proxima_tarefa":{"titulo":"Ligar","data":"2026-11-27"},"pausada_em":null,"ultima_atividade_em":"2026-11-25T10:00:00Z","fechamento_previsto":42}],"total":1}`)
+	})
+	p, err := c.NegociacoesCRM(context.Background(), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Itens) != 1 || p.Itens[0].ID != "n1" {
+		t.Fatalf("página errada: %+v", p)
+	}
+	if p.Itens[0].ProximaTarefa != "" || p.Itens[0].AtividadeUltima != "2026-11-25T10:00:00Z" {
+		t.Fatalf("campos tolerantes errados: %+v", p.Itens[0])
+	}
+}
