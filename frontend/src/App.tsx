@@ -920,6 +920,12 @@ export default function App() {
     }
   }
 
+  // marcarFechado: atalho no menu ⋯ do card — mesma coisa que arrastar até
+  // Ticket Fechado (a trava de cancelamento e o popup valem igual).
+  function marcarFechado(t: Ticket) {
+    void persistMove(t.id, colunaTicketFechado, (board[colunaTicketFechado] ?? []).length, board);
+  }
+
   // abrirVisita acha o card (em qualquer coluna do snapshot) e abre o
   // diálogo de agendamento de visita.
   function abrirVisita(id: number, fonte: Board | null) {
@@ -1963,6 +1969,7 @@ ${txt.trim()}` : txt.trim());
                     }}
                     onExcluir={excluir}
                     onAgendarVisita={setVisitaTicket}
+                    onMarcarFechado={c === colunaTicketFechado ? undefined : marcarFechado}
                     comissoes={comissoesPorTicket}
                     onReceberComissao={receberComissao}
                     onEditarComissao={(t) => setComissaoTicket(t)}
@@ -2288,10 +2295,13 @@ ${txt.trim()}` : txt.trim());
         <MotivoCancelamentoDialog
           ticketId={motivoPendente.id}
           nomeCliente={motivoPendente.nome}
-          onConfirmado={() => {
+          onConfirmado={async () => {
             const p = motivoPendente;
             showToast('✅ Cancelamento registrado.');
-            void persistMove(p.id, p.coluna, p.posicao, p.snapshot);
+            // O movimento de fechamento tem que terminar ANTES de recarregar o
+            // board — em paralelo o recarregar buscava a posição antiga e o
+            // card "voltava" pra coluna de origem.
+            await persistMove(p.id, p.coluna, p.posicao, p.snapshot);
             // Fila do botão de fechados: confirmou um, abre o próximo.
             const [proximo, ...resto] = filaMotivos;
             if (proximo) {
@@ -2306,8 +2316,8 @@ ${txt.trim()}` : txt.trim());
             } else {
               setMotivoPendente(null);
               setFilaMotivos([]);
+              void recarregarBoard();
             }
-            void recarregarBoard();
           }}
           onFechar={() => {
             if (motivoPendente.snapshot) setBoard(motivoPendente.snapshot);

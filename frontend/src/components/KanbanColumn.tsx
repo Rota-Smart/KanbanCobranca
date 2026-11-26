@@ -52,6 +52,8 @@ interface Props {
   onExcluir: (ticket: Ticket) => void;
   /** Abre o diálogo de agendamento de visita (coluna "Visita Agendada"). */
   onAgendarVisita?: (ticket: Ticket) => void;
+  /** Menu ⋯ do card: move direto para "Ticket Fechado" ( fora dela). */
+  onMarcarFechado?: (ticket: Ticket) => void;
   /** Comissões por card (coluna Upgrade) + ações de comissão. */
   comissoes?: Record<number, Comissao>;
   onReceberComissao?: (ticket: Ticket) => void;
@@ -92,7 +94,7 @@ function BotaoModo({ ativo, titulo, children, onClick }: { ativo: boolean; titul
   );
 }
 
-export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual', ordenacaoDesc = false, onOrdenacao, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onAgendarVisita, comissoes, onReceberComissao, onEditarComissao, cancelamentosPorTicket, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca, contagem, rodape, selecionado, emSelecao, onAlternarSelecao }: Props) {
+export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual', ordenacaoDesc = false, onOrdenacao, acordosPorTicket, modoDoCard, onModoCard, modoColuna, onModoColuna, onAbrir, onExcluir, onAgendarVisita, onMarcarFechado, comissoes, onReceberComissao, onEditarComissao, cancelamentosPorTicket, onNovoCard, onBuscar360, onRenomear, onRemover, onMover, alca, contagem, rodape, selecionado, emSelecao, onAlternarSelecao }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna });
   const [recolhida, setRecolhida] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
@@ -273,6 +275,7 @@ export default function KanbanColumn({ coluna, tickets, ordenacaoModo = 'manual'
               onAbrir={() => onAbrir(t)}
               onExcluir={onExcluir}
               onAgendarVisita={onAgendarVisita}
+              onMarcarFechado={onMarcarFechado}
               comissao={comissoes?.[t.id]}
               onReceberComissao={onReceberComissao}
               onEditarComissao={onEditarComissao}

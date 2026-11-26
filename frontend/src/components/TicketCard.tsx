@@ -166,6 +166,8 @@ interface Props {
   onExcluir: (ticket: Ticket) => void;
   /** Abre o diálogo de agendamento de visita (coluna "Visita Agendada"). */
   onAgendarVisita?: (ticket: Ticket) => void;
+  /** Menu ⋯: move o card direto para "Ticket Fechado" (ausente na própria coluna). */
+  onMarcarFechado?: (ticket: Ticket) => void;
   /** Comissão do card (coluna Upgrade): mostra selo 💰/✅ e ações no menu. */
   comissao?: Comissao | null;
   onReceberComissao?: (ticket: Ticket) => void;
@@ -203,7 +205,7 @@ function CheckSelecao({ ticket, selecionado, onAlternar }: { ticket: Ticket; sel
 
 // Card estilo app de delivery: avatar com iniciais, faixa colorida do tipo,
 // código do pedido, endereço/telefone e badge de acordos.
-export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir, onAgendarVisita, comissao, onReceberComissao, onEditarComissao, cancelamento, selecionado = false, emSelecao = false, onAlternarSelecao }: Props) {
+export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbrir, onExcluir, onAgendarVisita, onMarcarFechado, comissao, onReceberComissao, onEditarComissao, cancelamento, selecionado = false, emSelecao = false, onAlternarSelecao }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
   const [menu, setMenu] = useState<{ right: number; top: number } | null>(null);
   const [erroVisita, setErroVisita] = useState('');
@@ -394,6 +396,17 @@ export default function TicketCard({ ticket, qtdAcordos = 0, modo, onModo, onAbr
         >
           Abrir completo
         </button>
+        {onMarcarFechado && (
+          <button
+            className={itemMenu}
+            onClick={() => {
+              setMenu(null);
+              onMarcarFechado(ticket);
+            }}
+          >
+            🔒 Marcar como fechado
+          </button>
+        )}
         <button
           className={itemMenu}
           onClick={() => {
