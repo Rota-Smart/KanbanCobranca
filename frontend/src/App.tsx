@@ -908,7 +908,7 @@ export default function App() {
       }
     } catch (e) {
       const msg = String(e || '');
-      if (msg.startsWith('CANCELAMENTO_SEM_MOTIVO')) {
+      if (msg.includes('CANCELAMENTO_SEM_MOTIVO')) {
         // Card de cancelamento sem motivo: o board já mostrou o card na nova
         // coluna (otimista) — o diálogo confirma o motivo e refaz o movimento.
         const nome = snapshot ? Object.values(snapshot).flat().find((t) => t.id === id)?.nomeCliente ?? '' : '';
@@ -1109,7 +1109,7 @@ colunaAtual: coluna,
       showToast(`${ids.length} card${ids.length > 1 ? 's' : ''} movido${ids.length > 1 ? 's' : ''} para ${destinoMassa}.`);
     } catch (e) {
       const msg = String(e || '');
-      if (msg.startsWith('CANCELAMENTO_SEM_MOTIVO')) {
+      if (msg.includes('CANCELAMENTO_SEM_MOTIVO')) {
         // Um dos selecionados é cancelamento sem motivo: abre o diálogo para
         // ele; ao confirmar, o movimento desse card é refeito sozinho.
         const card = Object.values(board).flat().find((t) => t.id === emAndamento);
